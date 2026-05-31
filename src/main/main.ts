@@ -5,7 +5,8 @@ import { startLocalServer } from "./server";
 
 let mainWindow: BrowserWindow | null = null;
 
-const isDev = process.env.NODE_ENV !== "production" && !app.isPackaged;
+const rendererDevUrl = process.env.HER_RENDERER_DEV_URL;
+const shouldUseDevServer = Boolean(rendererDevUrl) && !app.isPackaged;
 
 const createWindow = async () => {
   mainWindow = new BrowserWindow({
@@ -27,10 +28,13 @@ const createWindow = async () => {
     return { action: "deny" };
   });
 
-  if (isDev) {
-    await mainWindow.loadURL(process.env.HER_RENDERER_DEV_URL ?? "http://127.0.0.1:5174");
+  if (shouldUseDevServer && rendererDevUrl) {
+    await mainWindow.loadURL(rendererDevUrl);
   } else {
-    await mainWindow.loadFile(path.join(app.getAppPath(), "dist", "renderer", "index.html"));
+    const rendererIndex = app.isPackaged
+      ? path.join(app.getAppPath(), "dist", "renderer", "index.html")
+      : path.resolve(__dirname, "..", "..", "..", "dist", "renderer", "index.html");
+    await mainWindow.loadFile(rendererIndex);
   }
 };
 
