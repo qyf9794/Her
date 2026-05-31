@@ -1,0 +1,523 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #0e1013;
+  color: #f2f5f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 860px;
+  min-height: 620px;
+  background: #0e1013;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 38px;
+  border: 1px solid #35403e;
+  border-radius: 6px;
+  padding: 0 14px;
+  background: #202827;
+  color: #f4f6f4;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: #6fceb8;
+  background: #273231;
+}
+
+button.dangerActive {
+  border-color: #ff7c62;
+  background: #4a201a;
+  color: #fff5ef;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #34413d;
+  border-radius: 6px;
+  padding: 0 13px;
+  background: #141918;
+  color: #f4f6f4;
+  outline: none;
+}
+
+input:focus {
+  border-color: #78d8c2;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #d4dfdb;
+  letter-spacing: 0;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.productShell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 34% 25%, rgba(58, 218, 208, 0.12), transparent 28%),
+    radial-gradient(circle at 78% 60%, rgba(255, 109, 129, 0.1), transparent 30%),
+    #0e1013;
+}
+
+.appView {
+  display: grid;
+  grid-template-columns: minmax(560px, 1fr) 380px;
+  min-height: 100vh;
+}
+
+.voiceStage {
+  display: grid;
+  grid-template-rows: auto minmax(260px, 36vh) 1fr;
+  min-height: 100vh;
+  border-right: 1px solid #242b2b;
+}
+
+.topbar,
+.onboardingHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 88px;
+  padding: 22px 28px;
+  border-bottom: 1px solid #242b2b;
+  background: rgba(16, 20, 21, 0.9);
+}
+
+#statusText,
+#onboardingStatus {
+  margin-top: 5px;
+  font-size: 13px;
+  color: #96a5a1;
+}
+
+.controls,
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.orbPanel {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  overflow: hidden;
+  border-bottom: 1px solid #242b2b;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+    #101315;
+}
+
+.orbMount {
+  width: min(58vw, 620px);
+  height: 100%;
+  min-height: 260px;
+}
+
+.orbMount canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.orbTelemetry {
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.orbTelemetry span {
+  height: 3px;
+  transform-origin: left center;
+  border-radius: 999px;
+  background: #4be8c5;
+  opacity: 0.85;
+}
+
+.orbTelemetry span + span {
+  background: #ff6f8f;
+}
+
+.conversation {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px;
+}
+
+.line {
+  max-width: 82%;
+  border-radius: 8px;
+  padding: 11px 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line.user {
+  align-self: flex-end;
+  background: #1f5249;
+  color: #f2fff9;
+}
+
+.line.assistant {
+  align-self: flex-start;
+  background: #1d2220;
+  color: #f4f6f4;
+  border: 1px solid #2b3431;
+}
+
+.line.system,
+.line.tool {
+  align-self: center;
+  max-width: 92%;
+  background: #181d1b;
+  color: #9ba9a4;
+  border: 1px solid #2b3431;
+  font-size: 13px;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 18px 28px 24px;
+  border-top: 1px solid #242b2b;
+  background: rgba(16, 20, 21, 0.9);
+}
+
+.sidepanel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 100vh;
+  padding: 22px;
+  background: rgba(18, 22, 23, 0.96);
+}
+
+.yoloPanel {
+  border: 1px solid #4a3531;
+  border-radius: 8px;
+  padding: 12px;
+  background: #1a1716;
+}
+
+.yoloPanel .muted {
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
+.permissionButtons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.permissionButtons button {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 46px;
+  color: #9ba9a4;
+  font-size: 13px;
+}
+
+.empty {
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.confirmation,
+.activity {
+  border: 1px solid #303936;
+  border-radius: 8px;
+  padding: 12px;
+  background: #1a1f1d;
+  color: #edf2ef;
+  overflow-wrap: anywhere;
+}
+
+.activity.pending {
+  border-color: #977c39;
+}
+
+.activity.error {
+  border-color: #9d5058;
+}
+
+.confirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.toggleGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.toggleGrid.compact {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.capabilityToggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 82px;
+  border: 1px solid #303936;
+  border-radius: 8px;
+  padding: 12px;
+  background: #171d1c;
+  color: #edf2ef;
+}
+
+.capabilityToggle.compactToggle {
+  min-height: auto;
+}
+
+.capabilityToggle input {
+  width: 18px;
+  min-height: 18px;
+  margin: 1px 0 0;
+  accent-color: #63e0bf;
+}
+
+.capabilityToggle strong,
+.capabilityToggle small {
+  display: block;
+}
+
+.capabilityToggle strong {
+  font-size: 13px;
+}
+
+.capabilityToggle small {
+  margin-top: 4px;
+  color: #98a7a3;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.onboarding {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-height: 100vh;
+}
+
+.capabilityBand {
+  padding: 18px 28px;
+  border-bottom: 1px solid #242b2b;
+}
+
+.appPicker {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  padding: 22px 28px 28px;
+}
+
+.appGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+  min-height: 0;
+  margin-top: 16px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.appTile {
+  display: grid;
+  grid-template-rows: 44px auto auto 1fr;
+  justify-items: start;
+  gap: 7px;
+  min-height: 158px;
+  padding: 12px;
+  text-align: left;
+  background: #171d1c;
+}
+
+.appTile.selected {
+  border-color: #64e2bf;
+  background: #17342f;
+}
+
+.appTile.highRisk:not(.selected) {
+  border-color: #5d403f;
+}
+
+.appTile img {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+}
+
+.appName {
+  width: 100%;
+  color: #f2f5f1;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.risk {
+  color: #a8b6b2;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.capTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.capTags em {
+  border: 1px solid #34403f;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #b7c8c2;
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+.authorizedApps {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  max-height: 220px;
+  min-height: 36px;
+  overflow: auto;
+}
+
+.authorizedApp {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid #293331;
+  border-radius: 7px;
+  padding: 4px 7px;
+  background: #171d1c;
+}
+
+.authorizedApp img {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+}
+
+.authorizedApp span {
+  overflow: hidden;
+  color: #d9e4df;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: #899894;
+  font-size: 13px;
+}
+
+code {
+  color: #d7eee3;
+}
+
+@media (max-width: 980px) {
+  body {
+    min-width: 0;
+  }
+
+  .appView,
+  .toggleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .voiceStage,
+  .sidepanel {
+    min-height: auto;
+  }
+
+  .sidepanel {
+    border-top: 1px solid #242b2b;
+  }
+
+  .topbar,
+  .onboardingHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .controls {
+    justify-content: flex-start;
+  }
+}

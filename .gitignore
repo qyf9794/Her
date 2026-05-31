@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+.npm-cache/
+dist/
+electron/dist/
+.vite/
+.env
+.env.*
+!.env.example
+data/*.jsonl
+data/*.json
+data/*.sqlite
+data/*.db
