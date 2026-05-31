@@ -1,4 +1,4 @@
-import { config } from "./config";
+import { config, readOpenaiApiKey } from "./config";
 import { realtimeToolDefinitions } from "../shared/tools";
 
 const instructions = `
@@ -12,6 +12,7 @@ Rules:
 - Use document_extract or document_folder_digest to read documents, then do the analysis in your response.
 - Use email_search to find local email records, then email_read to read full local email or draft content by id. Do not claim real Gmail inbox access unless a future adapter explicitly reports it.
 - When the user asks to listen to music or names a song, use music_open or music_play_song instead of generic app/browser tools.
+- For music_play_song, only say playback started when the tool status is playing. If the status is opened_track or opened_search, explain that Music was opened but playback was not confirmed.
 - When the user asks to watch a YouTube or Apple TV video, movie, show, or episode, use video_play instead of only opening the app or search page.
 - When the user asks to authorize, revoke, or inspect app permissions, use app_permission_search, app_permission_set, capability_set, or yolo_mode_set. Do not tell the user to click the app grid unless they ask for manual setup.
 - YOLO mode bypasses HER's local confirmation prompts and grants discovered app permissions, but it does not bypass macOS privacy permissions or tool argument validation.
@@ -27,14 +28,15 @@ Rules:
 `.trim();
 
 export const createRealtimeClientSecret = async () => {
-  if (!config.openaiApiKey) {
+  const apiKey = readOpenaiApiKey();
+  if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.openaiApiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

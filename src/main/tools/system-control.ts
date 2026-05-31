@@ -352,6 +352,7 @@ export class SystemControl {
       bluetooth: "x-apple.systempreferences:com.apple.BluetoothSettings",
       keyboard: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension",
       privacy: "x-apple.systempreferences:com.apple.preference.security?Privacy",
+      microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
       accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
       screenrecording: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
       automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",

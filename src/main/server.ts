@@ -1,6 +1,7 @@
 import express from "express";
 import type { Server } from "node:http";
 import { createRealtimeClientSecret } from "./realtime";
+import { readOpenaiApiKey, saveOpenaiApiKey } from "./config";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
 import { CapabilityGate } from "./capability-gate";
@@ -97,6 +98,26 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     const body = req.body as { pane?: string };
     try {
       res.json(await system.openSettings(body.pane));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/openai-key", (_req, res) => {
+    res.json({ configured: Boolean(readOpenaiApiKey()) });
+  });
+
+  app.post("/api/openai-key", (req, res) => {
+    const body = req.body as { apiKey?: unknown };
+    if (typeof body.apiKey !== "string") {
+      res.status(400).json({ error: "Missing OpenAI API key." });
+      return;
+    }
+
+    try {
+      saveOpenaiApiKey(body.apiKey);
+      res.json({ configured: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(400).json({ error: message });

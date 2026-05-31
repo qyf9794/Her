@@ -68,6 +68,27 @@ app.innerHTML = `
       </section>
 
       <aside class="sidepanel">
+        <section class="apiKeyPanel">
+          <div class="sectionHeader">
+            <h2>OpenAI API Key</h2>
+            <span id="openaiKeyBadge" class="keyBadge">Checking</span>
+          </div>
+          <div class="apiKeyForm">
+            <input id="openaiKeyInput" type="password" placeholder="Paste OpenAI API key" autocomplete="off" spellcheck="false" />
+            <button id="saveOpenaiKeyBtn" type="button">Save</button>
+          </div>
+          <p id="openaiKeyStatus" class="muted">Saved locally in .env.local for voice sessions.</p>
+        </section>
+        <section class="devicePanel">
+          <div class="sectionHeader">
+            <h2>Microphone</h2>
+            <button id="refreshMicrophonesBtn" type="button">Refresh</button>
+          </div>
+          <select id="microphoneSelect" aria-label="Microphone input">
+            <option value="">System default</option>
+          </select>
+          <p id="microphoneStatus" class="muted">Choose the input device macOS exposes to Electron.</p>
+        </section>
         <section class="yoloPanel">
           <div class="sectionHeader">
             <h2>YOLO Mode</h2>
@@ -75,6 +96,7 @@ app.innerHTML = `
           </div>
           <p id="yoloModeStatus" class="muted"></p>
           <div class="permissionButtons" aria-label="macOS permission shortcuts">
+            <button type="button" data-settings-pane="microphone">Microphone</button>
             <button type="button" data-settings-pane="accessibility">Accessibility</button>
             <button type="button" data-settings-pane="screenrecording">Screen Recording</button>
             <button type="button" data-settings-pane="fulldiskaccess">Full Disk Access</button>
@@ -129,6 +151,13 @@ const refreshAppsBtn = document.querySelector<HTMLButtonElement>("#refreshAppsBt
 const openPermissionsBtn = document.querySelector<HTMLButtonElement>("#openPermissionsBtn")!;
 const yoloModeBtn = document.querySelector<HTMLButtonElement>("#yoloModeBtn")!;
 const yoloModeStatus = document.querySelector<HTMLParagraphElement>("#yoloModeStatus")!;
+const openaiKeyInput = document.querySelector<HTMLInputElement>("#openaiKeyInput")!;
+const saveOpenaiKeyBtn = document.querySelector<HTMLButtonElement>("#saveOpenaiKeyBtn")!;
+const openaiKeyStatus = document.querySelector<HTMLParagraphElement>("#openaiKeyStatus")!;
+const openaiKeyBadge = document.querySelector<HTMLSpanElement>("#openaiKeyBadge")!;
+const microphoneSelect = document.querySelector<HTMLSelectElement>("#microphoneSelect")!;
+const refreshMicrophonesBtn = document.querySelector<HTMLButtonElement>("#refreshMicrophonesBtn")!;
+const microphoneStatus = document.querySelector<HTMLParagraphElement>("#microphoneStatus")!;
 
 const capabilityLabels: Record<CapabilityKey, string> = {
   fileManagement: "File management",
@@ -157,6 +186,12 @@ let inputAnalyser: AnalyserNode | null = null;
 let outputAnalyser: AnalyserNode | null = null;
 let userLevel = 0;
 let aiLevel = 0;
+let hasOpenaiApiKey = false;
+let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
+let realtimeResponseActive = false;
+let realtimeResponseCreateRequested = false;
+let pendingRealtimeResponseCreate = false;
+let realtimeCancelRequested = false;
 
 const getJson = async <T>(path: string): Promise<T> => {
   const response = await fetch(`${LOCAL_API}${path}`);
@@ -180,6 +215,8 @@ const initialize = async () => {
   initOrb();
   try {
     settings = await getJson<UserSettings>("/api/settings");
+    await loadOpenaiKeyStatus();
+    await refreshMicrophoneDevices();
     installedApps = await getJson<InstalledApp[]>("/api/apps");
     appPermissions = Object.fromEntries(installedApps.map((item) => [item.bundleId, item.authorized]));
     renderSettings();
@@ -188,6 +225,10 @@ const initialize = async () => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onboardingStatus.textContent = message;
+    statusText.textContent = message;
+    renderOpenaiKeyStatus(false, "Start or restart the app backend to enable key saving.");
+    showOnboarding(false);
+    addLine("system", `Local backend unavailable: ${message}`);
     setVisualState("error");
   }
 };
@@ -298,6 +339,54 @@ const openSystemSettingsPane = async (pane: string) => {
   addActivity(`Opened macOS ${pane} settings`, "ok");
 };
 
+type OpenaiKeyStatus = {
+  configured: boolean;
+};
+
+const renderOpenaiKeyStatus = (configured: boolean, message?: string) => {
+  hasOpenaiApiKey = configured;
+  openaiKeyBadge.textContent = configured ? "Configured" : "Missing";
+  openaiKeyBadge.classList.toggle("configured", configured);
+  openaiKeyStatus.textContent =
+    message ?? (configured ? "OpenAI key is saved locally and ready for voice sessions." : "Add a key before starting voice.");
+  if (state === "idle") {
+    statusText.textContent = configured ? "Idle" : "Add OpenAI API key before starting voice";
+    connectBtn.disabled = !configured;
+  }
+};
+
+const loadOpenaiKeyStatus = async () => {
+  try {
+    const result = await getJson<OpenaiKeyStatus>("/api/openai-key");
+    renderOpenaiKeyStatus(result.configured);
+  } catch {
+    renderOpenaiKeyStatus(false, "Restart the app once to enable key saving.");
+  }
+};
+
+const saveOpenaiKey = async () => {
+  const apiKey = openaiKeyInput.value.trim();
+  if (!apiKey) {
+    renderOpenaiKeyStatus(false, "Paste an OpenAI API key first.");
+    openaiKeyInput.focus();
+    return;
+  }
+
+  saveOpenaiKeyBtn.disabled = true;
+  openaiKeyStatus.textContent = "Saving key locally...";
+  try {
+    const result = await postJson<OpenaiKeyStatus>("/api/openai-key", { apiKey });
+    openaiKeyInput.value = "";
+    renderOpenaiKeyStatus(result.configured, "Saved. Voice sessions will use this key now.");
+    addActivity("OpenAI API key saved locally", "ok");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    renderOpenaiKeyStatus(false, message);
+  } finally {
+    saveOpenaiKeyBtn.disabled = false;
+  }
+};
+
 const reloadSettingsAndApps = async () => {
   settings = await getJson<UserSettings>("/api/settings");
   installedApps = await getJson<InstalledApp[]>("/api/apps");
@@ -315,8 +404,8 @@ const refreshApps = async () => {
 
 const setState = (next: SessionState, detail?: string) => {
   state = next;
-  statusText.textContent = detail ?? next;
-  connectBtn.disabled = next === "connecting" || next === "connected";
+  statusText.textContent = !hasOpenaiApiKey && next === "idle" ? "Add OpenAI API key before starting voice" : (detail ?? next);
+  connectBtn.disabled = !hasOpenaiApiKey || next === "connecting" || next === "connected";
   disconnectBtn.disabled = next !== "connected" && next !== "connecting";
   sendTextBtn.disabled = next !== "connected";
   if (next === "idle") setVisualState("idle");
@@ -358,11 +447,80 @@ const getRealtimeSecret = async () => {
   return secret;
 };
 
+const renderMicrophoneDevices = (devices: MediaDeviceInfo[]) => {
+  const audioInputs = devices.filter((device) => device.kind === "audioinput");
+  const selectedStillExists = selectedMicrophoneId && audioInputs.some((device) => device.deviceId === selectedMicrophoneId);
+  if (selectedMicrophoneId && !selectedStillExists) {
+    selectedMicrophoneId = "";
+    window.localStorage.removeItem("her:selectedMicrophoneId");
+  }
+
+  microphoneSelect.innerHTML = `<option value="">System default</option>`;
+  audioInputs.forEach((device, index) => {
+    const option = document.createElement("option");
+    option.value = device.deviceId;
+    option.textContent = device.label || `Microphone ${index + 1}`;
+    microphoneSelect.append(option);
+  });
+  microphoneSelect.value = selectedMicrophoneId;
+  microphoneStatus.textContent = audioInputs.length
+    ? "Select your phone mic if it appears here."
+    : "No microphone found. Check macOS Sound input or reconnect your phone mic.";
+};
+
+const refreshMicrophoneDevices = async () => {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    microphoneStatus.textContent = "This browser cannot list microphone devices.";
+    return;
+  }
+
+  refreshMicrophonesBtn.disabled = true;
+  microphoneStatus.textContent = "Checking microphone devices...";
+  try {
+    renderMicrophoneDevices(await navigator.mediaDevices.enumerateDevices());
+  } catch (error) {
+    microphoneStatus.textContent = microphoneErrorMessage(error);
+  } finally {
+    refreshMicrophonesBtn.disabled = false;
+  }
+};
+
+const microphoneAudioConstraint = (): boolean | MediaTrackConstraints =>
+  selectedMicrophoneId ? { deviceId: { exact: selectedMicrophoneId } } : true;
+
+const assertMicrophoneAvailable = async () => {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("This browser cannot access a microphone. Open the Electron app window and allow Microphone access.");
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  const audioInputs = devices.filter((device) => device.kind === "audioinput");
+  if (devices.length > 0 && audioInputs.length === 0) {
+    throw new Error("No microphone input was found. Connect or enable a microphone, then allow Microphone access for Electron in macOS System Settings.");
+  }
+  if (selectedMicrophoneId && audioInputs.length > 0 && !audioInputs.some((device) => device.deviceId === selectedMicrophoneId)) {
+    throw new Error("Selected microphone is no longer available. Refresh the microphone list and choose your phone mic again.");
+  }
+};
+
+const microphoneErrorMessage = (error: unknown) => {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (/requested device not found|notfounderror/i.test(raw)) {
+    return "No microphone input was found. Connect or enable a microphone, then allow Microphone access for Electron in macOS System Settings.";
+  }
+  if (/permission denied|notallowederror/i.test(raw)) {
+    return "Microphone access is blocked. Open System Settings > Privacy & Security > Microphone and enable Electron.";
+  }
+  return raw;
+};
+
 const connect = async () => {
   setState("connecting", "Requesting microphone and Realtime session...");
   try {
+    await assertMicrophoneAvailable();
     const clientSecret = await getRealtimeSecret();
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: microphoneAudioConstraint() });
+    void refreshMicrophoneDevices();
     setupInputAnalyser(localStream);
 
     pc = new RTCPeerConnection();
@@ -378,6 +536,10 @@ const connect = async () => {
 
     dc = pc.createDataChannel("oai-events");
     dc.onopen = () => {
+      realtimeResponseActive = false;
+      realtimeResponseCreateRequested = false;
+      pendingRealtimeResponseCreate = false;
+      realtimeCancelRequested = false;
       setState("connected", "Connected. Speak naturally.");
       addLine("system", "Voice session connected.");
     };
@@ -406,7 +568,7 @@ const connect = async () => {
     await pc.setRemoteDescription({ type: "answer", sdp: await response.text() });
   } catch (error) {
     disconnect();
-    const message = error instanceof Error ? error.message : String(error);
+    const message = microphoneErrorMessage(error);
     setState("error", message);
     addLine("system", message);
   }
@@ -421,6 +583,10 @@ const disconnect = () => {
   localStream = null;
   inputAnalyser = null;
   outputAnalyser = null;
+  realtimeResponseActive = false;
+  realtimeResponseCreateRequested = false;
+  pendingRealtimeResponseCreate = false;
+  realtimeCancelRequested = false;
   setState("idle", "Idle");
 };
 
@@ -442,8 +608,18 @@ const handleRealtimeEvent = async (raw: string) => {
     appendAssistantDelta(String(event.delta ?? ""));
   }
 
+  if (event.type === "response.created") {
+    realtimeResponseActive = true;
+    realtimeResponseCreateRequested = false;
+  }
+
   if (event.type === "response.done") {
+    realtimeResponseActive = false;
+    realtimeResponseCreateRequested = false;
+    realtimeCancelRequested = false;
+    activeAssistantLine = null;
     setVisualState("listening");
+    flushPendingRealtimeResponse();
   }
 
   if (event.type === "response.function_call_arguments.done") {
@@ -458,6 +634,17 @@ const handleRealtimeEvent = async (raw: string) => {
   if (event.type === "error") {
     setVisualState("error");
     addLine("system", JSON.stringify(event));
+    const error = event.error as { code?: unknown } | undefined;
+    if (error?.code === "conversation_already_has_active_response") {
+      realtimeResponseActive = true;
+      realtimeResponseCreateRequested = false;
+      pendingRealtimeResponseCreate = true;
+    } else if (realtimeCancelRequested) {
+      realtimeResponseActive = false;
+      realtimeResponseCreateRequested = false;
+      realtimeCancelRequested = false;
+      flushPendingRealtimeResponse();
+    }
   }
 };
 
@@ -575,6 +762,39 @@ const toolNames = new Set<string>([
 
 const isToolName = (name: string): name is ToolName => toolNames.has(name);
 
+const cancelActiveRealtimeResponse = () => {
+  if (!dc || dc.readyState !== "open") return false;
+  if (!realtimeResponseActive && !realtimeResponseCreateRequested) return false;
+
+  realtimeCancelRequested = true;
+  realtimeResponseCreateRequested = false;
+  dc.send(JSON.stringify({ type: "response.cancel" }));
+  dc.send(JSON.stringify({ type: "output_audio_buffer.clear" }));
+  return true;
+};
+
+const requestRealtimeResponse = (options: { interrupt?: boolean } = {}) => {
+  if (!dc || dc.readyState !== "open") return;
+  if (options.interrupt && cancelActiveRealtimeResponse()) {
+    pendingRealtimeResponseCreate = true;
+    return;
+  }
+
+  if (realtimeResponseActive || realtimeResponseCreateRequested) {
+    pendingRealtimeResponseCreate = true;
+    return;
+  }
+
+  realtimeResponseCreateRequested = true;
+  dc.send(JSON.stringify({ type: "response.create" }));
+};
+
+const flushPendingRealtimeResponse = () => {
+  if (!pendingRealtimeResponseCreate || realtimeResponseActive || realtimeResponseCreateRequested) return;
+  pendingRealtimeResponseCreate = false;
+  requestRealtimeResponse();
+};
+
 const sendFunctionOutput = (callId: string, output: unknown) => {
   if (!dc || dc.readyState !== "open") return;
   dc.send(
@@ -587,7 +807,7 @@ const sendFunctionOutput = (callId: string, output: unknown) => {
       },
     }),
   );
-  dc.send(JSON.stringify({ type: "response.create" }));
+  requestRealtimeResponse({ interrupt: true });
 };
 
 const sendUserText = (text: string) => {
@@ -604,7 +824,7 @@ const sendUserText = (text: string) => {
       },
     }),
   );
-  dc.send(JSON.stringify({ type: "response.create" }));
+  requestRealtimeResponse();
 };
 
 const renderConfirmation = (result: Extract<ToolCallResult, { requiresConfirmation: true }>) => {
@@ -858,6 +1078,21 @@ onboardingYoloBtn.addEventListener("click", async () => {
 refreshAppsBtn.addEventListener("click", () => void refreshApps());
 openPermissionsBtn.addEventListener("click", () => showOnboarding(true));
 yoloModeBtn.addEventListener("click", () => void saveYoloMode(!settings?.yoloMode));
+saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
+openaiKeyInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") void saveOpenaiKey();
+});
+refreshMicrophonesBtn.addEventListener("click", () => void refreshMicrophoneDevices());
+microphoneSelect.addEventListener("change", () => {
+  selectedMicrophoneId = microphoneSelect.value;
+  if (selectedMicrophoneId) {
+    window.localStorage.setItem("her:selectedMicrophoneId", selectedMicrophoneId);
+    microphoneStatus.textContent = "Selected microphone saved for voice sessions.";
+  } else {
+    window.localStorage.removeItem("her:selectedMicrophoneId");
+    microphoneStatus.textContent = "Using the macOS default input device.";
+  }
+});
 document.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-settings-pane]");
   if (!button?.dataset.settingsPane) return;

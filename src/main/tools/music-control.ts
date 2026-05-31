@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { config } from "../config";
 
 const run = (command: string, args: string[]) =>
   new Promise<string>((resolve, reject) => {
@@ -24,6 +25,12 @@ type AppleMusicSearchResult = {
   trackName?: string;
   artistName?: string;
   trackViewUrl?: string;
+};
+
+type MusicPlaybackSnapshot = {
+  state?: string;
+  title?: string;
+  artist?: string;
 };
 
 export class MusicControl {
@@ -62,16 +69,20 @@ export class MusicControl {
 
     const catalogTrack = await findAppleMusicTrack(searchText);
     if (catalogTrack?.trackViewUrl) {
-      const result = await playAppleMusicUrl(catalogTrack.trackViewUrl);
+      const result = await playAppleMusicUrl(catalogTrack.trackViewUrl, catalogTrack);
       return {
         status: result.startedPlayback ? "playing" : "opened_track",
         title: catalogTrack.trackName,
         artist: catalogTrack.artistName,
         url: catalogTrack.trackViewUrl,
         source: "apple_music_catalog",
+        playerState: result.snapshot.state,
+        currentTrack: result.snapshot.title
+          ? { title: result.snapshot.title, artist: result.snapshot.artist }
+          : undefined,
         note: result.startedPlayback
-          ? "Opened the Apple Music catalog track and sent Music a play command."
-          : "Opened the Apple Music catalog track. Music may require subscription, sign-in, or macOS Automation permission before playback starts.",
+          ? "Music is playing the requested catalog track."
+          : "Opened the Apple Music catalog track, but playback was not confirmed. Please click Play in Music if the track page is visible.",
       };
     }
 
@@ -94,6 +105,7 @@ const findAppleMusicTrack = async (searchText: string): Promise<AppleMusicSearch
   url.searchParams.set("media", "music");
   url.searchParams.set("entity", "song");
   url.searchParams.set("limit", "1");
+  url.searchParams.set("country", config.appleMusicCountry);
   url.searchParams.set("term", searchText);
 
   try {
@@ -105,7 +117,7 @@ const findAppleMusicTrack = async (searchText: string): Promise<AppleMusicSearch
   }
 };
 
-const playAppleMusicUrl = async (trackUrl: string) => {
+const playAppleMusicUrl = async (trackUrl: string, expected: AppleMusicSearchResult) => {
   const script = `
     tell application "Music"
       activate
@@ -113,15 +125,50 @@ const playAppleMusicUrl = async (trackUrl: string) => {
         open location ${appleScriptString(trackUrl)}
         delay 2
         play
-        return "playing"
+        delay 1
+        set playerState to player state as text
+        set trackName to ""
+        set trackArtist to ""
+        try
+          set trackName to name of current track
+          set trackArtist to artist of current track
+        end try
+        return playerState & "|" & trackName & "|" & trackArtist
       on error errMsg number errNo
         return "error|" & errNo & "|" & errMsg
       end try
     end tell
   `;
   const output = await run("osascript", ["-e", script]);
-  if (output === "playing") return { startedPlayback: true };
+  const snapshot = parsePlaybackSnapshot(output);
+  if (isExpectedTrackPlaying(snapshot, expected)) return { startedPlayback: true, snapshot };
 
   await run("open", ["-a", "Music", trackUrl]);
-  return { startedPlayback: false };
+  return { startedPlayback: false, snapshot };
 };
+
+const parsePlaybackSnapshot = (output: string): MusicPlaybackSnapshot => {
+  if (output.startsWith("error|")) return {};
+  const [state, title, artist] = output.split("|");
+  return { state, title: title || undefined, artist: artist || undefined };
+};
+
+const isExpectedTrackPlaying = (snapshot: MusicPlaybackSnapshot, expected: AppleMusicSearchResult) => {
+  if (snapshot.state !== "playing") return false;
+  const currentTitle = normalizeMatchText(snapshot.title);
+  const expectedTitle = normalizeMatchText(expected.trackName);
+  const currentArtist = normalizeMatchText(snapshot.artist);
+  const expectedArtist = normalizeMatchText(expected.artistName);
+  return Boolean(
+    currentTitle &&
+      expectedTitle &&
+      currentTitle === expectedTitle &&
+      (!expectedArtist || !currentArtist || currentArtist.includes(expectedArtist) || expectedArtist.includes(currentArtist)),
+  );
+};
+
+const normalizeMatchText = (value: string | undefined) =>
+  (value ?? "")
+    .toLocaleLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "")
+    .trim();
