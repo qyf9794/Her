@@ -9,6 +9,13 @@ type CdpResponse = {
   error?: { message?: string };
 };
 
+type RuntimeEvaluateResult = {
+  result?: {
+    value?: unknown;
+    description?: string;
+  };
+};
+
 export class BrowserAutomation {
   async openIsolatedUrl(rawUrl: string) {
     const url = this.assertAllowedUrl(rawUrl);
@@ -54,7 +61,7 @@ export class BrowserAutomation {
         }
         return results;
       })()`;
-      return await client.call("Runtime.evaluate", { expression, returnByValue: true });
+      return unwrapEvaluateResult(await client.call("Runtime.evaluate", { expression, returnByValue: true }));
     } finally {
       client.close();
     }
@@ -69,7 +76,7 @@ export class BrowserAutomation {
         el.click();
         return { ok: true, purpose: ${JSON.stringify(purpose)} };
       })()`;
-      return await client.call("Runtime.evaluate", { expression, returnByValue: true });
+      return unwrapEvaluateResult(await client.call("Runtime.evaluate", { expression, returnByValue: true }));
     } finally {
       client.close();
     }
@@ -82,7 +89,9 @@ export class BrowserAutomation {
   }
 
   private async connect() {
-    const pages = (await fetch(`http://127.0.0.1:${config.browserDebugPort}/json/list`).then((res) => res.json())) as Array<{
+    const pages = (await fetch(`http://127.0.0.1:${config.browserDebugPort}/json/list`, {
+      signal: AbortSignal.timeout(3000),
+    }).then((res) => res.json())) as Array<{
       type: string;
       webSocketDebuggerUrl?: string;
     }>;
@@ -125,10 +134,29 @@ class CdpClient {
       this.pending.set(id, { resolve, reject });
     });
     this.ws.send(JSON.stringify({ id, method, params }));
-    return result;
+    return withTimeout(result, 5000, `CDP ${method} timed out.`);
   }
 
   close() {
     this.ws.close();
   }
 }
+
+const unwrapEvaluateResult = (value: unknown) => {
+  const result = value as RuntimeEvaluateResult;
+  return result.result && "value" in result.result ? result.result.value : result;
+};
+
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string) =>
+  new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+  });

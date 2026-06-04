@@ -2,6 +2,13 @@ export type ToolName =
   | "system_status"
   | "confirmation_list"
   | "confirmation_decide"
+  | "tool_result_read"
+  | "tool_catalog_list"
+  | "tool_group_set"
+  | "task_create"
+  | "task_status"
+  | "task_list"
+  | "task_cancel"
   | "yolo_mode_set"
   | "app_permission_search"
   | "app_permission_set"
@@ -96,6 +103,18 @@ export type ConfirmationResult = {
 
 type JsonSchema = Record<string, unknown>;
 
+export type ToolGroup =
+  | "permissions"
+  | "files"
+  | "documents"
+  | "text"
+  | "media"
+  | "apps"
+  | "windows"
+  | "system"
+  | "browser"
+  | "shell";
+
 const objectSchema = (
   properties: Record<string, JsonSchema>,
   required: string[] = [],
@@ -106,7 +125,7 @@ const objectSchema = (
   additionalProperties: false,
 });
 
-export const realtimeToolDefinitions = [
+export const allToolDefinitions = [
   {
     type: "function",
     name: "system_status",
@@ -129,6 +148,19 @@ export const realtimeToolDefinitions = [
         approved: { type: "boolean", description: "true to approve/confirm, false to reject/cancel." },
       },
       ["approved"],
+    ),
+  },
+  {
+    type: "function",
+    name: "tool_result_read",
+    description: "Read a bounded slice of a previous large tool result by handle. Use only after a tool result says it was truncated and provides a handle.",
+    parameters: objectSchema(
+      {
+        handle: { type: "string", description: "Handle returned by a truncated tool result." },
+        offset: { type: "integer", minimum: 0, default: 0 },
+        maxChars: { type: "integer", minimum: 200, maximum: 6000, default: 2000 },
+      },
+      ["handle"],
     ),
   },
   {
@@ -212,7 +244,7 @@ export const realtimeToolDefinitions = [
     type: "function",
     name: "file_read",
     description: "Read a small text-like file from an allowlisted folder. Use document_extract for PDF or DOCX.",
-    parameters: objectSchema({ path: { type: "string" }, maxChars: { type: "integer", minimum: 100, maximum: 20000, default: 6000 } }, ["path"]),
+    parameters: objectSchema({ path: { type: "string" }, maxChars: { type: "integer", minimum: 100, maximum: 10000, default: 3000 } }, ["path"]),
   },
   {
     type: "function",
@@ -266,7 +298,7 @@ export const realtimeToolDefinitions = [
     type: "function",
     name: "document_extract",
     description: "Extract text from .txt, .md, .pdf, or .docx in an allowlisted folder so the assistant can summarize or analyze it.",
-    parameters: objectSchema({ path: { type: "string" }, maxChars: { type: "integer", minimum: 500, maximum: 60000, default: 12000 } }, ["path"]),
+    parameters: objectSchema({ path: { type: "string" }, maxChars: { type: "integer", minimum: 500, maximum: 10000, default: 3000 } }, ["path"]),
   },
   {
     type: "function",
@@ -276,8 +308,8 @@ export const realtimeToolDefinitions = [
       {
         root: { type: "string" },
         query: { type: "string", description: "Optional filename filter." },
-        limit: { type: "integer", minimum: 1, maximum: 20, default: 8 },
-        charsPerFile: { type: "integer", minimum: 500, maximum: 10000, default: 2500 },
+        limit: { type: "integer", minimum: 1, maximum: 5, default: 3 },
+        charsPerFile: { type: "integer", minimum: 300, maximum: 2000, default: 1000 },
       },
       ["root"],
     ),
@@ -339,6 +371,7 @@ export const realtimeToolDefinitions = [
         from: { type: "string", description: "ISO date/time lower bound." },
         to: { type: "string", description: "ISO date/time upper bound." },
         query: { type: "string", description: "Optional natural language filter." },
+        limit: { type: "integer", minimum: 1, maximum: 20, default: 10 },
       },
       ["from", "to"],
     ),
@@ -605,10 +638,187 @@ export const realtimeToolDefinitions = [
       {
         command: { type: "string" },
         reason: { type: "string", description: "Why this command is needed." },
-        timeoutMs: { type: "integer", minimum: 1000, maximum: 60000, default: 15000 },
+        timeoutMs: { type: "integer", minimum: 1000, maximum: 20000, default: 10000 },
       },
       ["command", "reason"],
     ),
+  },
+] as const;
+
+export const coreRealtimeToolNames = [
+  "system_status",
+  "confirmation_list",
+  "confirmation_decide",
+  "tool_result_read",
+  "tool_catalog_list",
+  "tool_group_set",
+  "task_create",
+  "task_status",
+  "task_list",
+  "task_cancel",
+] as const satisfies readonly ToolName[];
+
+export const toolGroupByName = {
+  yolo_mode_set: "permissions",
+  app_permission_search: "permissions",
+  app_permission_set: "permissions",
+  capability_set: "permissions",
+  file_list: "files",
+  file_search: "files",
+  file_read: "files",
+  file_open: "files",
+  file_create_folder: "files",
+  file_rename: "files",
+  file_move: "files",
+  file_copy: "files",
+  file_trash: "files",
+  document_extract: "documents",
+  document_folder_digest: "documents",
+  document_prepare_edit: "documents",
+  email_search: "text",
+  email_read: "text",
+  email_draft: "text",
+  email_send: "text",
+  calendar_search: "text",
+  calendar_create: "text",
+  copy_search: "text",
+  copy_save_draft: "text",
+  copy_publish: "text",
+  music_open: "media",
+  music_play_song: "media",
+  video_play: "media",
+  app_open: "apps",
+  app_focus: "apps",
+  app_quit: "apps",
+  desktop_open_app: "apps",
+  window_list: "windows",
+  window_close_all: "windows",
+  window_auto_arrange: "windows",
+  window_minimize_unrelated: "windows",
+  window_close: "windows",
+  window_minimize: "windows",
+  window_maximize: "windows",
+  window_move_resize: "windows",
+  system_close_app: "system",
+  system_set_volume: "system",
+  system_set_brightness: "system",
+  system_set_dark_mode: "system",
+  system_open_settings: "system",
+  desktop_clipboard_write: "system",
+  browser_open_url: "browser",
+  browser_isolated_open_url: "browser",
+  browser_fill_form: "browser",
+  browser_click: "browser",
+  advanced_shell_command: "shell",
+} as const satisfies Partial<Record<ToolName, ToolGroup>>;
+
+export const toolGroups = [
+  "permissions",
+  "files",
+  "documents",
+  "text",
+  "media",
+  "apps",
+  "windows",
+  "system",
+  "browser",
+  "shell",
+] as const satisfies readonly ToolGroup[];
+
+export const queueManagedToolDefinitions = allToolDefinitions.filter((definition) => definition.name in toolGroupByName);
+
+export const realtimeToolDefinitions = [
+  {
+    type: "function",
+    name: "system_status",
+    description: "Check local assistant capabilities, connected adapters, current safety mode, enabled tool groups, and task queue summary.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "confirmation_list",
+    description: "List pending local confirmation requests that are waiting for the user's explicit approval or rejection.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "confirmation_decide",
+    description: "Approve or reject a pending local confirmation after the user's latest voice/text message explicitly says to confirm, approve, reject, or cancel it. If only one confirmation is pending, confirmationId may be omitted.",
+    parameters: objectSchema(
+      {
+        confirmationId: { type: "string", description: "Pending confirmation id. Optional only when exactly one confirmation is pending." },
+        approved: { type: "boolean", description: "true to approve/confirm, false to reject/cancel." },
+      },
+      ["approved"],
+    ),
+  },
+  {
+    type: "function",
+    name: "tool_result_read",
+    description: "Read a bounded slice of a previous large tool result by handle. Use only after a tool result says it was truncated and provides a handle.",
+    parameters: objectSchema(
+      {
+        handle: { type: "string", description: "Handle returned by a truncated tool result." },
+        offset: { type: "integer", minimum: 0, default: 0 },
+        maxChars: { type: "integer", minimum: 200, maximum: 6000, default: 2000 },
+      },
+      ["handle"],
+    ),
+  },
+  {
+    type: "function",
+    name: "tool_catalog_list",
+    description: "List available dynamic tool groups, or list the bounded tool catalog for one group. Call without group first; call again with a group only when you need tool names in that group.",
+    parameters: objectSchema({
+      group: { type: "string", enum: toolGroups, description: "Optional dynamic tool group to inspect." },
+    }),
+  },
+  {
+    type: "function",
+    name: "tool_group_set",
+    description: "Enable or disable a dynamic tool group for future queued tasks. Disabling a group prevents task_create from enqueueing tools in that group.",
+    parameters: objectSchema(
+      {
+        group: { type: "string", enum: toolGroups },
+        enabled: { type: "boolean" },
+      },
+      ["group", "enabled"],
+    ),
+  },
+  {
+    type: "function",
+    name: "task_create",
+    description: "Create a local task queue item for any non-core tool. Realtime should use this instead of directly carrying large or side-effecting tool calls in session context.",
+    parameters: objectSchema(
+      {
+        toolName: { type: "string", description: "Name from tool_catalog_list for the selected group." },
+        arguments: { type: "object", description: "Arguments for the selected tool.", additionalProperties: true },
+        priority: { type: "string", enum: ["low", "normal", "high"], default: "normal" },
+        runAfterMs: { type: "integer", minimum: 0, maximum: 600000, default: 0 },
+      },
+      ["toolName", "arguments"],
+    ),
+  },
+  {
+    type: "function",
+    name: "task_status",
+    description: "Read one task queue item by id, including status, confirmation id when waiting for approval, and compact result when complete.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
+  },
+  {
+    type: "function",
+    name: "task_list",
+    description: "List recent task queue items with compact status. Use this to monitor queued or running work without loading large outputs.",
+    parameters: objectSchema({
+      status: { type: "string", enum: ["queued", "running", "completed", "failed", "cancelled", "needs_confirmation"] },
+      limit: { type: "integer", minimum: 1, maximum: 30, default: 10 },
+    }),
+  },
+  {
+    type: "function",
+    name: "task_cancel",
+    description: "Cancel a queued task. Running tasks cannot be force-killed, but queued work is skipped.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
   },
 ] as const;
 

@@ -1,17 +1,25 @@
 import { spawn } from "node:child_process";
-const run = (command: string, args: string[], input?: string) =>
+const run = (command: string, args: string[], input?: string, timeoutMs = 8000) =>
   new Promise<string>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`${command} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timeout);
       if (code === 0) resolve(stdout.trim());
       else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
     });

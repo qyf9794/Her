@@ -1,10 +1,18 @@
 import * as THREE from "three";
+import {
+  OpenAIRealtimeWebRTC,
+  RealtimeAgent,
+  RealtimeSession,
+  tool,
+  type FunctionTool,
+  type TransportEvent,
+} from "@openai/agents/realtime";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../shared/app-settings";
-import type { ConfirmationResult, ToolCallRequest, ToolCallResult, ToolName } from "../shared/tools";
+import { realtimeAgentInstructions } from "../shared/realtime-agent";
+import { realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
 import "./styles.css";
 
 const LOCAL_API = "http://127.0.0.1:3939";
-const REALTIME_SDP_URL = "https://api.openai.com/v1/realtime/calls";
 
 type SessionState = "idle" | "connecting" | "connected" | "error";
 type VisualState = "idle" | "listening" | "thinking" | "speaking" | "tool" | "confirming" | "error";
@@ -178,8 +186,8 @@ let installedApps: InstalledApp[] = [];
 let appPermissions: Record<string, boolean> = {};
 let state: SessionState = "idle";
 let visualState: VisualState = "idle";
-let pc: RTCPeerConnection | null = null;
-let dc: RTCDataChannel | null = null;
+let realtimeSession: RealtimeSession | null = null;
+let realtimeTransport: OpenAIRealtimeWebRTC | null = null;
 let localStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let inputAnalyser: AnalyserNode | null = null;
@@ -188,10 +196,6 @@ let userLevel = 0;
 let aiLevel = 0;
 let hasOpenaiApiKey = false;
 let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
-let realtimeResponseActive = false;
-let realtimeResponseCreateRequested = false;
-let pendingRealtimeResponseCreate = false;
-let realtimeCancelRequested = false;
 
 const getJson = async <T>(path: string): Promise<T> => {
   const response = await fetch(`${LOCAL_API}${path}`);
@@ -438,13 +442,24 @@ const addActivity = (text: string, status: "ok" | "pending" | "error" = "ok") =>
   activity.prepend(item);
 };
 
-const getRealtimeSecret = async () => {
+type RealtimeAccess = {
+  clientSecret: string;
+  model: string;
+  voice: string;
+};
+
+const getRealtimeAccess = async (): Promise<RealtimeAccess> => {
   const payload = await postJson<Record<string, unknown>>("/api/realtime/client-secret", {});
   const direct = payload.value;
   const nested = (payload.client_secret as { value?: string } | undefined)?.value;
   const secret = typeof direct === "string" ? direct : nested;
   if (!secret) throw new Error("Realtime client secret response did not include a usable value.");
-  return secret;
+  const her = payload.her as { realtimeModel?: unknown; realtimeVoice?: unknown } | undefined;
+  return {
+    clientSecret: secret,
+    model: typeof her?.realtimeModel === "string" ? her.realtimeModel : "gpt-realtime-2",
+    voice: typeof her?.realtimeVoice === "string" ? her.realtimeVoice : "marin",
+  };
 };
 
 const renderMicrophoneDevices = (devices: MediaDeviceInfo[]) => {
@@ -518,54 +533,58 @@ const connect = async () => {
   setState("connecting", "Requesting microphone and Realtime session...");
   try {
     await assertMicrophoneAvailable();
-    const clientSecret = await getRealtimeSecret();
+    const access = await getRealtimeAccess();
     localStream = await navigator.mediaDevices.getUserMedia({ audio: microphoneAudioConstraint() });
     void refreshMicrophoneDevices();
     setupInputAnalyser(localStream);
 
-    pc = new RTCPeerConnection();
-    localStream.getTracks().forEach((track) => pc?.addTrack(track, localStream!));
-
     const audio = document.createElement("audio");
     audio.autoplay = true;
-    pc.ontrack = (event) => {
-      audio.srcObject = event.streams[0];
-      setupOutputAnalyser(event.streams[0]);
-      void audio.play().catch(() => undefined);
-    };
-
-    dc = pc.createDataChannel("oai-events");
-    dc.onopen = () => {
-      realtimeResponseActive = false;
-      realtimeResponseCreateRequested = false;
-      pendingRealtimeResponseCreate = false;
-      realtimeCancelRequested = false;
-      setState("connected", "Connected. Speak naturally.");
-      addLine("system", "Voice session connected.");
-    };
-    dc.onmessage = (event) => void handleRealtimeEvent(event.data);
-    dc.onerror = () => setState("error", "Realtime data channel error.");
-    dc.onclose = () => {
-      if (state !== "idle") setState("idle", "Disconnected.");
-    };
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    const response = await fetch(REALTIME_SDP_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${clientSecret}`,
-        "Content-Type": "application/sdp",
-      },
-      body: offer.sdp,
+    audio.addEventListener("play", () => {
+      const outputStream = (audio as HTMLAudioElement & { captureStream?: () => MediaStream }).captureStream?.();
+      if (outputStream) setupOutputAnalyser(outputStream);
     });
 
-    if (!response.ok) {
-      throw new Error(`Realtime SDP exchange failed: ${await response.text()}`);
-    }
+    realtimeTransport = new OpenAIRealtimeWebRTC({
+      mediaStream: localStream,
+      audioElement: audio,
+    });
 
-    await pc.setRemoteDescription({ type: "answer", sdp: await response.text() });
+    const agent = new RealtimeAgent({
+      name: "HER",
+      instructions: realtimeAgentInstructions,
+      voice: access.voice,
+      tools: createRealtimeTools(),
+    });
+
+    realtimeSession = new RealtimeSession(agent, {
+      model: access.model,
+      transport: realtimeTransport,
+      config: {
+        outputModalities: ["audio"],
+        audio: {
+          output: {
+            voice: access.voice,
+          },
+          input: {
+            transcription: {
+              model: "gpt-4o-mini-transcribe",
+            },
+            turnDetection: {
+              type: "server_vad",
+              createResponse: true,
+              interruptResponse: true,
+            },
+          },
+        },
+        toolChoice: "auto",
+      },
+    });
+
+    wireRealtimeSessionEvents(realtimeSession);
+    await realtimeSession.connect({ apiKey: access.clientSecret });
+    setState("connected", "Connected. Speak naturally.");
+    addLine("system", "Voice session connected.");
   } catch (error) {
     disconnect();
     const message = microphoneErrorMessage(error);
@@ -575,76 +594,134 @@ const connect = async () => {
 };
 
 const disconnect = () => {
-  dc?.close();
-  pc?.close();
+  realtimeSession?.close();
+  realtimeSession = null;
+  realtimeTransport = null;
   localStream?.getTracks().forEach((track) => track.stop());
-  dc = null;
-  pc = null;
   localStream = null;
   inputAnalyser = null;
   outputAnalyser = null;
-  realtimeResponseActive = false;
-  realtimeResponseCreateRequested = false;
-  pendingRealtimeResponseCreate = false;
-  realtimeCancelRequested = false;
+  activeAssistantLine = null;
   setState("idle", "Idle");
 };
 
-const handleRealtimeEvent = async (raw: string) => {
-  let event: Record<string, unknown>;
-  try {
-    event = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    return;
-  }
+const wireRealtimeSessionEvents = (session: RealtimeSession) => {
+  session.on("transport_event", (event) => handleTransportEvent(event));
+  session.on("agent_start", () => setVisualState("thinking"));
+  session.on("audio_start", () => setVisualState("speaking"));
+  session.on("audio_stopped", () => {
+    activeAssistantLine = null;
+    setVisualState("listening");
+  });
+  session.on("audio_interrupted", () => {
+    activeAssistantLine = null;
+    setVisualState("listening");
+  });
+  session.on("agent_tool_start", (_context, _agent, sdkTool) => {
+    setVisualState("tool");
+    addActivity(`${sdkTool.name} requested`, "pending");
+  });
+  session.on("agent_tool_end", async (_context, _agent, sdkTool) => {
+    addActivity(`${sdkTool.name} completed`, "ok");
+    setVisualState("listening");
+  });
+  session.on("error", (event) => {
+    setVisualState("error");
+    addLine("system", errorMessage(event.error));
+  });
+};
 
+const handleTransportEvent = (event: TransportEvent) => {
   if (event.type === "conversation.item.input_audio_transcription.completed") {
-    addLine("user", String(event.transcript ?? ""));
+    addLine("user", event.transcript);
     setVisualState("thinking");
+    return;
   }
 
   if (event.type === "response.audio_transcript.delta") {
     setVisualState("speaking");
     appendAssistantDelta(String(event.delta ?? ""));
-  }
-
-  if (event.type === "response.created") {
-    realtimeResponseActive = true;
-    realtimeResponseCreateRequested = false;
-  }
-
-  if (event.type === "response.done") {
-    realtimeResponseActive = false;
-    realtimeResponseCreateRequested = false;
-    realtimeCancelRequested = false;
-    activeAssistantLine = null;
-    setVisualState("listening");
-    flushPendingRealtimeResponse();
-  }
-
-  if (event.type === "response.function_call_arguments.done") {
-    const name = event.name;
-    const callId = event.call_id;
-    const argsText = typeof event.arguments === "string" ? event.arguments : "{}";
-    if (typeof name === "string" && typeof callId === "string") {
-      await executeTool(name, callId, argsText);
-    }
+    return;
   }
 
   if (event.type === "error") {
     setVisualState("error");
-    addLine("system", JSON.stringify(event));
-    const error = event.error as { code?: unknown } | undefined;
-    if (error?.code === "conversation_already_has_active_response") {
-      realtimeResponseActive = true;
-      realtimeResponseCreateRequested = false;
-      pendingRealtimeResponseCreate = true;
-    } else if (realtimeCancelRequested) {
-      realtimeResponseActive = false;
-      realtimeResponseCreateRequested = false;
-      realtimeCancelRequested = false;
-      flushPendingRealtimeResponse();
+    addLine("system", errorMessage(event.error));
+  }
+};
+
+const createRealtimeTools = (): FunctionTool[] =>
+  realtimeToolDefinitions.map((definition) =>
+    tool({
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.parameters as never,
+      strict: false,
+      execute: async (input, _context, details) => {
+        const callId = typeof details?.toolCall?.callId === "string" ? details.toolCall.callId : undefined;
+        return executeLocalToolForSdk(definition.name, input, callId);
+      },
+    }),
+  );
+
+const coerceToolArguments = (input: unknown): Record<string, unknown> => {
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input) as unknown;
+      return coerceToolArguments(parsed);
+    } catch {
+      return {};
     }
+  }
+
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return input as Record<string, unknown>;
+  }
+
+  return {};
+};
+
+const executeLocalToolForSdk = async (name: string, input: unknown, callId?: string) => {
+  if (!isToolName(name)) {
+    const result = { ok: false, name, error: `Unknown local tool: ${name}` };
+    addActivity(`Unknown tool requested: ${name}`, "error");
+    return result;
+  }
+
+  setVisualState("tool");
+  const result = await postJson<ToolCallResult>("/api/tools/execute", {
+    name,
+    arguments: coerceToolArguments(input),
+    callId,
+  } satisfies ToolCallRequest);
+
+  if (result.ok && result.requiresConfirmation) {
+    setVisualState("confirming");
+    addActivity(result.summary, "pending");
+    renderConfirmation(result);
+  } else if (result.ok) {
+    setVisualState("listening");
+    if (name === "app_permission_set" || name === "capability_set" || name === "yolo_mode_set") {
+      await reloadSettingsAndApps();
+    }
+    if (name === "confirmation_decide") {
+      await reloadPendingConfirmations();
+    }
+  } else {
+    setVisualState("error");
+    addActivity(`${name} failed: ${result.error}`, "error");
+  }
+
+  return result;
+};
+
+const errorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
   }
 };
 
@@ -660,53 +737,17 @@ const appendAssistantDelta = (text: string) => {
   transcript.scrollTop = transcript.scrollHeight;
 };
 
-const executeTool = async (name: string, callId: string, argsText: string) => {
-  if (!isToolName(name)) {
-    sendFunctionOutput(callId, { ok: false, name, error: `Unknown local tool: ${name}` });
-    addActivity(`Unknown tool requested: ${name}`, "error");
-    return;
-  }
-
-  let args: Record<string, unknown>;
-  try {
-    args = JSON.parse(argsText) as Record<string, unknown>;
-  } catch {
-    args = {};
-  }
-
-  setVisualState("tool");
-  addActivity(`${name} requested`, "pending");
-  const result = await postJson<ToolCallResult>("/api/tools/execute", {
-    name,
-    arguments: args,
-    callId,
-  } satisfies ToolCallRequest);
-
-  sendFunctionOutput(callId, result);
-
-  if (result.ok && result.requiresConfirmation) {
-    setVisualState("confirming");
-    addActivity(result.summary, "pending");
-    renderConfirmation(result);
-  } else if (result.ok) {
-    setVisualState("listening");
-    addActivity(`${name} completed`, "ok");
-    if (name === "app_permission_set" || name === "capability_set" || name === "yolo_mode_set") {
-      await reloadSettingsAndApps();
-    }
-    if (name === "confirmation_decide") {
-      await reloadPendingConfirmations();
-    }
-  } else {
-    setVisualState("error");
-    addActivity(`${name} failed: ${result.error}`, "error");
-  }
-};
-
 const toolNames = new Set<string>([
   "system_status",
   "confirmation_list",
   "confirmation_decide",
+  "tool_result_read",
+  "tool_catalog_list",
+  "tool_group_set",
+  "task_create",
+  "task_status",
+  "task_list",
+  "task_cancel",
   "yolo_mode_set",
   "app_permission_search",
   "app_permission_set",
@@ -762,69 +803,11 @@ const toolNames = new Set<string>([
 
 const isToolName = (name: string): name is ToolName => toolNames.has(name);
 
-const cancelActiveRealtimeResponse = () => {
-  if (!dc || dc.readyState !== "open") return false;
-  if (!realtimeResponseActive && !realtimeResponseCreateRequested) return false;
-
-  realtimeCancelRequested = true;
-  realtimeResponseCreateRequested = false;
-  dc.send(JSON.stringify({ type: "response.cancel" }));
-  dc.send(JSON.stringify({ type: "output_audio_buffer.clear" }));
-  return true;
-};
-
-const requestRealtimeResponse = (options: { interrupt?: boolean } = {}) => {
-  if (!dc || dc.readyState !== "open") return;
-  if (options.interrupt && cancelActiveRealtimeResponse()) {
-    pendingRealtimeResponseCreate = true;
-    return;
-  }
-
-  if (realtimeResponseActive || realtimeResponseCreateRequested) {
-    pendingRealtimeResponseCreate = true;
-    return;
-  }
-
-  realtimeResponseCreateRequested = true;
-  dc.send(JSON.stringify({ type: "response.create" }));
-};
-
-const flushPendingRealtimeResponse = () => {
-  if (!pendingRealtimeResponseCreate || realtimeResponseActive || realtimeResponseCreateRequested) return;
-  pendingRealtimeResponseCreate = false;
-  requestRealtimeResponse();
-};
-
-const sendFunctionOutput = (callId: string, output: unknown) => {
-  if (!dc || dc.readyState !== "open") return;
-  dc.send(
-    JSON.stringify({
-      type: "conversation.item.create",
-      item: {
-        type: "function_call_output",
-        call_id: callId,
-        output: JSON.stringify(output),
-      },
-    }),
-  );
-  requestRealtimeResponse({ interrupt: true });
-};
-
 const sendUserText = (text: string) => {
-  if (!dc || dc.readyState !== "open" || !text.trim()) return;
+  if (!realtimeSession || state !== "connected" || !text.trim()) return;
   addLine("user", text);
   setVisualState("thinking");
-  dc.send(
-    JSON.stringify({
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "user",
-        content: [{ type: "input_text", text }],
-      },
-    }),
-  );
-  requestRealtimeResponse();
+  realtimeSession.sendMessage(text);
 };
 
 const renderConfirmation = (result: Extract<ToolCallResult, { requiresConfirmation: true }>) => {

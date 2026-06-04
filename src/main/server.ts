@@ -1,5 +1,6 @@
 import express from "express";
 import type { Server } from "node:http";
+import crypto from "node:crypto";
 import { createRealtimeClientSecret } from "./realtime";
 import { readOpenaiApiKey, saveOpenaiApiKey } from "./config";
 import { AuditLog } from "./audit";
@@ -33,14 +34,29 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     setYoloMode: (enabled, appPermissions) => settings.setYoloMode(enabled, appPermissions),
   });
 
+  const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
+  const trustedOrigins = new Set(["http://127.0.0.1:5174", "http://localhost:5174", "file://", "null"]);
+
   app.use(express.json({ limit: "1mb" }));
   app.use((_req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    const origin = _req.headers.origin;
+    if (!origin || trustedOrigins.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin ?? "null");
+    }
     res.setHeader("Access-Control-Allow-Headers", "content-type");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
     next();
   });
   app.options("*", (_req, res) => res.sendStatus(204));
+
+  app.use("/api", (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && !trustedOrigins.has(origin)) {
+      res.status(403).json({ error: "Untrusted local API origin." });
+      return;
+    }
+    next();
+  });
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "her-local-agent" });
@@ -126,7 +142,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
 
   app.post("/api/realtime/client-secret", async (_req, res) => {
     try {
-      res.json(await createRealtimeClientSecret());
+      res.json(await createRealtimeClientSecret(safetyIdentifier));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ error: message });

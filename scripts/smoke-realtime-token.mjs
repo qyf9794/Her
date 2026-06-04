@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import crypto from "node:crypto";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
@@ -6,6 +7,7 @@ dotenv.config({ path: ".env" });
 const apiKey = process.env.OPENAI_API_KEY;
 const model = process.env.HER_REALTIME_MODEL ?? "gpt-realtime-2";
 const voice = process.env.HER_REALTIME_VOICE ?? "marin";
+const safetyIdentifier = crypto.createHash("sha256").update(`her-smoke:${process.cwd()}`).digest("hex");
 
 if (!apiKey) {
   console.error("OPENAI_API_KEY is not configured.");
@@ -17,6 +19,7 @@ const response = await fetch("https://api.openai.com/v1/realtime/client_secrets"
   headers: {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
+    "OpenAI-Safety-Identifier": safetyIdentifier,
   },
   body: JSON.stringify({
     expires_after: { anchor: "created_at", seconds: 60 },
@@ -25,7 +28,17 @@ const response = await fetch("https://api.openai.com/v1/realtime/client_secrets"
       model,
       instructions: "Say hello in Chinese.",
       output_modalities: ["audio"],
-      audio: { output: { voice } },
+      audio: {
+        output: { voice },
+        input: {
+          transcription: { model: "gpt-4o-mini-transcribe" },
+          turn_detection: {
+            type: "server_vad",
+            create_response: true,
+            interrupt_response: true,
+          },
+        },
+      },
     },
   }),
 });

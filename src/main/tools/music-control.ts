@@ -1,19 +1,27 @@
 import { spawn } from "node:child_process";
 import { config } from "../config";
 
-const run = (command: string, args: string[]) =>
+const run = (command: string, args: string[], timeoutMs = 8000) =>
   new Promise<string>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`${command} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timeout);
       if (code === 0) resolve(stdout.trim());
       else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
     });
@@ -32,6 +40,9 @@ type MusicPlaybackSnapshot = {
   title?: string;
   artist?: string;
 };
+
+const catalogCache = new Map<string, { createdAt: number; value: AppleMusicSearchResult | null }>();
+const CATALOG_CACHE_TTL_MS = 60_000;
 
 export class MusicControl {
   async open() {
@@ -101,6 +112,10 @@ export class MusicControl {
 }
 
 const findAppleMusicTrack = async (searchText: string): Promise<AppleMusicSearchResult | null> => {
+  const cacheKey = `${config.appleMusicCountry}:${searchText.toLowerCase()}`;
+  const cached = catalogCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < CATALOG_CACHE_TTL_MS) return cached.value;
+
   const url = new URL("https://itunes.apple.com/search");
   url.searchParams.set("media", "music");
   url.searchParams.set("entity", "song");
@@ -111,8 +126,11 @@ const findAppleMusicTrack = async (searchText: string): Promise<AppleMusicSearch
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const payload = (await response.json().catch(() => ({}))) as { results?: AppleMusicSearchResult[] };
-    return response.ok ? (payload.results?.[0] ?? null) : null;
+    const value = response.ok ? (payload.results?.[0] ?? null) : null;
+    catalogCache.set(cacheKey, { createdAt: Date.now(), value });
+    return value;
   } catch {
+    catalogCache.set(cacheKey, { createdAt: Date.now(), value: null });
     return null;
   }
 };
@@ -139,7 +157,7 @@ const playAppleMusicUrl = async (trackUrl: string, expected: AppleMusicSearchRes
       end try
     end tell
   `;
-  const output = await run("osascript", ["-e", script]);
+  const output = await run("osascript", ["-e", script], 6000);
   const snapshot = parsePlaybackSnapshot(output);
   if (isExpectedTrackPlaying(snapshot, expected)) return { startedPlayback: true, snapshot };
 

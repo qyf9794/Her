@@ -15,19 +15,33 @@ type AppleTvSearchResult = ItunesVideoResult & {
   source?: "itunes_search" | "apple_tv_search";
 };
 
-const run = (command: string, args: string[]) =>
+type YouTubeSearchResult = { url: string; title?: string };
+
+const VIDEO_CACHE_TTL_MS = 60_000;
+const youtubeCache = new Map<string, { createdAt: number; value: YouTubeSearchResult | null }>();
+const appleTvCache = new Map<string, { createdAt: number; value: AppleTvSearchResult | null }>();
+
+const run = (command: string, args: string[], timeoutMs = 8000) =>
   new Promise<string>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`${command} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timeout);
       if (code === 0) resolve(stdout.trim());
       else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
     });
@@ -52,6 +66,8 @@ export class VideoControl {
         service: "youtube",
         query,
         url: searchUrl,
+        resolved: false,
+        retryRecommended: false,
         note: "Could not resolve a specific YouTube video from search results, so opened YouTube search.",
       };
     }
@@ -78,6 +94,8 @@ export class VideoControl {
         service: "apple_tv",
         query,
         url: searchUrl,
+        resolved: false,
+        retryRecommended: false,
         note: "Could not resolve a specific Apple TV catalog item, so opened TV search.",
       };
     }
@@ -113,6 +131,8 @@ const normalizeYouTubeUrl = (input: string): { url: string; title?: string } | n
 };
 
 const findYouTubeVideo = async (query: string) => {
+  const cached = youtubeCache.get(query.toLowerCase());
+  if (cached && Date.now() - cached.createdAt < VIDEO_CACHE_TTL_MS) return cached.value;
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
   try {
     const response = await fetch(url, {
@@ -124,12 +144,21 @@ const findYouTubeVideo = async (query: string) => {
       signal: AbortSignal.timeout(8000),
     });
     const html = await response.text();
-    if (!response.ok) return null;
+    if (!response.ok) {
+      youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value: null });
+      return null;
+    }
 
     const id = firstYouTubeVideoId(html);
-    if (!id) return null;
-    return { url: youtubeWatchUrl(id), title: titleForYouTubeId(html, id) };
+    if (!id) {
+      youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value: null });
+      return null;
+    }
+    const value = { url: youtubeWatchUrl(id), title: titleForYouTubeId(html, id) };
+    youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value });
+    return value;
   } catch {
+    youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value: null });
     return null;
   }
 };
@@ -181,10 +210,16 @@ const isHttpUrl = (value: string) => {
 };
 
 const findAppleTvVideo = async (query: string): Promise<AppleTvSearchResult | null> => {
+  const cached = appleTvCache.get(query.toLowerCase());
+  if (cached && Date.now() - cached.createdAt < VIDEO_CACHE_TTL_MS) return cached.value;
   const [movie, episode] = await Promise.all([searchItunes(query, "movie", "movie"), searchItunes(query, "tvShow", "tvEpisode")]);
-  if (movie) return { ...movie, source: "itunes_search" };
-  if (episode) return { ...episode, source: "itunes_search" };
-  return findAppleTvSearchResult(query);
+  const value = movie
+    ? { ...movie, source: "itunes_search" as const }
+    : episode
+      ? { ...episode, source: "itunes_search" as const }
+      : await findAppleTvSearchResult(query);
+  appleTvCache.set(query.toLowerCase(), { createdAt: Date.now(), value });
+  return value;
 };
 
 const searchItunes = async (term: string, media: string, entity: string): Promise<ItunesVideoResult | null> => {

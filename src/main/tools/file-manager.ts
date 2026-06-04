@@ -32,7 +32,7 @@ export class FileManager {
     const stat = await fs.stat(folder);
     if (!stat.isDirectory()) throw new Error(`Not a folder: ${inputPath}`);
     const entries = await fs.readdir(folder, { withFileTypes: true });
-    const visible = entries.filter((entry) => includeHidden || !entry.name.startsWith(".")).slice(0, 200);
+    const visible = entries.filter((entry) => includeHidden || !entry.name.startsWith(".")).slice(0, 100);
     return Promise.all(
       visible.map(async (entry) => {
         const fullPath = path.join(folder, entry.name);
@@ -93,11 +93,20 @@ export class FileManager {
     }
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) throw new Error(`Not a file: ${inputPath}`);
-    const content = await fs.readFile(filePath, "utf8");
+    const handle = await fs.open(filePath, "r");
+    let content = "";
+    try {
+      const buffer = Buffer.alloc(Math.min(maxChars * 4, 64 * 1024));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      content = buffer.subarray(0, bytesRead).toString("utf8");
+    } finally {
+      await handle.close();
+    }
     return {
       path: filePath,
-      chars: content.length,
-      truncated: content.length > maxChars,
+      chars: Math.min(stat.size, content.length),
+      fileBytes: stat.size,
+      truncated: content.length > maxChars || stat.size > Buffer.byteLength(content),
       content: content.slice(0, maxChars),
     };
   }
