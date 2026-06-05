@@ -113,7 +113,7 @@ export class VideoControl {
     const resolved = direct ? { trackViewUrl: direct } : await findAppleTvVideo(query);
     if (!resolved?.trackViewUrl) {
       const searchUrl = `https://tv.apple.com/search?term=${encodeURIComponent(query)}`;
-      await run("open", ["-a", "TV", searchUrl]);
+      await openAppleTvUrl(searchUrl);
       return {
         status: "opened_search",
         service: "apple_tv",
@@ -121,7 +121,7 @@ export class VideoControl {
         url: searchUrl,
         resolved: false,
         retryRecommended: false,
-        note: "Could not resolve a specific Apple TV catalog item, so opened TV search.",
+        note: "Could not resolve a specific Apple TV catalog item, so opened TV search directly in the macOS TV app.",
       };
     }
 
@@ -138,7 +138,7 @@ export class VideoControl {
       playerState: result.snapshot.state,
       currentItem: result.snapshot.title ? { title: result.snapshot.title } : undefined,
       reasonCode: result.reasonCode,
-      note: "Opened the Apple TV item and sent TV a play command, but Apple TV playback cannot be reliably verified through AppleScript. TV may require sign-in, subscription, purchase, or macOS Automation permission.",
+      note: "Opened the Apple TV item directly in the macOS TV app with open -a TV. Playback is not claimed because Apple TV may require sign-in, subscription, purchase, or manual play.",
     };
   }
 }
@@ -318,34 +318,14 @@ const titleFromAppleTvUrl = (url: string) => {
 };
 
 const openAppleTvUrl = async (url: string) => {
-  const script = `
-    tell application "TV"
-      activate
-      try
-        open location ${appleScriptString(url)}
-        delay 2
-        play
-        delay 1
-        set playerState to ""
-        set itemTitle to ""
-        try
-          set playerState to player state as text
-        end try
-        try
-          set itemTitle to name of current track
-        end try
-        return playerState & "|" & itemTitle
-      on error errMsg number errNo
-        return "error|" & errNo & "|" & errMsg
-      end try
-    end tell
-  `;
-  const output = await run("osascript", ["-e", script]);
-  const snapshot = parseAppleTvPlaybackSnapshot(output);
   await run("open", ["-a", "TV", url]);
+  const snapshot = await readAppleTvPlaybackState().catch(() => ({ state: undefined, currentItem: undefined }));
   return {
-    snapshot,
-    reasonCode: snapshot.state === "playing" ? "apple_tv_state_playing_unverified" : "apple_tv_playback_unverified",
+    snapshot: {
+      state: snapshot.state,
+      title: snapshot.currentItem?.title,
+    },
+    reasonCode: "apple_tv_opened_direct",
   };
 };
 

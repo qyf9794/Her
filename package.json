@@ -10,6 +10,7 @@
     "start": "electron electron/dist/main/main.js",
     "monitor": "node scripts/monitor-audit.mjs --follow",
     "monitor:summary": "node scripts/monitor-audit.mjs --summary",
+    "smoke:tools": "tsc -p electron/tsconfig.json && node scripts/smoke-tool-routing.mjs",
     "smoke:realtime": "node scripts/smoke-realtime-token.mjs"
   },
   "dependencies": {

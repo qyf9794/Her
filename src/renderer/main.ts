@@ -18,7 +18,7 @@ import {
   type RealtimeRuntimeOptions,
 } from "../shared/realtime-config";
 import type { AuditEvent } from "../shared/events";
-import { realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
+import { allToolDefinitions, realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
 import "./styles.css";
 
 const LOCAL_API = "http://127.0.0.1:3939";
@@ -96,6 +96,25 @@ app.innerHTML = `
           </div>
           <p id="openaiKeyStatus" class="muted">Saved locally in .env.local for voice sessions.</p>
         </section>
+        <section class="codexLoginPanel">
+          <div class="sectionHeader">
+            <h2>Codex Login</h2>
+            <span id="codexLoginBadge" class="keyBadge">Checking</span>
+          </div>
+          <p id="codexLoginStatus" class="muted">Checking local Codex CLI login status.</p>
+          <label class="codexModelField">
+            <span>Model</span>
+            <select id="codexModelSelect" aria-label="Codex model">
+              <option value="">App-server default</option>
+            </select>
+          </label>
+          <p id="codexModelStatus" class="muted">Codex tasks use this model unless a task overrides it.</p>
+          <div class="codexLoginActions">
+            <button id="refreshCodexLoginBtn" type="button">Refresh</button>
+            <button id="startCodexLoginBtn" type="button">Start login</button>
+          </div>
+          <pre id="codexLoginOutput" class="codexLoginOutput hidden"></pre>
+        </section>
         <section class="devicePanel">
           <div class="sectionHeader">
             <h2>Microphone</h2>
@@ -128,6 +147,10 @@ app.innerHTML = `
           <div id="runtimeCapabilities" class="toggleGrid compact"></div>
         </section>
         <section>
+          <h2>Authorized Apps</h2>
+          <div id="authorizedApps" class="authorizedApps"></div>
+        </section>
+        <section>
           <h2>Realtime Usage</h2>
           <div id="realtimeUsage" class="usagePanel"></div>
         </section>
@@ -138,10 +161,6 @@ app.innerHTML = `
         <section>
           <h2>Tool Activity</h2>
           <div id="activity" class="stack empty">No tool calls yet</div>
-        </section>
-        <section>
-          <h2>Authorized Apps</h2>
-          <div id="authorizedApps" class="authorizedApps"></div>
         </section>
       </aside>
     </section>
@@ -176,6 +195,13 @@ const openaiKeyInput = document.querySelector<HTMLInputElement>("#openaiKeyInput
 const saveOpenaiKeyBtn = document.querySelector<HTMLButtonElement>("#saveOpenaiKeyBtn")!;
 const openaiKeyStatus = document.querySelector<HTMLParagraphElement>("#openaiKeyStatus")!;
 const openaiKeyBadge = document.querySelector<HTMLSpanElement>("#openaiKeyBadge")!;
+const codexLoginBadge = document.querySelector<HTMLSpanElement>("#codexLoginBadge")!;
+const codexLoginStatus = document.querySelector<HTMLParagraphElement>("#codexLoginStatus")!;
+const refreshCodexLoginBtn = document.querySelector<HTMLButtonElement>("#refreshCodexLoginBtn")!;
+const startCodexLoginBtn = document.querySelector<HTMLButtonElement>("#startCodexLoginBtn")!;
+const codexLoginOutput = document.querySelector<HTMLPreElement>("#codexLoginOutput")!;
+const codexModelSelect = document.querySelector<HTMLSelectElement>("#codexModelSelect")!;
+const codexModelStatus = document.querySelector<HTMLParagraphElement>("#codexModelStatus")!;
 const microphoneSelect = document.querySelector<HTMLSelectElement>("#microphoneSelect")!;
 const refreshMicrophonesBtn = document.querySelector<HTMLButtonElement>("#refreshMicrophonesBtn")!;
 const microphoneStatus = document.querySelector<HTMLParagraphElement>("#microphoneStatus")!;
@@ -277,6 +303,8 @@ const initialize = async () => {
   try {
     settings = await getJson<UserSettings>("/api/settings");
     await loadOpenaiKeyStatus();
+    await loadCodexLoginStatus();
+    await loadCodexModel();
     await refreshMicrophoneDevices();
     installedApps = await getJson<InstalledApp[]>("/api/apps");
     appPermissions = Object.fromEntries(installedApps.map((item) => [item.bundleId, item.authorized]));
@@ -288,6 +316,8 @@ const initialize = async () => {
     onboardingStatus.textContent = message;
     statusText.textContent = message;
     renderOpenaiKeyStatus(false, "Start or restart the app backend to enable key saving.");
+    renderCodexLoginStatus({ configured: false, label: "Error", detail: "Start or restart the app backend to check Codex login." });
+    codexModelStatus.textContent = "Start or restart the app backend to load Codex models.";
     showOnboarding(false);
     addLine("system", `Local backend unavailable: ${message}`);
     setVisualState("error");
@@ -404,6 +434,29 @@ type OpenaiKeyStatus = {
   configured: boolean;
 };
 
+type CodexLoginStatus = {
+  configured: boolean;
+  label: string;
+  detail: string;
+  command: string;
+  checkedAt: string;
+};
+
+type CodexDeviceAuthStatus = {
+  running: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  exitCode?: number | null;
+  output: string;
+  command: string;
+};
+
+type CodexModelStatus = {
+  model: string;
+  options: Array<{ label: string; value: string }>;
+  note?: string;
+};
+
 const renderOpenaiKeyStatus = (configured: boolean, message?: string) => {
   hasOpenaiApiKey = configured;
   openaiKeyBadge.textContent = configured ? "Configured" : "Missing";
@@ -413,6 +466,122 @@ const renderOpenaiKeyStatus = (configured: boolean, message?: string) => {
   if (state === "idle") {
     statusText.textContent = configured ? "Idle" : "Add OpenAI API key before starting voice";
     connectBtn.disabled = !configured;
+  }
+};
+
+const renderCodexLoginStatus = (status: Pick<CodexLoginStatus, "configured" | "label" | "detail">) => {
+  codexLoginBadge.textContent = status.label;
+  codexLoginBadge.classList.toggle("configured", status.configured);
+  codexLoginBadge.classList.toggle("error", status.label.toLowerCase() === "error");
+  codexLoginStatus.textContent = status.detail;
+  startCodexLoginBtn.disabled = status.configured;
+};
+
+const loadCodexLoginStatus = async () => {
+  refreshCodexLoginBtn.disabled = true;
+  try {
+    const result = await getJson<CodexLoginStatus>("/api/codex-login/status");
+    renderCodexLoginStatus(result);
+    if (result.configured) {
+      codexLoginOutput.classList.add("hidden");
+      codexLoginOutput.textContent = "";
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    renderCodexLoginStatus({ configured: false, label: "Error", detail: message });
+  } finally {
+    refreshCodexLoginBtn.disabled = false;
+  }
+};
+
+let codexLoginPoll: number | undefined;
+
+const renderCodexModel = (status: CodexModelStatus) => {
+  const options = [...status.options];
+  if (status.model && !options.some((item) => item.value === status.model)) {
+    options.push({ label: status.model, value: status.model });
+  }
+
+  codexModelSelect.innerHTML = "";
+  for (const option of options) {
+    const item = document.createElement("option");
+    item.value = option.value;
+    item.textContent = option.label;
+    codexModelSelect.append(item);
+  }
+  codexModelSelect.value = status.model;
+  codexModelStatus.textContent = status.model
+    ? `Codex tasks default to ${status.model}.`
+    : (status.note ?? "Codex tasks use the app-server default model.");
+};
+
+const loadCodexModel = async () => {
+  try {
+    renderCodexModel(await getJson<CodexModelStatus>("/api/codex/model"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    codexModelStatus.textContent = `Model status failed: ${message}`;
+  }
+};
+
+const saveCodexModel = async () => {
+  const model = codexModelSelect.value;
+  codexModelSelect.disabled = true;
+  codexModelStatus.textContent = model ? `Saving ${model}...` : "Switching to app-server default...";
+  try {
+    renderCodexModel(await postJson<CodexModelStatus>("/api/codex/model", { model }));
+    addActivity(model ? `Codex model set to ${model}` : "Codex model reset to app-server default", "ok");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    codexModelStatus.textContent = message;
+    addActivity(`Codex model update failed: ${message}`, "error");
+  } finally {
+    codexModelSelect.disabled = false;
+  }
+};
+
+const renderCodexDeviceAuth = (result: CodexDeviceAuthStatus) => {
+  const output = result.output || `${result.command}\nWaiting for Codex to print device login instructions...`;
+  codexLoginOutput.classList.remove("hidden");
+  codexLoginOutput.textContent = output;
+  if (result.running) {
+    renderCodexLoginStatus({ configured: false, label: "Login", detail: "Codex device login is running. Complete the browser/device prompt, then refresh status." });
+    startCodexLoginBtn.disabled = true;
+    return;
+  }
+
+  startCodexLoginBtn.disabled = false;
+  if (typeof result.exitCode === "number" && result.exitCode !== 0) {
+    renderCodexLoginStatus({ configured: false, label: "Error", detail: `Codex login exited with code ${result.exitCode}.` });
+  }
+};
+
+const pollCodexDeviceAuth = async () => {
+  const result = await getJson<CodexDeviceAuthStatus>("/api/codex-login/device-auth");
+  renderCodexDeviceAuth(result);
+  if (result.running) {
+    codexLoginPoll = window.setTimeout(() => void pollCodexDeviceAuth(), 2000);
+    return;
+  }
+  codexLoginPoll = undefined;
+  await loadCodexLoginStatus();
+};
+
+const startCodexLogin = async () => {
+  if (codexLoginPoll) window.clearTimeout(codexLoginPoll);
+  startCodexLoginBtn.disabled = true;
+  codexLoginStatus.textContent = "Starting Codex device login...";
+  try {
+    const result = await postJson<CodexDeviceAuthStatus>("/api/codex-login/device-auth", {});
+    renderCodexDeviceAuth(result);
+    addActivity("Codex device login started", "pending");
+    if (result.running) codexLoginPoll = window.setTimeout(() => void pollCodexDeviceAuth(), 2000);
+    else await loadCodexLoginStatus();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    renderCodexLoginStatus({ configured: false, label: "Error", detail: message });
+    startCodexLoginBtn.disabled = false;
+    addActivity(`Codex login failed: ${message}`, "error");
   }
 };
 
@@ -949,69 +1118,7 @@ const appendAssistantDelta = (text: string) => {
   transcript.scrollTop = transcript.scrollHeight;
 };
 
-const toolNames = new Set<string>([
-  "system_status",
-  "confirmation_list",
-  "confirmation_decide",
-  "tool_result_read",
-  "tool_catalog_list",
-  "tool_group_set",
-  "task_create",
-  "task_status",
-  "task_list",
-  "task_cancel",
-  "yolo_mode_set",
-  "app_permission_search",
-  "app_permission_set",
-  "capability_set",
-  "file_list",
-  "file_search",
-  "file_read",
-  "file_open",
-  "file_create_folder",
-  "file_rename",
-  "file_move",
-  "file_copy",
-  "file_trash",
-  "document_extract",
-  "document_folder_digest",
-  "document_prepare_edit",
-  "email_search",
-  "email_read",
-  "email_draft",
-  "email_send",
-  "calendar_search",
-  "calendar_create",
-  "copy_search",
-  "copy_save_draft",
-  "copy_publish",
-  "music_open",
-  "music_play_song",
-  "video_play",
-  "app_open",
-  "app_focus",
-  "app_quit",
-  "window_list",
-  "window_close_all",
-  "window_auto_arrange",
-  "window_minimize_unrelated",
-  "window_close",
-  "window_minimize",
-  "window_maximize",
-  "window_move_resize",
-  "desktop_open_app",
-  "system_close_app",
-  "system_set_volume",
-  "system_set_brightness",
-  "system_set_dark_mode",
-  "system_open_settings",
-  "desktop_clipboard_write",
-  "browser_open_url",
-  "browser_isolated_open_url",
-  "browser_fill_form",
-  "browser_click",
-  "advanced_shell_command",
-]);
+const toolNames = new Set<string>(allToolDefinitions.map((definition) => definition.name));
 
 const isToolName = (name: string): name is ToolName => toolNames.has(name);
 
@@ -1274,6 +1381,9 @@ refreshAppsBtn.addEventListener("click", () => void refreshApps());
 openPermissionsBtn.addEventListener("click", () => showOnboarding(true));
 yoloModeBtn.addEventListener("click", () => void saveYoloMode(!settings?.yoloMode));
 saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
+refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus());
+startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
+codexModelSelect.addEventListener("change", () => void saveCodexModel());
 openaiKeyInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") void saveOpenaiKey();
 });

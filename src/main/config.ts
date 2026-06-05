@@ -64,6 +64,7 @@ export const config = {
   toolQueueMinStartIntervalMs: boundedNumber(process.env.HER_TOOL_QUEUE_MIN_START_INTERVAL_MS, 1200, 0, 60000),
   toolQueueBackoffBaseMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_BASE_MS, 2000, 250, 60000),
   toolQueueBackoffMaxMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_MAX_MS, 30000, 1000, 300000),
+  toolQueueTaskTimeoutMs: boundedNumber(process.env.HER_TOOL_QUEUE_TASK_TIMEOUT_MS, 30000, 1000, 300000),
   codexEnabled: booleanEnv(process.env.HER_CODEX_ENABLED, true),
   codexCommand: process.env.HER_CODEX_COMMAND ?? "codex",
   codexArgs: splitArgs(process.env.HER_CODEX_ARGS, ["app-server", "--listen", "stdio://"]),
@@ -100,30 +101,53 @@ const readEnvValue = (filePath: string, envName: string) => {
 export const readOpenaiApiKey = () =>
   process.env.OPENAI_API_KEY || readEnvValue(envLocalPath, "OPENAI_API_KEY") || readEnvValue(envPath, "OPENAI_API_KEY");
 
+export const readCodexModel = () =>
+  process.env.HER_CODEX_MODEL || readEnvValue(envLocalPath, "HER_CODEX_MODEL") || readEnvValue(envPath, "HER_CODEX_MODEL");
+
 export const saveOpenaiApiKey = (apiKey: string) => {
   const trimmed = apiKey.trim();
   if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(trimmed)) {
     throw new Error("Enter a valid OpenAI API key.");
   }
 
-  const nextLine = `OPENAI_API_KEY=${trimmed}`;
-  const existing = fs.existsSync(envLocalPath) ? fs.readFileSync(envLocalPath, "utf8") : "";
-  const lines = existing.split(/\r?\n/);
-  const existingIndex = lines.findIndex((line) => /^\s*OPENAI_API_KEY\s*=/.test(line));
+  writeEnvValue(envLocalPath, "OPENAI_API_KEY", trimmed);
+  process.env.OPENAI_API_KEY = trimmed;
+  config.openaiApiKey = trimmed;
+};
 
-  if (existingIndex >= 0) {
+export const saveCodexModel = (model: string) => {
+  const trimmed = model.trim();
+  if (trimmed && !/^[A-Za-z0-9._:/-]{1,120}$/.test(trimmed)) {
+    throw new Error("Enter a valid model id.");
+  }
+
+  writeEnvValue(envLocalPath, "HER_CODEX_MODEL", trimmed || undefined);
+  if (trimmed) process.env.HER_CODEX_MODEL = trimmed;
+  else delete process.env.HER_CODEX_MODEL;
+  config.codexModel = trimmed;
+  return trimmed;
+};
+
+const writeEnvValue = (filePath: string, envName: string, value: string | undefined) => {
+  const existing = fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
+  const lines = existing.split(/\r?\n/);
+  const envPattern = new RegExp(`^\\s*${envName}\\s*=`);
+  const existingIndex = lines.findIndex((line) => envPattern.test(line));
+  const nextLine = typeof value === "string" ? `${envName}=${value}` : undefined;
+
+  if (existingIndex >= 0 && nextLine) {
     lines[existingIndex] = nextLine;
-  } else {
+  } else if (existingIndex >= 0) {
+    lines.splice(existingIndex, 1);
+  } else if (nextLine) {
     if (existing && lines.at(-1) !== "") lines.push("");
     lines.push(nextLine);
   }
 
-  fs.writeFileSync(envLocalPath, `${lines.filter((line, index) => index < lines.length - 1 || line !== "").join("\n")}\n`, {
+  fs.writeFileSync(filePath, `${lines.filter((line, index) => index < lines.length - 1 || line !== "").join("\n")}\n`, {
     encoding: "utf8",
     mode: 0o600,
   });
-  process.env.OPENAI_API_KEY = trimmed;
-  config.openaiApiKey = trimmed;
 };
 
 export const assertRuntimeConfig = () => {

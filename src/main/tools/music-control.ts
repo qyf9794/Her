@@ -63,30 +63,19 @@ export class MusicControl {
 
   async playSong(query: string, artist?: string) {
     const searchText = [query, artist].filter(Boolean).join(" ");
-    const script = `
-      tell application "Music"
-        activate
-        try
-          set foundTracks to search library playlist 1 for ${appleScriptString(searchText)} only songs
-          if (count of foundTracks) > 0 then
-            set selectedTrack to item 1 of foundTracks
-            play selectedTrack
-            set trackName to name of selectedTrack
-            set trackArtist to artist of selectedTrack
-            return "played|" & trackName & "|" & trackArtist
-          else
-            return "not_found"
-          end if
-        on error errMsg number errNo
-          return "error|" & errNo & "|" & errMsg
-        end try
-      end tell
-    `;
-
-    const output = await run("osascript", ["-e", script]);
-    if (output.startsWith("played|")) {
-      const [, title, trackArtist] = output.split("|");
-      return { status: "playing", title, artist: trackArtist || undefined, source: "local_music_library" };
+    let output = "not_found";
+    for (const localSearchText of localMusicSearchTerms(searchText)) {
+      output = await run("osascript", ["-e", localMusicSearchScript(localSearchText)]);
+      if (output.startsWith("played|")) {
+        const [, title, trackArtist] = output.split("|");
+        return {
+          status: "playing",
+          title,
+          artist: trackArtist || undefined,
+          source: "local_music_library",
+          query: localSearchText,
+        };
+      }
     }
 
     const catalogTrack = await findAppleMusicTrack(searchText);
@@ -122,6 +111,34 @@ export class MusicControl {
     };
   }
 }
+
+const localMusicSearchScript = (searchText: string) => `
+  tell application "Music"
+    activate
+    try
+      set foundTracks to search library playlist 1 for ${appleScriptString(searchText)} only songs
+      if (count of foundTracks) > 0 then
+        set selectedTrack to item 1 of foundTracks
+        play selectedTrack
+        set trackName to name of selectedTrack
+        set trackArtist to artist of selectedTrack
+        return "played|" & trackName & "|" & trackArtist
+      else
+        return "not_found"
+      end if
+    on error errMsg number errNo
+      return "error|" & errNo & "|" & errMsg
+    end try
+  end tell
+`;
+
+const localMusicSearchTerms = (searchText: string) => {
+  const normalized = searchText.replace(/\s+/g, " ").trim();
+  const terms = [normalized];
+  const withoutGenericSongSuffix = normalized.replace(/(歌曲|曲)$/u, "").trim();
+  if (withoutGenericSongSuffix && withoutGenericSongSuffix !== normalized) terms.push(withoutGenericSongSuffix);
+  return [...new Set(terms)];
+};
 
 const findAppleMusicTrack = async (searchText: string): Promise<AppleMusicSearchResult | null> => {
   const cacheKey = `${config.appleMusicCountry}:${searchText.toLowerCase()}`;

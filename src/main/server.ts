@@ -2,7 +2,8 @@ import express from "express";
 import type { Server } from "node:http";
 import crypto from "node:crypto";
 import { createRealtimeClientSecret } from "./realtime";
-import { readOpenaiApiKey, saveOpenaiApiKey } from "./config";
+import { readCodexModel, readOpenaiApiKey, saveCodexModel, saveOpenaiApiKey } from "./config";
+import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
 import { CapabilityGate } from "./capability-gate";
@@ -143,6 +144,76 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
+  app.get("/api/codex-login/status", async (_req, res) => {
+    try {
+      res.json(await readCodexLoginStatus());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({
+        configured: false,
+        label: "Error",
+        detail: message,
+        command: "codex login status",
+        checkedAt: new Date().toISOString(),
+      });
+    }
+  });
+
+  app.get("/api/codex-login/device-auth", (_req, res) => {
+    res.json(readCodexDeviceAuth());
+  });
+
+  app.post("/api/codex-login/device-auth", (_req, res) => {
+    try {
+      const result = startCodexDeviceAuth();
+      audit.write({
+        action: "codex.login",
+        summary: "Started Codex device auth",
+        status: "started",
+        details: { command: result.command, startedAt: result.startedAt },
+      });
+      res.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      audit.write({
+        action: "codex.login",
+        summary: message,
+        status: "error",
+      });
+      res.status(500).json({ running: false, output: message, command: "codex login --device-auth" });
+    }
+  });
+
+  app.get("/api/codex/model", (_req, res) => {
+    res.json({
+      model: readCodexModel(),
+      options: codexModelOptions,
+      note: "Empty model uses the Codex app-server default.",
+    });
+  });
+
+  app.post("/api/codex/model", (req, res) => {
+    const body = req.body as { model?: unknown };
+    if (typeof body.model !== "string") {
+      res.status(400).json({ error: "Missing Codex model." });
+      return;
+    }
+
+    try {
+      const model = saveCodexModel(body.model);
+      audit.write({
+        action: "codex.model",
+        summary: model ? `Set Codex model to ${model}` : "Use Codex app-server default model",
+        status: "ok",
+        details: { model: model || "[app-server-default]" },
+      });
+      res.json({ model, options: codexModelOptions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(400).json({ error: message });
+    }
+  });
+
   app.post("/api/audit", (req, res) => {
     const body = req.body as Partial<Omit<AuditEvent, "id" | "timestamp">>;
     if (typeof body.action !== "string" || typeof body.summary !== "string" || !isAuditStatus(body.status)) {
@@ -263,3 +334,10 @@ const auditStatuses = new Set<AuditEvent["status"]>([
 
 const isAuditStatus = (value: unknown): value is AuditEvent["status"] =>
   typeof value === "string" && auditStatuses.has(value as AuditEvent["status"]);
+
+const codexModelOptions = [
+  { label: "App-server default", value: "" },
+  { label: "GPT-5 Codex", value: "gpt-5-codex" },
+  { label: "GPT-5", value: "gpt-5" },
+  { label: "GPT-5 Mini", value: "gpt-5-mini" },
+];

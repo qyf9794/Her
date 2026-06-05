@@ -345,7 +345,26 @@ export class ToolRegistry {
       return this.executeTaskControlTool(request.name, args, source);
     }
 
-    return this.executeValidatedTool(request.name, args, source);
+    return this.executeToolWithTimeout(request.name, args, source);
+  }
+
+  private async executeToolWithTimeout(
+    name: ToolName,
+    args: Record<string, unknown>,
+    source: "realtime" | "local",
+  ): Promise<ToolCallResult> {
+    if (name === "codex_task_run") return this.executeValidatedTool(name, args, source);
+    try {
+      return await withTimeout(
+        this.executeValidatedTool(name, args, source),
+        config.toolQueueTaskTimeoutMs,
+        `${name} timed out after ${config.toolQueueTaskTimeoutMs}ms`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.audit.write({ action: name, summary: message, status: "error" });
+      return { ok: false, name, error: message, code: "tool_timeout" };
+    }
   }
 
   private async executeValidatedTool(
@@ -1008,7 +1027,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       const result =
         task.toolName === "codex_task_run"
           ? await this.executeCodexQueuedTask(task)
-          : await this.executeValidatedTool(task.toolName, task.arguments, task.source);
+          : await this.executeToolWithTimeout(task.toolName, task.arguments, task.source);
       task.result = result;
       task.updatedAt = Date.now();
       if (result.ok && result.requiresConfirmation) {
@@ -1236,6 +1255,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       cooldownUntil: this.taskCooldownUntil > Date.now() ? new Date(this.taskCooldownUntil).toISOString() : undefined,
       maxCreatesPerMinute: config.toolQueueMaxCreatesPerMinute,
       minStartIntervalMs: config.toolQueueMinStartIntervalMs,
+      taskTimeoutMs: config.toolQueueTaskTimeoutMs,
       recentTaskIds: this.taskOrder.slice(0, 5),
     };
     if (!compact) return summary;
@@ -1687,6 +1707,21 @@ const stableSerialize = (value: unknown) => {
   }
 };
 
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string) =>
+  new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+
 const compactJsonSchema = (schema: unknown) => {
   if (!schema || typeof schema !== "object") return { required: [], optional: [] };
   const value = schema as { properties?: Record<string, unknown>; required?: unknown };
@@ -1841,10 +1876,43 @@ const buildPhoneRouteStep = (request: string): RouteStep => {
 const buildNativeRouteStep = (request: string, input: TaskRouteInput): RouteStep => {
   const url = extractUrl(request);
   if (url) {
+    if (isAppleTvRequest(request) || isAppleTvUrl(url)) {
+      return readyRouteStep(
+        "native",
+        "Open Apple TV URL",
+        "video_play",
+        { service: "apple_tv", query: url },
+        "Apple TV URLs should be handed directly to the macOS TV app with open -a TV.",
+      );
+    }
     const isolated = shouldUseIsolatedBrowser(request);
     return isolated
       ? readyRouteStep("browser", "Open URL in isolated Chrome", "browser_isolated_open_url", { url }, "Low-risk browsing defaults to HER's isolated Chrome for cleaner automation and lower risk.")
       : readyRouteStep("browser", "Open URL in normal browser", "browser_open_url", { url }, "The request asks for existing login state, cookies, extensions, or the normal browser.");
+  }
+
+  if (isAppleTvRequest(request) && /(搜索|搜|找|播放|看|打开.*(剧|电影|节目|show|movie|episode)|watch|play|search|find)/i.test(request) && !isOnlyOpeningAppleTvApp(request)) {
+    const query = extractAppleTvQuery(request);
+    return readyRouteStep(
+      "native",
+      `Open Apple TV for ${query}`,
+      "video_play",
+      { service: "apple_tv", query },
+      "Apple TV content requests should open the search or catalog URL directly in the macOS TV app.",
+    );
+  }
+
+  if (isOnlyOpeningMusicApp(request)) {
+    return readyRouteStep("native", "Open Music", "app_open", { appName: "Music" }, "Opening Music is a direct HER native task.");
+  }
+  if (isMusicPlaybackRequest(request)) {
+    return readyRouteStep(
+      "native",
+      "Play music",
+      "music_play_song",
+      { query: extractMusicQuery(request) },
+      "Music playback should use HER's Music tool instead of generic app or browser control.",
+    );
   }
 
   const appName = extractKnownAppName(request) ?? input.activeApp;
@@ -1865,9 +1933,6 @@ const buildNativeRouteStep = (request: string, input: TaskRouteInput): RouteStep
   if (/(亮度|brightness)/i.test(request) && typeof volume === "number") {
     return readyRouteStep("native", `Set brightness to ${volume}`, "system_set_brightness", { level: volume }, "Brightness control is a direct HER system task.");
   }
-  if (/(播放|听|play).*(音乐|歌|music|song)/i.test(request)) {
-    return readyRouteStep("native", "Play music", "music_play_song", { query: request }, "Music playback is a direct HER media task.");
-  }
   if (/(排列|平铺|整理|布局).*(窗口|windows?)/i.test(request)) {
     return readyRouteStep("native", "Arrange windows", "window_auto_arrange", { appNames: [] }, "Window layout is a direct HER window task.");
   }
@@ -1887,6 +1952,48 @@ const extractUrl = (request: string) => {
   const rawUrl = request.match(/https?:\/\/[^\s，。！？、；]+/i)?.[0];
   if (!rawUrl) return undefined;
   return rawUrl.replace(/[，。！？、；;,.!?]+$/u, "");
+};
+
+const isAppleTvUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "tv.apple.com" || parsed.hostname.endsWith(".tv.apple.com");
+  } catch {
+    return false;
+  }
+};
+
+const isAppleTvRequest = (request: string) => /(apple\s*tv|苹果\s*tv|苹果电视|\bTV\s*app\b|电视\s*app)/i.test(request);
+
+const isOnlyOpeningAppleTvApp = (request: string) =>
+  /^(请|麻烦|帮我|帮忙|please)?\s*(打开|启动|open|launch)\s*(apple\s*tv|苹果\s*tv|苹果电视|tv\s*app|电视\s*app)\s*$/i.test(request.trim());
+
+const extractAppleTvQuery = (request: string) => {
+  const stripped = request
+    .replace(/^(请|麻烦|帮我|帮忙|please)\s*/i, "")
+    .replace(/(在|用|打开)?\s*(apple\s*tv|苹果\s*tv|苹果电视|tv\s*app|电视\s*app)\s*(上|里|中)?/gi, "")
+    .replace(/(搜索|搜一下|搜|找|播放|观看|看|打开|watch|play|search|find|open)\s*/gi, "")
+    .replace(/(这个|一下|剧集|剧|电影|节目|show|movie|episode)/gi, "")
+    .replace(/^(的|上|里|中)\s*/u, "")
+    .trim();
+  return stripped || request.trim();
+};
+
+const isOnlyOpeningMusicApp = (request: string) =>
+  /^(请|麻烦|帮我|帮忙|please)?\s*(打开|启动|open|launch)\s*(音乐|music|music\s*app|apple\s*music)\s*$/i.test(request.trim());
+
+const isMusicPlaybackRequest = (request: string) =>
+  (/(播放|放一下|放|听|听一下|play)\s*.+/i.test(request) || /(打开|open)\s*.+(音乐|歌曲|歌|曲|playlist|song)/i.test(request)) &&
+  !isAppleTvRequest(request) &&
+  !/(视频|电影|剧|节目|youtube|apple\s*tv|苹果\s*tv|tv\s*app|watch|movie|show|episode)/i.test(request);
+
+const extractMusicQuery = (request: string) => {
+  const stripped = request
+    .replace(/^(请|麻烦|帮我|帮忙|please)\s*/i, "")
+    .replace(/(用|在)?\s*(apple\s*music|music\s*app|music|音乐)\s*(里|上)?/gi, "")
+    .replace(/(播放|放一下|放|听一下|听|打开|open|play)\s*/gi, "")
+    .trim();
+  return stripped || request.trim();
 };
 
 const inferSearchEngine = (request: string): BrowserSearchEngine => {

@@ -271,6 +271,13 @@ h2 {
   background: #141c1b;
 }
 
+.codexLoginPanel {
+  border: 1px solid #30423f;
+  border-radius: 8px;
+  padding: 12px;
+  background: #151b1a;
+}
+
 .devicePanel {
   border: 1px solid #30423f;
   border-radius: 8px;
@@ -303,6 +310,46 @@ h2 {
   line-height: 1.35;
 }
 
+.codexLoginPanel .muted {
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
+.codexModelField {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.codexModelField span {
+  color: #b9c6c2;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.codexLoginActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.codexLoginOutput {
+  max-height: 180px;
+  margin: 10px 0 0;
+  overflow: auto;
+  border: 1px solid #2f3a37;
+  border-radius: 6px;
+  padding: 10px;
+  background: #101514;
+  color: #d7e0dc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .keyBadge {
   border: 1px solid #6a4f34;
   border-radius: 999px;
@@ -317,6 +364,12 @@ h2 {
   border-color: #36715f;
   color: #a8f5da;
   background: #142b25;
+}
+
+.keyBadge.error {
+  border-color: #8f474f;
+  color: #ffb4a8;
+  background: #2b171a;
 }
 
 .yoloPanel {
@@ -357,6 +410,7 @@ h2 {
   display: grid;
   gap: 8px;
   min-height: 46px;
+  margin-top: 10px;
   border: 1px solid #303936;
   border-radius: 8px;
   padding: 10px;
@@ -425,6 +479,10 @@ h2 {
 .toggleGrid.compact {
   grid-template-columns: 1fr;
   gap: 8px;
+}
+
+#runtimeCapabilities {
+  margin-top: 10px;
 }
 
 .capabilityToggle {
@@ -558,7 +616,10 @@ h2 {
   gap: 8px;
   max-height: 220px;
   min-height: 36px;
+  margin-top: 10px;
+  padding-bottom: 16px;
   overflow: auto;
+  scroll-padding-bottom: 16px;
 }
 
 .authorizedApp {

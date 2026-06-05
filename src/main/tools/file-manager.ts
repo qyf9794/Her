@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { config } from "../config";
 
 const textExtensions = new Set([".txt", ".md", ".markdown", ".json", ".csv", ".log", ".yaml", ".yml"]);
+const directoryReadTimeoutMs = 2000;
+const metadataStatTimeoutMs = 750;
 
 const home = os.homedir();
 
@@ -29,20 +32,23 @@ export class FileManager {
 
   async list(inputPath: string, includeHidden = false) {
     const folder = this.resolveAllowed(inputPath);
-    const stat = await fs.stat(folder);
+    const stat = await statWithTimeout(folder, directoryReadTimeoutMs);
+    if (!stat) throw new Error(`Folder metadata timed out or is unavailable: ${inputPath}`);
     if (!stat.isDirectory()) throw new Error(`Not a folder: ${inputPath}`);
-    const entries = await fs.readdir(folder, { withFileTypes: true });
+    const entries = await readdirWithTimeout(folder, directoryReadTimeoutMs);
+    if (!entries) throw new Error(`Folder listing timed out or is unavailable: ${inputPath}`);
     const visible = entries.filter((entry) => includeHidden || !entry.name.startsWith(".")).slice(0, 100);
     return Promise.all(
       visible.map(async (entry) => {
         const fullPath = path.join(folder, entry.name);
-        const itemStat = await fs.stat(fullPath);
+        const itemStat = await statWithTimeout(fullPath, metadataStatTimeoutMs);
         return {
           name: entry.name,
           path: fullPath,
           type: entry.isDirectory() ? "folder" : "file",
-          size: itemStat.size,
-          modifiedAt: itemStat.mtime.toISOString(),
+          size: itemStat?.size ?? 0,
+          modifiedAt: itemStat?.mtime.toISOString() ?? null,
+          metadataAvailable: Boolean(itemStat),
         };
       }),
     );
@@ -57,15 +63,16 @@ export class FileManager {
       if (depth > maxDepth || results.length >= limit) return;
       let entries;
       try {
-        entries = await fs.readdir(folder, { withFileTypes: true });
+        entries = await readdirWithTimeout(folder, directoryReadTimeoutMs);
       } catch {
         return;
       }
+      if (!entries) return;
 
       for (const entry of entries) {
         if (entry.name.startsWith(".")) continue;
         const fullPath = path.join(folder, entry.name);
-        const stat = await fs.stat(fullPath).catch(() => null);
+        const stat = await statWithTimeout(fullPath, metadataStatTimeoutMs);
         if (!stat) continue;
         if (entry.name.toLowerCase().includes(q)) {
           results.push({
@@ -199,6 +206,36 @@ const exists = async (inputPath: string) => {
     return false;
   }
 };
+
+const statWithTimeout = (inputPath: string, timeoutMs: number) =>
+  new Promise<Stats | undefined>((resolve) => {
+    const timeout = setTimeout(() => resolve(undefined), timeoutMs);
+    fs.stat(inputPath).then(
+      (stat) => {
+        clearTimeout(timeout);
+        resolve(stat);
+      },
+      () => {
+        clearTimeout(timeout);
+        resolve(undefined);
+      },
+    );
+  });
+
+const readdirWithTimeout = (inputPath: string, timeoutMs: number) =>
+  new Promise<Dirent<string>[] | undefined>((resolve) => {
+    const timeout = setTimeout(() => resolve(undefined), timeoutMs);
+    fs.readdir(inputPath, { withFileTypes: true }).then(
+      (entries) => {
+        clearTimeout(timeout);
+        resolve(entries);
+      },
+      () => {
+        clearTimeout(timeout);
+        resolve(undefined);
+      },
+    );
+  });
 
 const runOpen = (args: string[]) =>
   new Promise<void>((resolve, reject) => {

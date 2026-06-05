@@ -134,6 +134,21 @@ export type ToolGroup =
   | "shell"
   | "agents";
 
+export const toolGroups = [
+  "permissions",
+  "files",
+  "documents",
+  "text",
+  "media",
+  "phone",
+  "apps",
+  "windows",
+  "system",
+  "browser",
+  "shell",
+  "agents",
+] as const satisfies readonly ToolGroup[];
+
 const objectSchema = (
   properties: Record<string, JsonSchema>,
   required: string[] = [],
@@ -181,6 +196,61 @@ export const allToolDefinitions = [
       },
       ["handle"],
     ),
+  },
+  {
+    type: "function",
+    name: "tool_catalog_list",
+    description: "List available dynamic tool groups, or list the bounded tool catalog for one group. Call without group first; call again with a group only when you need tool names in that group.",
+    parameters: objectSchema({
+      group: { type: "string", enum: toolGroups, description: "Optional dynamic tool group to inspect." },
+    }),
+  },
+  {
+    type: "function",
+    name: "tool_group_set",
+    description: "Enable or disable a dynamic tool group for future queued tasks. Disabling a group prevents task_create from enqueueing tools in that group.",
+    parameters: objectSchema(
+      {
+        group: { type: "string", enum: toolGroups },
+        enabled: { type: "boolean" },
+      },
+      ["group", "enabled"],
+    ),
+  },
+  {
+    type: "function",
+    name: "task_create",
+    description: "Create a local task queue item for any non-core tool. Realtime should use this instead of directly carrying large or side-effecting tool calls in session context.",
+    parameters: objectSchema(
+      {
+        toolName: { type: "string", description: "Name from tool_catalog_list for the selected group." },
+        arguments: { type: "object", description: "Arguments for the selected tool.", additionalProperties: true },
+        priority: { type: "string", enum: ["low", "normal", "high"], default: "normal" },
+        runAfterMs: { type: "integer", minimum: 0, maximum: 600000, default: 0 },
+      },
+      ["toolName", "arguments"],
+    ),
+  },
+  {
+    type: "function",
+    name: "task_status",
+    description: "Read one task queue item by id, including status, confirmation id when waiting for approval, and compact result when complete.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
+  },
+  {
+    type: "function",
+    name: "task_list",
+    description: "List recent task queue items with compact status. Use this to monitor queued or running work without loading large outputs.",
+    parameters: objectSchema({
+      status: { type: "string", enum: ["queued", "running", "completed", "failed", "cancelled", "needs_confirmation"] },
+      limit: { type: "integer", minimum: 1, maximum: 30, default: 10 },
+    }),
+  },
+  {
+    type: "function",
+    name: "task_cancel",
+    description: "Cancel a queued task. Running tasks cannot be force-killed, but queued work is skipped.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
   },
   {
     type: "function",
@@ -547,7 +617,7 @@ export const allToolDefinitions = [
   {
     type: "function",
     name: "video_play",
-    description: "Play or open a specific video by title or URL. For YouTube, resolves a search query to a concrete watch URL. For Apple TV, opens the catalog item and attempts playback but does not claim verified playback.",
+    description: "Play or open a specific video by title or URL. For YouTube, resolves a search query to a concrete watch URL. For Apple TV, opens the catalog item or search URL directly in the macOS TV app but does not claim playback.",
     parameters: objectSchema(
       {
         service: { type: "string", enum: ["youtube", "apple_tv"], description: "Video service to use." },
@@ -919,21 +989,6 @@ export const toolGroupByName = {
   browser_click: "browser",
   advanced_shell_command: "shell",
 } as const satisfies Partial<Record<ToolName, ToolGroup>>;
-
-export const toolGroups = [
-  "permissions",
-  "files",
-  "documents",
-  "text",
-  "media",
-  "phone",
-  "apps",
-  "windows",
-  "system",
-  "browser",
-  "shell",
-  "agents",
-] as const satisfies readonly ToolGroup[];
 
 export const queueManagedToolDefinitions = allToolDefinitions.filter((definition) => definition.name in toolGroupByName);
 
