@@ -69,6 +69,7 @@ export const config = {
   codexArgs: splitArgs(process.env.HER_CODEX_ARGS, ["app-server", "--listen", "stdio://"]),
   codexModel: process.env.HER_CODEX_MODEL ?? "",
   codexTurnTimeoutMs: boundedNumber(process.env.HER_CODEX_TURN_TIMEOUT_MS, 300000, 10000, 1800000),
+  codexNativeToolsFallback: booleanEnv(process.env.HER_CODEX_NATIVE_TOOLS_FALLBACK, true),
   appleMusicCountry: process.env.HER_APPLE_MUSIC_COUNTRY ?? "us",
   allowedApps: splitList(process.env.HER_ALLOWED_APPS, [
     "Safari",

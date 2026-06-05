@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { BrowserAutomation } from "./browser-automation";
 
 type VideoService = "youtube" | "apple_tv";
 
@@ -16,6 +17,10 @@ type AppleTvSearchResult = ItunesVideoResult & {
 };
 
 type YouTubeSearchResult = { url: string; title?: string };
+type AppleTvPlaybackSnapshot = {
+  state?: string;
+  title?: string;
+};
 
 const VIDEO_CACHE_TTL_MS = 60_000;
 const youtubeCache = new Map<string, { createdAt: number; value: YouTubeSearchResult | null }>();
@@ -50,9 +55,15 @@ const run = (command: string, args: string[], timeoutMs = 8000) =>
 const appleScriptString = (value: string) => JSON.stringify(value);
 
 export class VideoControl {
+  constructor(private browser = new BrowserAutomation()) {}
+
   async play(service: VideoService, query: string) {
     if (service === "youtube") return this.playYouTube(query);
     return this.playAppleTv(query);
+  }
+
+  async appleTvPlaybackState() {
+    return readAppleTvPlaybackState();
   }
 
   private async playYouTube(query: string) {
@@ -60,7 +71,7 @@ export class VideoControl {
     const resolved = direct ?? (await findYouTubeVideo(query));
     if (!resolved) {
       const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-      await run("open", [searchUrl]);
+      await this.browser.openIsolatedUrl(searchUrl);
       return {
         status: "opened_search",
         service: "youtube",
@@ -68,18 +79,32 @@ export class VideoControl {
         url: searchUrl,
         resolved: false,
         retryRecommended: false,
-        note: "Could not resolve a specific YouTube video from search results, so opened YouTube search.",
+        browser: "isolated_chrome",
+        note: "Could not resolve a specific YouTube video from search results, so opened YouTube search in isolated Chrome.",
       };
     }
 
-    await run("open", [resolved.url]);
+    await this.browser.openIsolatedUrl(resolved.url);
+    await delay(1800);
+    const playResult = await this.browser.playVideo().catch((error) => ({
+      ok: false,
+      error: "cdp_play_failed",
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    const videoState = await this.browser.readVideoState().catch((error) => ({
+      error: "cdp_state_failed",
+      message: error instanceof Error ? error.message : String(error),
+    }));
     return {
-      status: "opened_video",
+      status: typeof playResult === "object" && playResult && "ok" in playResult && playResult.ok ? "playing" : "opened_video",
       service: "youtube",
       query,
       title: resolved.title,
       url: resolved.url,
-      note: "Opened the resolved YouTube watch URL. YouTube autoplay can still be blocked by browser policy, account prompts, ads, or consent screens.",
+      browser: "isolated_chrome",
+      playResult,
+      videoState,
+      note: "Opened the resolved YouTube watch URL in isolated Chrome and attempted to start playback through CDP. Playback can still be blocked by browser policy, account prompts, ads, or consent screens.",
     };
   }
 
@@ -102,16 +127,18 @@ export class VideoControl {
 
     const result = await openAppleTvUrl(resolved.trackViewUrl);
     return {
-      status: result.startedPlayback ? "playing" : "opened_video",
+      status: "opened_video",
       service: "apple_tv",
       query,
       title: resolved.trackName ?? resolved.collectionName,
       artist: resolved.artistName,
       kind: resolved.kind,
       url: resolved.trackViewUrl,
-      note: result.startedPlayback
-        ? "Opened the Apple TV item and sent TV a play command."
-        : "Opened the Apple TV item. TV may require sign-in, subscription, purchase, or macOS Automation permission before playback starts.",
+      playbackConfirmed: false,
+      playerState: result.snapshot.state,
+      currentItem: result.snapshot.title ? { title: result.snapshot.title } : undefined,
+      reasonCode: result.reasonCode,
+      note: "Opened the Apple TV item and sent TV a play command, but Apple TV playback cannot be reliably verified through AppleScript. TV may require sign-in, subscription, purchase, or macOS Automation permission.",
     };
   }
 }
@@ -199,6 +226,8 @@ const decodeJsonString = (value: string) => {
 const youtubeWatchUrl = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}&autoplay=1`;
 
 const isYouTubeVideoId = (value: string) => /^[a-zA-Z0-9_-]{11}$/.test(value);
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isHttpUrl = (value: string) => {
   try {
@@ -296,15 +325,66 @@ const openAppleTvUrl = async (url: string) => {
         open location ${appleScriptString(url)}
         delay 2
         play
-        return "playing"
+        delay 1
+        set playerState to ""
+        set itemTitle to ""
+        try
+          set playerState to player state as text
+        end try
+        try
+          set itemTitle to name of current track
+        end try
+        return playerState & "|" & itemTitle
       on error errMsg number errNo
         return "error|" & errNo & "|" & errMsg
       end try
     end tell
   `;
   const output = await run("osascript", ["-e", script]);
-  if (output === "playing") return { startedPlayback: true };
-
+  const snapshot = parseAppleTvPlaybackSnapshot(output);
   await run("open", ["-a", "TV", url]);
-  return { startedPlayback: false };
+  return {
+    snapshot,
+    reasonCode: snapshot.state === "playing" ? "apple_tv_state_playing_unverified" : "apple_tv_playback_unverified",
+  };
 };
+
+const readAppleTvPlaybackState = async () => {
+  const output = await run("osascript", ["-e", appleTvPlaybackStateScript()], 5000);
+  const snapshot = parseAppleTvPlaybackSnapshot(output);
+  return {
+    app: "TV",
+    running: snapshot.state !== "not_running",
+    state: snapshot.state,
+    currentItem: snapshot.title ? { title: snapshot.title } : undefined,
+    note: "Apple TV exposes only limited AppleScript state; a playing state may not prove the requested catalog item is playing.",
+  };
+};
+
+const parseAppleTvPlaybackSnapshot = (output: string): AppleTvPlaybackSnapshot => {
+  if (output.startsWith("error|")) return { state: "error" };
+  const [state, title] = output.split("|");
+  return { state: state || undefined, title: title || undefined };
+};
+
+const appleTvPlaybackStateScript = () => `
+  tell application "System Events"
+    set isRunning to exists process "TV"
+  end tell
+  if not isRunning then return "not_running|"
+  tell application "TV"
+    try
+      set playerState to ""
+      set itemTitle to ""
+      try
+        set playerState to player state as text
+      end try
+      try
+        set itemTitle to name of current track
+      end try
+      return playerState & "|" & itemTitle
+    on error errMsg number errNo
+      return "error|" & errNo & "|" & errMsg
+    end try
+  end tell
+`;

@@ -14,6 +14,8 @@ import { BrowserAutomation } from "./browser-automation";
 import { AdvancedShell } from "./advanced-shell";
 import { MusicControl } from "./music-control";
 import { VideoControl } from "./video-control";
+import { PhoneControl, type PhoneCallMode } from "./phone-control";
+import { ShortcutsControl } from "./shortcuts-control";
 import { CapabilityGate } from "../capability-gate";
 import { CodexAppServerHarness, type CodexProgressEvent, type CodexTaskInput } from "../codex/app-server-harness";
 import { MemoryStore, type MemoryLookupInput, type MemorySaveInput, type MemoryType } from "../memory-store";
@@ -115,7 +117,21 @@ const schemas: Record<ToolName, z.ZodTypeAny> = {
   copy_publish: z.object({ draftId: z.string().min(1) }),
   music_open: z.object({}),
   music_play_song: z.object({ query: z.string().min(1), artist: z.string().optional() }),
+  music_playback_state: z.object({}),
   video_play: z.object({ service: z.enum(["youtube", "apple_tv"]), query: z.string().min(1) }),
+  apple_tv_playback_state: z.object({}),
+  shortcut_list: z.object({ limit: z.number().int().min(1).max(50).optional().default(20) }),
+  shortcut_run: z.object({
+    name: z.string().min(1),
+    input: z.string().optional(),
+    timeoutMs: z.number().int().min(1000).max(180000).optional().default(60000),
+  }),
+  contacts_search: z.object({ query: z.string().min(1), limit: z.number().int().min(1).max(10).optional().default(5) }),
+  phone_call: z.object({
+    phoneNumber: z.string().min(1),
+    contactName: z.string().min(1).optional(),
+    mode: z.enum(["phone", "facetime_audio", "facetime_video"]).optional().default("phone"),
+  }),
   app_open: z.object({ appName: z.string().min(1) }),
   app_focus: z.object({ appName: z.string().min(1) }),
   app_quit: z.object({ appName: z.string().min(1) }),
@@ -145,7 +161,20 @@ const schemas: Record<ToolName, z.ZodTypeAny> = {
   system_open_settings: z.object({ pane: z.string().optional() }),
   desktop_clipboard_write: z.object({ text: z.string().min(1) }),
   browser_open_url: z.object({ url: z.string().url() }),
+  browser_search_open: z.object({
+    query: z.string().min(1),
+    engine: z.enum(["google", "bing", "duckduckgo"]).optional().default("google"),
+    isolated: z.boolean().optional().default(true),
+  }),
   browser_isolated_open_url: z.object({ url: z.string().url() }),
+  browser_isolated_window_focus: z.object({}),
+  browser_isolated_window_move_resize: z.object({
+    x: z.number().int(),
+    y: z.number().int(),
+    width: z.number().int().min(120),
+    height: z.number().int().min(120),
+  }),
+  browser_read_video_state: z.object({}),
   browser_fill_form: z.object({ fields: z.array(z.object({ selector: z.string().min(1), value: z.string() })).min(1).max(30) }),
   browser_click: z.object({ selector: z.string().min(1), purpose: z.string().min(1) }),
   advanced_shell_command: z.object({ command: z.string().min(1), reason: z.string().min(1), timeoutMs: z.number().int().min(1000).max(20000).optional().default(10000) }),
@@ -165,6 +194,7 @@ type PermissionManager = {
 type TaskPriority = "low" | "normal" | "high";
 type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "needs_confirmation";
 type TaskRoutePreference = "auto" | "native" | "search" | "codex";
+type BrowserSearchEngine = "google" | "bing" | "duckduckgo";
 type TaskRouteInput = {
   userRequest: string;
   preference?: TaskRoutePreference;
@@ -172,7 +202,7 @@ type TaskRouteInput = {
   activeApp?: string;
   selectedText?: string;
 };
-type RouteProvider = "native" | "search" | "codex";
+type RouteProvider = "native" | "phone" | "browser" | "search" | "codex";
 type RouteStep = {
   provider: RouteProvider;
   status: "ready" | "not_implemented" | "needs_clarification";
@@ -238,7 +268,9 @@ export class ToolRegistry {
   private browser = new BrowserAutomation();
   private shell = new AdvancedShell();
   private music = new MusicControl();
-  private video = new VideoControl();
+  private video = new VideoControl(this.browser);
+  private phone = new PhoneControl();
+  private shortcuts = new ShortcutsControl();
   private codex: CodexAppServerHarness;
   private memory: MemoryStore;
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
@@ -468,6 +500,7 @@ export class ToolRegistry {
             documents: "txt-md-pdf-docx-extractor",
             desktop: "macos-allowlist",
             music: "macos-music-applescript",
+            phone: "macos-contacts-tel-facetime",
             browser: "isolated-chrome-profile",
             shell: "confirm-first-safe-subset",
             codex: config.codexEnabled ? "app-server-json-rpc-stdio" : "disabled",
@@ -479,6 +512,7 @@ export class ToolRegistry {
             args: config.codexArgs,
             model: config.codexModel || "app-server-default",
             timeoutMs: config.codexTurnTimeoutMs,
+            nativeToolsFallback: config.codexNativeToolsFallback,
           },
           memory: this.memory.status(),
           toolGroups: this.listToolGroups(),
@@ -491,6 +525,9 @@ export class ToolRegistry {
       case "tool_result_read":
         return this.readCachedToolResult(args.handle as string, args.offset as number, args.maxChars as number);
       case "codex_task_run":
+        if (!config.codexEnabled) {
+          throw new Error("Codex provider is disabled. HER will not fall back to another provider.");
+        }
         return this.codex.runTask(this.enrichCodexTaskWithMemory(args as CodexTaskInput & { memoryIds?: string[] }));
       case "yolo_mode_set":
         return this.setYoloMode(args.enabled as boolean);
@@ -547,8 +584,20 @@ export class ToolRegistry {
         return this.music.open();
       case "music_play_song":
         return this.music.playSong(args.query as string, args.artist as string | undefined);
+      case "music_playback_state":
+        return this.music.playbackState();
       case "video_play":
         return this.video.play(args.service as "youtube" | "apple_tv", args.query as string);
+      case "apple_tv_playback_state":
+        return this.video.appleTvPlaybackState();
+      case "shortcut_list":
+        return this.shortcuts.list(args.limit as number);
+      case "shortcut_run":
+        return this.shortcuts.runShortcut(args.name as string, args.input as string | undefined, args.timeoutMs as number);
+      case "contacts_search":
+        return this.phone.searchContacts(args.query as string, args.limit as number);
+      case "phone_call":
+        return this.phone.call(args.phoneNumber as string, args.mode as PhoneCallMode, args.contactName as string | undefined);
       case "app_open":
         return this.system.openApp(args.appName as string);
       case "app_focus":
@@ -598,8 +647,16 @@ export class ToolRegistry {
         return { written: true };
       case "browser_open_url":
         return this.openUrl(args.url as string);
+      case "browser_search_open":
+        return this.openBrowserSearch(args.query as string, args.engine as BrowserSearchEngine, args.isolated as boolean);
       case "browser_isolated_open_url":
         return this.browser.openIsolatedUrl(args.url as string);
+      case "browser_isolated_window_focus":
+        return this.browser.focusIsolatedWindow();
+      case "browser_isolated_window_move_resize":
+        return this.browser.moveResizeIsolatedWindow(args.x as number, args.y as number, args.width as number, args.height as number);
+      case "browser_read_video_state":
+        return this.browser.readVideoState();
       case "browser_fill_form":
         return this.browser.fillForm(args.fields as Array<{ selector: string; value: string }>);
       case "browser_click":
@@ -617,6 +674,11 @@ export class ToolRegistry {
     return Boolean(toolGroupLookup[name as ToolName]) && name in schemas;
   }
 
+  private isToolAvailable(name: ToolName) {
+    if (name === "codex_task_run") return config.codexEnabled;
+    return true;
+  }
+
   private listToolCatalog(group?: ToolGroup) {
     if (!group) {
       return {
@@ -627,6 +689,7 @@ export class ToolRegistry {
 
     const tools = allToolDefinitions
       .filter((definition) => toolGroupLookup[definition.name] === group)
+      .filter((definition) => this.isToolAvailable(definition.name))
       .map((definition) => ({
         name: definition.name,
         group,
@@ -647,7 +710,9 @@ export class ToolRegistry {
     return toolGroups.map((group) => ({
       group,
       enabled: this.enabledToolGroups.has(group),
-      toolCount: allToolDefinitions.filter((definition) => toolGroupLookup[definition.name] === group).length,
+      toolCount: allToolDefinitions
+        .filter((definition) => toolGroupLookup[definition.name] === group)
+        .filter((definition) => this.isToolAvailable(definition.name)).length,
     }));
   }
 
@@ -702,7 +767,8 @@ export class ToolRegistry {
 
   private enrichCodexTaskWithMemory(input: CodexTaskInput & { memoryIds?: string[] }): CodexTaskInput {
     const memoryIds = input.memoryIds ?? [];
-    if (!memoryIds.length) return input;
+    const withToolNamespace = this.enrichCodexTaskWithToolNamespace(input);
+    if (!memoryIds.length) return withToolNamespace;
     const memories = this.memory.resolveForProvider(memoryIds);
     const pathAlias = memories.find((item) => item.type === "path_alias" && item.value);
     const context = memories
@@ -718,10 +784,59 @@ export class ToolRegistry {
       .join("\n");
     const memoryContext = [pathContext ? `Known paths:\n${pathContext}` : "", context].filter(Boolean).join("\n\n");
     return {
-      ...input,
-      cwd: input.cwd ?? pathAlias?.value ?? input.cwd,
-      prompt: memoryContext ? `HER memory for this task:\n\n${memoryContext}\n\nUser task:\n${input.prompt}` : input.prompt,
+      ...withToolNamespace,
+      cwd: withToolNamespace.cwd ?? pathAlias?.value ?? withToolNamespace.cwd,
+      prompt: memoryContext ? `HER memory for this task:\n\n${memoryContext}\n\n${withToolNamespace.prompt}` : withToolNamespace.prompt,
     };
+  }
+
+  private enrichCodexTaskWithToolNamespace(input: CodexTaskInput): CodexTaskInput {
+    return {
+      ...input,
+      prompt: `${this.codexToolNamespace(input.prompt)}\n\nUser task:\n${input.prompt}`,
+    };
+  }
+
+  private codexToolNamespace(prompt: string) {
+    const selectedGroups = selectCodexToolGroups(prompt);
+    const detailedTools = allToolDefinitions
+      .filter((definition) => {
+        const group = toolGroupLookup[definition.name];
+        if (!group || group === "agents") return false;
+        return selectedGroups.has(group) && this.enabledToolGroups.has(group) && this.isToolAvailable(definition.name);
+      })
+      .slice(0, 24)
+      .map((definition) => {
+        const group = toolGroupLookup[definition.name];
+        const args = compactJsonSchema(definition.parameters);
+        return {
+          name: definition.name,
+          group,
+          capability: truncateText(definition.description, 140),
+          requiresConfirmation: toolsRequiringConfirmation.has(definition.name),
+          args,
+        };
+      });
+    const groups = toolGroups
+      .filter((group) => group !== "agents")
+      .map((group) => ({
+        group,
+        enabled: this.enabledToolGroups.has(group),
+        detailed: selectedGroups.has(group),
+        toolCount: allToolDefinitions
+          .filter((definition) => toolGroupLookup[definition.name] === group)
+          .filter((definition) => this.isToolAvailable(definition.name)).length,
+      }));
+    return `HER exposed tool namespace for Codex planning:
+- Codex cannot call HER desktop/media/browser/phone tools directly in this turn.
+- Use only the detailed tool names below for executable HER plan steps.
+- If a needed tool group is not detailed, return status "needs_tool_group" with the group name; do not invent tool names.
+- If no HER tool/provider exists, return status "needs_provider".
+- Codex native fallback tools/MCP/plugins are ${config.codexNativeToolsFallback ? "allowed" : "disabled"} for missing HER providers. When allowed, use only tools already available inside the Codex runtime and label results as "codex_native_fallback"; if unavailable, report "fallback_unavailable".
+- Booking, purchases, sending, deleting, calling, publishing, shell, shortcuts, file writes, and browser submit/click actions require confirmation.
+- Return structured plans around HER tools when the task is orchestration; for pure repo/file/code work, complete the Codex task normally.
+
+${JSON.stringify({ groups, detailedTools }, null, 2)}`;
   }
 
   private createTask(
@@ -734,6 +849,9 @@ export class ToolRegistry {
     this.assertTaskCreateRateLimit();
     if (!this.isQueueManagedToolName(toolName)) {
       throw new Error(`Tool is not queue-managed or does not exist: ${toolName}. Use tool_catalog_list first.`);
+    }
+    if (!this.isToolAvailable(toolName)) {
+      throw new Error(`Tool is unavailable: ${toolName}. HER will not fall back to another provider.`);
     }
 
     const group = toolGroupLookup[toolName];
@@ -980,6 +1098,14 @@ export class ToolRegistry {
   }
 
   private async executeCodexQueuedTask(task: QueuedTask): Promise<ToolCallResult> {
+    if (!config.codexEnabled) {
+      return {
+        ok: false,
+        name: task.toolName,
+        error: "Codex provider is disabled. HER will not fall back to another provider.",
+        code: "provider_disabled",
+      };
+    }
     if (this.gate) {
       try {
         await this.gate.assertToolAllowed(task.toolName, task.arguments);
@@ -1275,6 +1401,10 @@ export class ToolRegistry {
         return `Route user request: ${truncateText(String(args.userRequest ?? ""), 120)}`;
       case "codex_task_run":
         return `Run Codex background task: ${truncateText(String(args.prompt ?? ""), 120)}`;
+      case "contacts_search":
+        return `Search contacts for ${args.query}`;
+      case "phone_call":
+        return `Call ${args.contactName ?? args.phoneNumber} via ${args.mode ?? "phone"}`;
       case "yolo_mode_set":
         return `Turn YOLO mode ${args.enabled ? "on" : "off"}`;
       case "email_read":
@@ -1303,8 +1433,16 @@ export class ToolRegistry {
         return "Open Music app";
       case "music_play_song":
         return `Play music for ${args.query}${args.artist ? ` by ${args.artist}` : ""}`;
+      case "music_playback_state":
+        return "Read Music playback state";
       case "video_play":
         return `Play ${args.service} video for ${args.query}`;
+      case "apple_tv_playback_state":
+        return "Read Apple TV playback state";
+      case "shortcut_list":
+        return "List macOS Shortcuts";
+      case "shortcut_run":
+        return `Run macOS Shortcut ${args.name}`;
       case "app_open":
         return `Open app ${args.appName}`;
       case "app_focus":
@@ -1343,8 +1481,16 @@ export class ToolRegistry {
         return `Run shell command for ${args.reason}: ${args.command}`;
       case "browser_open_url":
         return `Open URL ${args.url}`;
+      case "browser_search_open":
+        return `Open ${args.engine ?? "google"} search for ${truncateText(String(args.query ?? ""), 80)}`;
       case "browser_isolated_open_url":
         return `Open isolated browser URL ${args.url}`;
+      case "browser_isolated_window_focus":
+        return "Focus isolated Chrome window";
+      case "browser_isolated_window_move_resize":
+        return `Move isolated Chrome window to ${args.x},${args.y} ${args.width}x${args.height}`;
+      case "browser_read_video_state":
+        return "Read isolated browser video playback state";
       case "app_permission_search":
         return `Search app permissions for ${args.query}`;
       case "app_permission_set":
@@ -1363,6 +1509,23 @@ export class ToolRegistry {
     }
     await runCommand("open", [url.toString()]);
     return { opened: url.toString() };
+  }
+
+  private async openBrowserSearch(query: string, engine: BrowserSearchEngine, isolated: boolean) {
+    const url = buildSearchUrl(query, engine);
+    if (isolated) {
+      await this.browser.openIsolatedUrl(url);
+    } else {
+      await this.openUrl(url);
+    }
+    return {
+      opened: true,
+      engine,
+      query,
+      url,
+      isolated,
+      note: "Opened search results page only. HER did not read or return search result content.",
+    };
   }
 
   private async listAuthorizedWindows() {
@@ -1541,26 +1704,64 @@ const truncateText = (value: string, maxChars: number) => {
   return `${value.slice(0, maxChars - 3)}...`;
 };
 
+const buildSearchUrl = (query: string, engine: BrowserSearchEngine) => {
+  const encoded = encodeURIComponent(query.trim());
+  if (engine === "bing") return `https://www.bing.com/search?q=${encoded}`;
+  if (engine === "duckduckgo") return `https://duckduckgo.com/?q=${encoded}`;
+  return `https://www.google.com/search?q=${encoded}`;
+};
+
+const selectCodexToolGroups = (prompt: string) => {
+  const groups = new Set<ToolGroup>();
+  const add = (group: ToolGroup) => groups.add(group);
+  if (/(文件|文件夹|目录|文档|资料|周报|月报|日报|docx?|pdf|xlsx?|pptx?|folder|file|directory|report)/i.test(prompt)) {
+    add("files");
+    add("documents");
+  }
+  if (/(邮件|日历|会议|提醒|文案|email|mail|calendar|meeting|copy|draft)/i.test(prompt)) add("text");
+  if (/(音乐|歌曲|视频|电影|电视|快捷指令|播放|music|song|video|youtube|apple tv|shortcut)/i.test(prompt)) add("media");
+  if (/(电话|拨打|facetime|call|contact)/i.test(prompt)) add("phone");
+  if (/(浏览器|网页|搜索页|打开.*https?:|browser|chrome|url|web)/i.test(prompt)) add("browser");
+  if (/(应用|打开|关闭|启动|聚焦|app|launch|focus|quit)/i.test(prompt)) add("apps");
+  if (/(窗口|排列|平铺|最小化|最大化|window|layout)/i.test(prompt)) add("windows");
+  if (/(音量|亮度|深色|系统设置|剪贴板|volume|brightness|settings|clipboard)/i.test(prompt)) add("system");
+  if (/(权限|授权|yolo|permission|capability)/i.test(prompt)) add("permissions");
+  if (/(shell|命令|终端|terminal|command)/i.test(prompt)) add("shell");
+  if (groups.size === 0) {
+    add("files");
+    add("text");
+    add("browser");
+  }
+  return groups;
+};
+
 const classifyRouteSignals = (request: string, preference: TaskRoutePreference) => {
   const normalized = request.toLowerCase();
   const externalDocumentation = /(官方文档|api\s*文档|docs?|documentation|reference)/i.test(request);
   const localDocument = !externalDocumentation && /(本地|文件夹|文件|目录|周报|月报|日报|文档|资料夹|folder|file|directory|docx?|pdf|xlsx?|pptx?)/i.test(request);
+  const browserSearch = /(打开.*(浏览器)?.*(搜索|搜)|浏览器.*(搜索|搜)|搜索页|搜索结果页|用.*(google|谷歌|bing|必应|duckduckgo).*(搜索|搜)|open.*search)/i.test(request);
   const externalSearch = /(搜索.*网页|查.*官方文档|查.*最新|查.*新闻|查.*价格|找.*资料|来源|联网|网页|web|internet|search|look up|browse|verify|docs?|documentation|reference)/i.test(request);
-  const search = preference === "search" || (!localDocument && externalSearch);
+  const phone = /(打电话|拨打|呼叫|电话给|facetime|face time|call\s+)/i.test(request);
+  const browser = preference === "native" ? false : browserSearch;
+  const search = preference === "search" || (!browser && !localDocument && externalSearch);
   const codex =
     preference === "codex" ||
     localDocument && /(写|生成|整理|总结|汇总|分析|归纳|月报|报告|草稿|提炼|write|summari[sz]e|report|analy[sz]e)/i.test(request) ||
     /(代码|项目|仓库|测试|修复|实现|重构|构建|编译|提交|推送|改.*项目|改.*代码|bug|repo|repository|test|fix|implement|refactor|build|commit|push|review)/i.test(request);
   const native =
     preference === "native" ||
-    /(打开|启动|关闭|聚焦|切到|播放|暂停|音量|亮度|深色|窗口|最小化|最大化|排列|平铺|复制到剪贴板|\bopen\b|\blaunch\b|\bclose\b|\bfocus\b|\bplay\b|\bvolume\b|\bbrightness\b|\bwindow\b)/i.test(request) ||
-    /https?:\/\//i.test(normalized);
+    (!browser && (
+      /(打开|启动|关闭|聚焦|切到|播放|暂停|音量|亮度|深色|窗口|最小化|最大化|排列|平铺|复制到剪贴板|\bopen\b|\blaunch\b|\bclose\b|\bfocus\b|\bplay\b|\bvolume\b|\bbrightness\b|\bwindow\b)/i.test(request) ||
+      /https?:\/\//i.test(normalized)
+    ));
 
   if (preference !== "auto") {
-    return { search: preference === "search", codex: preference === "codex", native: preference === "native", confidence: 0.95, reason: `Preference forced route to ${preference}.` };
+    return { phone: false, browser: false, search: preference === "search", codex: preference === "codex", native: preference === "native", confidence: 0.95, reason: `Preference forced route to ${preference}.` };
   }
-  const hits = [search, codex, native].filter(Boolean).length;
+  const hits = [phone, browser, search, codex, native].filter(Boolean).length;
   return {
+    phone,
+    browser,
     search,
     codex,
     native,
@@ -1576,7 +1777,9 @@ const buildRoutePlan = (
   memoryMatches: Array<{ id: string; type: MemoryType; key: string; value?: string; summary: string }>,
 ): RouteStep[] => {
   const plan: RouteStep[] = [];
+  if (signals.phone) plan.push(buildPhoneRouteStep(request));
   if (signals.native) plan.push(buildNativeRouteStep(request, input));
+  if (signals.browser) plan.push(buildBrowserSearchRouteStep(request));
   if (signals.search) plan.push(buildSearchRouteStep(request));
   if (signals.codex) plan.push(buildCodexRouteStep(request, input, signals.search, memoryMatches));
   return plan.length ? plan : [{
@@ -1587,10 +1790,61 @@ const buildRoutePlan = (
   }];
 };
 
+const buildBrowserSearchRouteStep = (request: string): RouteStep => {
+  const engine = inferSearchEngine(request);
+  const query = extractBrowserSearchQuery(request);
+  const isolated = shouldUseIsolatedBrowser(request);
+  return readyRouteStep(
+    "browser",
+    isolated ? `Open isolated ${engine} search` : `Open ${engine} search in normal browser`,
+    "browser_search_open",
+    { query, engine, isolated },
+    isolated
+      ? "Search and low-risk browsing default to HER's isolated Chrome so HER can take over safely without polluting the user's normal browser."
+      : "The request asks for existing login state, cookies, extensions, or the normal browser, so HER should open the search in the default browser.",
+  );
+};
+
+const buildPhoneRouteStep = (request: string): RouteStep => {
+  const phoneNumber = extractPhoneNumber(request);
+  const contactName = phoneNumber ? undefined : extractCallContactName(request);
+  if (phoneNumber) {
+    const mode = inferPhoneCallMode(request);
+    return readyRouteStep(
+      "phone",
+      "Start phone call",
+      "phone_call",
+      { phoneNumber, ...(contactName ? { contactName } : {}), mode },
+      "Calling is a HER phone task and requires confirmation.",
+      "high",
+    );
+  }
+  if (contactName) {
+    const mode = inferPhoneCallMode(request);
+    return readyRouteStep(
+      "phone",
+      mode === "phone" ? `Search contact ${contactName}` : `Search contact ${contactName} for ${mode}`,
+      "contacts_search",
+      { query: contactName, limit: 5 },
+      "HER must resolve the contact before starting a call.",
+      "high",
+    );
+  }
+  return {
+    provider: "phone",
+    status: "needs_clarification",
+    title: "Phone call needs a contact or number",
+    reason: "The request asks to call someone, but HER could not infer the contact name or phone number.",
+  };
+};
+
 const buildNativeRouteStep = (request: string, input: TaskRouteInput): RouteStep => {
-  const url = request.match(/https?:\/\/\S+/i)?.[0];
+  const url = extractUrl(request);
   if (url) {
-    return readyRouteStep("native", "Open URL", "browser_open_url", { url }, "URLs are direct HER browser tasks.");
+    const isolated = shouldUseIsolatedBrowser(request);
+    return isolated
+      ? readyRouteStep("browser", "Open URL in isolated Chrome", "browser_isolated_open_url", { url }, "Low-risk browsing defaults to HER's isolated Chrome for cleaner automation and lower risk.")
+      : readyRouteStep("browser", "Open URL in normal browser", "browser_open_url", { url }, "The request asks for existing login state, cookies, extensions, or the normal browser.");
   }
 
   const appName = extractKnownAppName(request) ?? input.activeApp;
@@ -1629,6 +1883,36 @@ const buildNativeRouteStep = (request: string, input: TaskRouteInput): RouteStep
   };
 };
 
+const extractUrl = (request: string) => {
+  const rawUrl = request.match(/https?:\/\/[^\s，。！？、；]+/i)?.[0];
+  if (!rawUrl) return undefined;
+  return rawUrl.replace(/[，。！？、；;,.!?]+$/u, "");
+};
+
+const inferSearchEngine = (request: string): BrowserSearchEngine => {
+  if (/(bing|必应)/i.test(request)) return "bing";
+  if (/duckduckgo/i.test(request)) return "duckduckgo";
+  return "google";
+};
+
+const shouldUseIsolatedBrowser = (request: string) => {
+  if (/(普通浏览器|默认浏览器|主浏览器|正常浏览器|已有登录|已登录|登录态|cookie|cookies|扩展|插件|extension|extensions|profile|session|normal browser|default browser|main browser|logged in|login state)/i.test(request)) {
+    return false;
+  }
+  return true;
+};
+
+const extractBrowserSearchQuery = (request: string) => {
+  const stripped = request
+    .replace(/^(请|麻烦|帮我|帮忙|please)\s*/i, "")
+    .replace(/(打开)?\s*(浏览器|browser)\s*(搜索|搜一下|搜|search)\s*/gi, "")
+    .replace(/(用|在)?\s*(google|谷歌|bing|必应|duckduckgo)\s*(搜索|搜一下|搜|search)?\s*/gi, "")
+    .replace(/(搜索页|搜索结果页|search results page)/gi, "")
+    .replace(/(搜索|搜一下|搜|search)\s*/gi, "")
+    .trim();
+  return stripped || request.trim();
+};
+
 const buildSearchRouteStep = (request: string): RouteStep => ({
   provider: "search",
   status: "not_implemented",
@@ -1643,6 +1927,15 @@ const buildCodexRouteStep = (
   includeSearchContext: boolean,
   memoryMatches: Array<{ id: string; type: MemoryType; key: string; value?: string; summary: string }>,
 ): RouteStep => {
+  if (!config.codexEnabled) {
+    return {
+      provider: "codex",
+      status: "not_implemented",
+      title: "Codex background runtime unavailable",
+      reason: "HER Codex provider is disabled. HER will not fall back to another provider or pretend the task ran.",
+      arguments: { prompt: request },
+    };
+  }
   const prompt = includeSearchContext
     ? `Use the HER-provided search summary when available, then complete this task:\n\n${request}`
     : request;
@@ -1655,7 +1948,7 @@ const buildCodexRouteStep = (
     {
       prompt,
       ...(input.cwd || pathAlias?.value ? { cwd: input.cwd ?? pathAlias?.value } : {}),
-      sandbox: /修改|修复|实现|重构|写入|改|fix|implement|refactor|edit|write/i.test(request) ? "workspace_write" : "read_only",
+      sandbox: /修改|修复|实现|重构|写入|写|生成|创建|保存|输出|草稿|改|fix|implement|refactor|edit|write|create|save|draft/i.test(request) ? "workspace_write" : "read_only",
       ...(memoryIds.length ? { memoryIds } : {}),
     },
     "Complex project, code, test, or multi-step analysis should run through HER's Codex runtime.",
@@ -1684,7 +1977,13 @@ const nextRouteAction = (plan: RouteStep[]) => {
   const firstReady = plan.find((step) => step.status === "ready" && step.toolName);
   if (firstReady?.toolName) return `Call task_create with toolName=${firstReady.toolName} and the provided arguments.`;
   const missingSearch = plan.find((step) => step.provider === "search" && step.status === "not_implemented");
-  if (missingSearch) return "HER web_search_provider is not implemented yet; answer from existing context or route follow-up project work to codex_task_run.";
+  if (missingSearch) {
+    return config.codexEnabled
+      ? "HER web_search_provider is not implemented yet; answer from existing context or route follow-up project work to codex_task_run."
+      : "HER web_search_provider is not implemented and Codex is unavailable; do not fall back silently.";
+  }
+  const missingCodex = plan.find((step) => step.provider === "codex" && step.status === "not_implemented");
+  if (missingCodex) return "HER Codex provider is unavailable; do not fall back silently. Tell the user this task needs Codex or ask for a smaller direct action.";
   return "Ask one short clarification before queueing work.";
 };
 
@@ -1699,6 +1998,32 @@ const extractPercent = (request: string) => {
   const value = Number(match[1]);
   if (!Number.isFinite(value)) return undefined;
   return Math.min(100, Math.max(0, value));
+};
+
+const extractPhoneNumber = (request: string) => {
+  const match = request.match(/(\+?\d[\d\s().-]{5,}\d)/);
+  return match?.[1]?.trim();
+};
+
+const inferPhoneCallMode = (request: string): PhoneCallMode => {
+  if (/(视频\s*facetime|facetime\s*视频|facetime\s*video|video\s*facetime|视频通话)/i.test(request)) return "facetime_video";
+  if (/(facetime|face time)/i.test(request)) return "facetime_audio";
+  return "phone";
+};
+
+const extractCallContactName = (request: string) => {
+  const patterns = [
+    /给(.+?)(?:打电话|拨电话|电话)/,
+    /(?:呼叫|拨打)(.+)/,
+    /call\s+(.+)/i,
+    /facetime(?:\s+audio)?\s+(.+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = request.match(pattern);
+    const value = match?.[1]?.trim();
+    if (value) return value.replace(/[，。,.!?！？].*$/, "").trim();
+  }
+  return undefined;
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

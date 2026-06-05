@@ -50,6 +50,17 @@ export class MusicControl {
     return { opened: "Music" };
   }
 
+  async playbackState() {
+    const output = await run("osascript", ["-e", musicPlaybackStateScript()], 5000);
+    const snapshot = parsePlaybackSnapshot(output);
+    return {
+      app: "Music",
+      running: snapshot.state !== "not_running",
+      state: snapshot.state,
+      currentTrack: snapshot.title ? { title: snapshot.title, artist: snapshot.artist } : undefined,
+    };
+  }
+
   async playSong(query: string, artist?: string) {
     const searchText = [query, artist].filter(Boolean).join(" ");
     const script = `
@@ -83,6 +94,7 @@ export class MusicControl {
       const result = await playAppleMusicUrl(catalogTrack.trackViewUrl, catalogTrack);
       return {
         status: result.startedPlayback ? "playing" : "opened_track",
+        reasonCode: result.startedPlayback ? "playing_confirmed" : result.reasonCode,
         title: catalogTrack.trackName,
         artist: catalogTrack.artistName,
         url: catalogTrack.trackViewUrl,
@@ -162,7 +174,11 @@ const playAppleMusicUrl = async (trackUrl: string, expected: AppleMusicSearchRes
   if (isExpectedTrackPlaying(snapshot, expected)) return { startedPlayback: true, snapshot };
 
   await run("open", ["-a", "Music", trackUrl]);
-  return { startedPlayback: false, snapshot };
+  return {
+    startedPlayback: false,
+    snapshot,
+    reasonCode: snapshot.state === "playing" ? "different_track_playing" : "opened_catalog_page_not_playing",
+  };
 };
 
 const parsePlaybackSnapshot = (output: string): MusicPlaybackSnapshot => {
@@ -190,3 +206,24 @@ const normalizeMatchText = (value: string | undefined) =>
     .toLocaleLowerCase()
     .replace(/[^\p{Letter}\p{Number}]+/gu, "")
     .trim();
+
+const musicPlaybackStateScript = () => `
+  tell application "System Events"
+    set isRunning to exists process "Music"
+  end tell
+  if not isRunning then return "not_running||"
+  tell application "Music"
+    try
+      set playerState to player state as text
+      set trackName to ""
+      set trackArtist to ""
+      try
+        set trackName to name of current track
+        set trackArtist to artist of current track
+      end try
+      return playerState & "|" & trackName & "|" & trackArtist
+    on error errMsg number errNo
+      return "error|" & errNo & "|" & errMsg
+    end try
+  end tell
+`;

@@ -61,6 +61,15 @@ export type CodexTaskResult = {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 
+const codexDeveloperInstructions = () => [
+  "You are running as HER's background Codex runtime. Report progress and results as HER, not as Codex.",
+  "Do not attempt to call HER desktop/media/browser/phone tools directly; this task has no HER tool bridge.",
+  config.codexNativeToolsFallback
+    ? "If HER's exposed tool namespace lacks a provider for a required step, you may use Codex-native tools, MCP servers, or plugins already available inside this Codex runtime, including Computer Use when configured. Treat these as Codex-native fallback tools, not HER tools. If a needed native tool is unavailable or blocked, report that explicitly instead of pretending the action completed."
+    : "Do not use Codex-native tools, MCP servers, plugins, or Computer Use as a fallback. If HER's exposed tool namespace lacks a provider, report the missing provider explicitly.",
+  "Do not perform purchases, bookings, publishing, sending, deleting, calling, or other irreversible actions through fallback tools. Return a plan or ask HER/user for confirmation instead.",
+].join(" ");
+
 export class CodexAppServerHarness {
   constructor(private audit: AuditLog) {}
 
@@ -126,8 +135,7 @@ export class CodexAppServerHarness {
         model,
         sandbox: toCodexSandbox(sandbox),
         approvalPolicy: "never",
-        developerInstructions:
-          "You are running as HER's background Codex runtime. Report progress and results as HER, not as Codex. Do not attempt to call HER desktop tools; this task has no HER tool bridge.",
+        developerInstructions: codexDeveloperInstructions(),
       }));
       threadId = readNestedString(threadResponse, ["thread", "id"]);
       if (!threadId) throw new Error("Codex thread/start did not return thread.id.");

@@ -42,7 +42,13 @@ export type ToolName =
   | "copy_publish"
   | "music_open"
   | "music_play_song"
+  | "music_playback_state"
   | "video_play"
+  | "apple_tv_playback_state"
+  | "shortcut_list"
+  | "shortcut_run"
+  | "contacts_search"
+  | "phone_call"
   | "app_open"
   | "app_focus"
   | "app_quit"
@@ -62,7 +68,11 @@ export type ToolName =
   | "system_open_settings"
   | "desktop_clipboard_write"
   | "browser_open_url"
+  | "browser_search_open"
   | "browser_isolated_open_url"
+  | "browser_isolated_window_focus"
+  | "browser_isolated_window_move_resize"
+  | "browser_read_video_state"
   | "browser_fill_form"
   | "browser_click"
   | "advanced_shell_command";
@@ -116,6 +126,7 @@ export type ToolGroup =
   | "documents"
   | "text"
   | "media"
+  | "phone"
   | "apps"
   | "windows"
   | "system"
@@ -529,14 +540,70 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "music_playback_state",
+    description: "Read compact playback state from the macOS Music app.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
     name: "video_play",
-    description: "Play or open a specific video by title or URL. For YouTube, resolves a search query to a concrete watch URL. For Apple TV, resolves a catalog item and sends TV a play command when possible.",
+    description: "Play or open a specific video by title or URL. For YouTube, resolves a search query to a concrete watch URL. For Apple TV, opens the catalog item and attempts playback but does not claim verified playback.",
     parameters: objectSchema(
       {
         service: { type: "string", enum: ["youtube", "apple_tv"], description: "Video service to use." },
         query: { type: "string", description: "Video title, movie/show name, episode name, or a direct video URL." },
       },
       ["service", "query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "apple_tv_playback_state",
+    description: "Read compact playback state from the macOS TV app. Apple TV exposes limited state and may not identify the requested catalog item.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "shortcut_list",
+    description: "List local macOS Shortcuts by name so HER can run an existing user-created shortcut.",
+    parameters: objectSchema({ limit: { type: "integer", minimum: 1, maximum: 50, default: 20 } }),
+  },
+  {
+    type: "function",
+    name: "shortcut_run",
+    description: "Run an existing macOS Shortcut by name. Use for user-created media or app actions, then verify media playback with state tools when relevant. Requires explicit confirmation.",
+    parameters: objectSchema(
+      {
+        name: { type: "string", description: "Shortcut name or identifier." },
+        input: { type: "string", description: "Optional plain text input written to a temporary input file for the shortcut." },
+        timeoutMs: { type: "integer", minimum: 1000, maximum: 180000, default: 60000 },
+      },
+      ["name"],
+    ),
+  },
+  {
+    type: "function",
+    name: "contacts_search",
+    description: "Search local macOS Contacts for a person or phone number before calling. Returns compact masked phone matches.",
+    parameters: objectSchema(
+      {
+        query: { type: "string", description: "Person name or phone number to search." },
+        limit: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "phone_call",
+    description: "Start a phone or FaceTime audio call using macOS tel:/facetime-audio: URL handling. This always requires explicit user confirmation.",
+    parameters: objectSchema(
+      {
+        phoneNumber: { type: "string", description: "Phone number to call." },
+        contactName: { type: "string", description: "Optional contact name for confirmation and audit." },
+        mode: { type: "string", enum: ["phone", "facetime_audio", "facetime_video"], default: "phone" },
+      },
+      ["phoneNumber"],
     ),
   },
   {
@@ -686,9 +753,48 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "browser_search_open",
+    description: "Open a browser search results page without reading or returning search result content.",
+    parameters: objectSchema(
+      {
+        query: { type: "string", description: "Search query to open in the browser." },
+        engine: { type: "string", enum: ["google", "bing", "duckduckgo"], default: "google" },
+        isolated: { type: "boolean", default: true, description: "Open in HER's isolated browser profile unless the user needs existing cookies, login state, or extensions." },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
     name: "browser_isolated_open_url",
     description: "Open an allowlisted URL in an isolated Chrome profile with remote debugging for controlled browser automation.",
     parameters: objectSchema({ url: { type: "string" } }, ["url"]),
+  },
+  {
+    type: "function",
+    name: "browser_isolated_window_focus",
+    description: "Focus and raise HER's isolated Chrome window by its dedicated profile process.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "browser_isolated_window_move_resize",
+    description: "Move and resize HER's isolated Chrome window by its dedicated profile process.",
+    parameters: objectSchema(
+      {
+        x: { type: "integer" },
+        y: { type: "integer" },
+        width: { type: "integer", minimum: 120 },
+        height: { type: "integer", minimum: 120 },
+      },
+      ["x", "y", "width", "height"],
+    ),
+  },
+  {
+    type: "function",
+    name: "browser_read_video_state",
+    description: "Read compact playback state from the active video element in HER's isolated browser.",
+    parameters: objectSchema({}),
   },
   {
     type: "function",
@@ -778,7 +884,13 @@ export const toolGroupByName = {
   copy_publish: "text",
   music_open: "media",
   music_play_song: "media",
+  music_playback_state: "media",
   video_play: "media",
+  apple_tv_playback_state: "media",
+  shortcut_list: "media",
+  shortcut_run: "media",
+  contacts_search: "phone",
+  phone_call: "phone",
   app_open: "apps",
   app_focus: "apps",
   app_quit: "apps",
@@ -798,7 +910,11 @@ export const toolGroupByName = {
   system_open_settings: "system",
   desktop_clipboard_write: "system",
   browser_open_url: "browser",
+  browser_search_open: "browser",
   browser_isolated_open_url: "browser",
+  browser_isolated_window_focus: "browser",
+  browser_isolated_window_move_resize: "browser",
+  browser_read_video_state: "browser",
   browser_fill_form: "browser",
   browser_click: "browser",
   advanced_shell_command: "shell",
@@ -810,6 +926,7 @@ export const toolGroups = [
   "documents",
   "text",
   "media",
+  "phone",
   "apps",
   "windows",
   "system",
@@ -974,6 +1091,7 @@ export const realtimeToolDefinitions = [
 
 export const toolsRequiringConfirmation = new Set<ToolName>([
   "codex_task_run",
+  "phone_call",
   "file_rename",
   "file_create_folder",
   "file_move",
@@ -983,6 +1101,7 @@ export const toolsRequiringConfirmation = new Set<ToolName>([
   "email_send",
   "calendar_create",
   "copy_publish",
+  "shortcut_run",
   "app_quit",
   "window_close_all",
   "window_close",
