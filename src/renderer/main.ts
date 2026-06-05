@@ -17,6 +17,7 @@ import {
   realtimeTurnDetectionTuning,
   type RealtimeRuntimeOptions,
 } from "../shared/realtime-config";
+import type { AuditEvent } from "../shared/events";
 import { realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
 import "./styles.css";
 
@@ -255,6 +256,19 @@ const postJson = async <T>(path: string, body: unknown): Promise<T> => {
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
   return payload;
+};
+
+const writeAudit = (
+  action: string,
+  summary: string,
+  status: AuditEvent["status"],
+  details?: Record<string, unknown>,
+) => {
+  void fetch(`${LOCAL_API}/api/audit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, summary, status, details }),
+  }).catch(() => undefined);
 };
 
 const initialize = async () => {
@@ -639,6 +653,9 @@ const microphoneErrorMessage = (error: unknown) => {
 
 const connect = async () => {
   setState("connecting", "Requesting microphone and Realtime session...");
+  writeAudit("realtime.connect", "Starting Realtime voice session", "started", {
+    microphoneDeviceSelected: Boolean(selectedMicrophoneId),
+  });
   try {
     await assertMicrophoneAvailable();
     const access = await getRealtimeAccess();
@@ -675,15 +692,24 @@ const connect = async () => {
     await realtimeSession.connect({ apiKey: access.clientSecret });
     setState("connected", "Connected. Speak naturally.");
     addLine("system", "Voice session connected.");
+    writeAudit("realtime.connect", "Realtime voice session connected", "ok", {
+      model: access.model,
+      voice: access.voice,
+      runtimeOptions: access.runtimeOptions,
+    });
   } catch (error) {
     disconnect();
     const message = microphoneErrorMessage(error);
     setState("error", message);
     addLine("system", message);
+    writeAudit("realtime.connect", message, "error");
   }
 };
 
 const disconnect = () => {
+  if (realtimeSession || realtimeTransport || localStream) {
+    writeAudit("realtime.disconnect", "Realtime voice session disconnected", "cancelled");
+  }
   realtimeSession?.close();
   realtimeSession = null;
   realtimeTransport = null;
@@ -747,12 +773,23 @@ const trackRealtimeTelemetry = (event: TransportEvent) => {
   if (raw.type === "response.done") {
     const response = raw.response as Record<string, unknown> | undefined;
     addRealtimeUsage(response?.usage);
+    writeAudit("realtime.response", "Realtime response completed", "ok", {
+      responseId: response?.id,
+      status: response?.status,
+      statusDetails: response?.status_details,
+      usage: response?.usage,
+    });
     renderRealtimeUsage();
     return;
   }
 
   if (raw.type === "conversation.item.input_audio_transcription.completed") {
     addTranscriptionUsage(raw.usage);
+    writeAudit("realtime.transcription", "Input audio transcription completed", "ok", {
+      itemId: raw.item_id,
+      transcriptChars: typeof raw.transcript === "string" ? raw.transcript.length : undefined,
+      usage: raw.usage,
+    });
     renderRealtimeUsage();
     return;
   }
@@ -762,6 +799,9 @@ const trackRealtimeTelemetry = (event: TransportEvent) => {
     realtimeUsageStats.rateLimits = rateLimits
       .map((item) => normalizeRateLimit(item))
       .filter((item): item is RealtimeRateLimitSnapshot => Boolean(item));
+    writeAudit("realtime.rate_limits", "Realtime rate limits updated", "ok", {
+      rateLimits: realtimeUsageStats.rateLimits,
+    });
     renderRealtimeUsage();
     return;
   }
@@ -769,6 +809,7 @@ const trackRealtimeTelemetry = (event: TransportEvent) => {
   if (raw.type === "error") {
     const message = errorMessage(raw.error);
     realtimeUsageStats.lastError = message;
+    writeAudit("realtime.error", message, "error", { error: raw.error });
     if (/rate limit|429|too many requests/i.test(message)) {
       addActivity(`Realtime rate limit: ${message}`, "error");
     }

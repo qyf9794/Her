@@ -11,6 +11,7 @@ import { ConfirmationQueue } from "./tools/confirmation";
 import { ToolRegistry } from "./tools/registry";
 import { SystemControl } from "./tools/system-control";
 import type { CapabilitySettings } from "../shared/app-settings";
+import type { AuditEvent } from "../shared/events";
 import type { ConfirmationDecision, ToolCallRequest } from "../shared/tools";
 
 export type LocalServer = {
@@ -140,11 +141,43 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
+  app.post("/api/audit", (req, res) => {
+    const body = req.body as Partial<Omit<AuditEvent, "id" | "timestamp">>;
+    if (typeof body.action !== "string" || typeof body.summary !== "string" || !isAuditStatus(body.status)) {
+      res.status(400).json({ error: "Invalid audit event." });
+      return;
+    }
+    const entry = audit.write({
+      action: body.action,
+      summary: body.summary,
+      status: body.status,
+      details: body.details && typeof body.details === "object" ? (body.details as Record<string, unknown>) : undefined,
+    });
+    res.json({ ok: true, id: entry.id });
+  });
+
   app.post("/api/realtime/client-secret", async (_req, res) => {
+    audit.write({
+      action: "realtime.client_secret",
+      summary: "Creating Realtime client secret",
+      status: "started",
+    });
     try {
-      res.json(await createRealtimeClientSecret(safetyIdentifier));
+      const payload = await createRealtimeClientSecret(safetyIdentifier);
+      audit.write({
+        action: "realtime.client_secret",
+        summary: "Realtime client secret created",
+        status: "ok",
+        details: payload.her as Record<string, unknown>,
+      });
+      res.json(payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      audit.write({
+        action: "realtime.client_secret",
+        summary: message,
+        status: "error",
+      });
       res.status(500).json({ error: message });
     }
   });
@@ -156,8 +189,20 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
 
   app.post("/api/tools/confirm", async (req, res) => {
     const body = req.body as ConfirmationDecision;
+    audit.write({
+      action: "confirmation.request",
+      summary: `${body.approved ? "Approve" : "Reject"} confirmation ${body.confirmationId}`,
+      status: "started",
+      details: { confirmationId: body.confirmationId, approved: body.approved },
+    });
     try {
       const decision = await tools.confirm(body.confirmationId, body.approved);
+      audit.write({
+        action: "confirmation.request",
+        summary: `${body.approved ? "Approved" : "Rejected"} confirmation ${body.confirmationId}`,
+        status: decision.rejected ? "rejected" : "ok",
+        details: { confirmationId: body.confirmationId, approved: body.approved },
+      });
       res.json({
         ok: true,
         confirmationId: body.confirmationId,
@@ -165,6 +210,12 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      audit.write({
+        action: "confirmation.request",
+        summary: message,
+        status: "error",
+        details: { confirmationId: body.confirmationId, approved: body.approved },
+      });
       res.status(404).json({ ok: false, confirmationId: body.confirmationId, error: message });
     }
   });
@@ -195,3 +246,18 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
       }),
   };
 };
+
+const auditStatuses = new Set<AuditEvent["status"]>([
+  "started",
+  "queued",
+  "running",
+  "backoff",
+  "ok",
+  "needs_confirmation",
+  "rejected",
+  "cancelled",
+  "error",
+]);
+
+const isAuditStatus = (value: unknown): value is AuditEvent["status"] =>
+  typeof value === "string" && auditStatuses.has(value as AuditEvent["status"]);

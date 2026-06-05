@@ -10,5 +10,6 @@ export type AuditEvent = {
   timestamp: string;
   action: string;
   summary: string;
-  status: "ok" | "needs_confirmation" | "rejected" | "error";
+  status: "started" | "queued" | "running" | "backoff" | "ok" | "needs_confirmation" | "rejected" | "cancelled" | "error";
+  details?: Record<string, unknown>;
 };

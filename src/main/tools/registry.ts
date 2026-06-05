@@ -205,12 +205,41 @@ export class ToolRegistry {
   ) {}
 
   async execute(request: ToolCallRequest): Promise<ToolCallResult> {
+    const source = request.source === "realtime" ? "realtime" : "local";
+    this.audit.write({
+      action: `tool.${request.name}`,
+      summary: `Received ${request.name} request from ${source}`,
+      status: "started",
+      details: {
+        name: request.name,
+        source,
+        callId: request.callId,
+        arguments: request.arguments,
+      },
+    });
+
     if (!(request.name in schemas)) {
+      this.audit.write({
+        action: `tool.${request.name}`,
+        summary: `Unknown tool: ${request.name}`,
+        status: "error",
+        details: { name: request.name, source },
+      });
       return { ok: false, name: request.name, error: `Unknown tool: ${request.name}`, code: "unknown_tool" };
     }
 
     const parsed = schemas[request.name].safeParse(request.arguments);
     if (!parsed.success) {
+      this.audit.write({
+        action: `tool.${request.name}`,
+        summary: `Invalid arguments for ${request.name}`,
+        status: "error",
+        details: {
+          name: request.name,
+          source,
+          issues: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+        },
+      });
       return {
         ok: false,
         name: request.name,
@@ -220,7 +249,6 @@ export class ToolRegistry {
     }
 
     const args = parsed.data as Record<string, unknown>;
-    const source = request.source === "realtime" ? "realtime" : "local";
     if (this.isTaskControlTool(request.name)) {
       return this.executeTaskControlTool(request.name, args, source);
     }
@@ -594,6 +622,20 @@ export class ToolRegistry {
     };
     this.tasks.set(task.id, task);
     this.taskOrder.unshift(task.id);
+    this.audit.write({
+      action: "task.queue",
+      summary: `Queued ${toolName} task ${task.id}`,
+      status: "queued",
+      details: {
+        taskId: task.id,
+        toolName,
+        group,
+        priority,
+        source,
+        runAfterMs,
+        summary: task.summary,
+      },
+    });
     this.pruneTasks();
     if (runAfterMs > 0) setTimeout(() => void this.processTasks(), runAfterMs);
     void this.processTasks();
@@ -635,6 +677,12 @@ export class ToolRegistry {
     task.status = "cancelled";
     task.updatedAt = Date.now();
     task.completedAt = task.updatedAt;
+    this.audit.write({
+      action: "task.cancel",
+      summary: `Cancelled queued task ${task.id}`,
+      status: "cancelled",
+      details: { taskId: task.id, toolName: task.toolName, source: task.source },
+    });
     return { task: this.toTaskView(task, false), cancelled: true };
   }
 
@@ -679,6 +727,17 @@ export class ToolRegistry {
     task.startedAt = Date.now();
     this.lastTaskStartedAt = task.startedAt;
     task.updatedAt = task.startedAt;
+    this.audit.write({
+      action: "task.run",
+      summary: `Running ${task.toolName} task ${task.id}`,
+      status: "running",
+      details: {
+        taskId: task.id,
+        toolName: task.toolName,
+        source: task.source,
+        attempt: task.attempts,
+      },
+    });
     try {
       const result = await this.executeValidatedTool(task.toolName, task.arguments, task.source);
       task.result = result;
@@ -687,6 +746,17 @@ export class ToolRegistry {
         task.status = "needs_confirmation";
         task.confirmationId = result.confirmationId;
         task.summary = result.summary;
+        this.audit.write({
+          action: "task.confirmation",
+          summary: `Task ${task.id} is waiting for confirmation ${result.confirmationId}`,
+          status: "needs_confirmation",
+          details: {
+            taskId: task.id,
+            toolName: task.toolName,
+            confirmationId: result.confirmationId,
+            source: task.source,
+          },
+        });
         return;
       }
       task.status = result.ok ? "completed" : "failed";
@@ -696,6 +766,18 @@ export class ToolRegistry {
         return;
       }
       task.completedAt = task.updatedAt;
+      this.audit.write({
+        action: "task.complete",
+        summary: `${task.toolName} task ${task.id} ${task.status}`,
+        status: result.ok ? "ok" : "error",
+        details: {
+          taskId: task.id,
+          toolName: task.toolName,
+          source: task.source,
+          attempts: task.attempts,
+          error: result.ok ? undefined : result.error,
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (this.shouldBackoffTask(task, message)) {
@@ -707,6 +789,18 @@ export class ToolRegistry {
       task.result = { ok: false, name: task.toolName, error: message };
       task.updatedAt = Date.now();
       task.completedAt = task.updatedAt;
+      this.audit.write({
+        action: "task.complete",
+        summary: `${task.toolName} task ${task.id} failed: ${message}`,
+        status: "error",
+        details: {
+          taskId: task.id,
+          toolName: task.toolName,
+          source: task.source,
+          attempts: task.attempts,
+          error: message,
+        },
+      });
     } finally {
       this.runningTaskCount = Math.max(0, this.runningTaskCount - 1);
     }
@@ -744,6 +838,20 @@ export class ToolRegistry {
     task.runAt = now + delayMs;
     task.nextBackoffMs = Math.min(backoffMs * 2, config.toolQueueBackoffMaxMs);
     this.taskCooldownUntil = Math.max(this.taskCooldownUntil, task.runAt);
+    this.audit.write({
+      action: "task.backoff",
+      summary: `Requeued ${task.toolName} task ${task.id} after ${delayMs}ms: ${message}`,
+      status: "backoff",
+      details: {
+        taskId: task.id,
+        toolName: task.toolName,
+        source: task.source,
+        attempts: task.attempts,
+        delayMs,
+        nextRunAt: new Date(task.runAt).toISOString(),
+        error: message,
+      },
+    });
     setTimeout(() => void this.processTasks(), delayMs);
   }
 
