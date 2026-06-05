@@ -7,6 +7,7 @@ import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
 import { CapabilityGate } from "./capability-gate";
 import { SettingsStore } from "./settings-store";
+import { MemoryStore } from "./memory-store";
 import { ConfirmationQueue } from "./tools/confirmation";
 import { ToolRegistry } from "./tools/registry";
 import { SystemControl } from "./tools/system-control";
@@ -24,6 +25,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
   const audit = new AuditLog();
   const confirmations = new ConfirmationQueue();
   const settings = new SettingsStore(userDataDir);
+  const memory = new MemoryStore(userDataDir);
   const inventory = new AppInventoryService(settings);
   const gate = new CapabilityGate(settings, () => inventory.listApps());
   const system = new SystemControl();
@@ -33,7 +35,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     setAppPermissions: (appPermissions) => settings.setAppPermissions(appPermissions),
     setCapabilities: (capabilities) => settings.setCapabilities(capabilities),
     setYoloMode: (enabled, appPermissions) => settings.setYoloMode(enabled, appPermissions),
-  });
+  }, memory);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
   const trustedOrigins = new Set(["http://127.0.0.1:5174", "http://localhost:5174", "file://", "null"]);

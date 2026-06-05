@@ -15,6 +15,8 @@ import { AdvancedShell } from "./advanced-shell";
 import { MusicControl } from "./music-control";
 import { VideoControl } from "./video-control";
 import { CapabilityGate } from "../capability-gate";
+import { CodexAppServerHarness, type CodexProgressEvent, type CodexTaskInput } from "../codex/app-server-harness";
+import { MemoryStore, type MemoryLookupInput, type MemorySaveInput, type MemoryType } from "../memory-store";
 
 const limitSchema = z.number().int().min(1).max(10).optional().default(5);
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
@@ -51,6 +53,37 @@ const schemas: Record<ToolName, z.ZodTypeAny> = {
     limit: z.number().int().min(1).max(30).optional().default(10),
   }),
   task_cancel: z.object({ taskId: z.string().min(1) }),
+  task_route: z.object({
+    userRequest: z.string().min(1),
+    preference: z.enum(["auto", "native", "search", "codex"]).optional().default("auto"),
+    cwd: z.string().min(1).optional(),
+    activeApp: z.string().min(1).optional(),
+    selectedText: z.string().optional(),
+  }),
+  memory_lookup: z.object({
+    query: z.string().min(1),
+    types: z.array(z.enum(["path_alias", "preference", "task_template"])).optional(),
+    limit: z.number().int().min(1).max(10).optional().default(5),
+  }),
+  memory_save: z.object({
+    type: z.enum(["path_alias", "preference", "task_template"]),
+    key: z.string().min(1),
+    value: z.string().optional(),
+    summary: z.string().optional(),
+    content: z.string().optional(),
+    aliases: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+  }),
+  memory_forget: z.object({ idOrKey: z.string().min(1) }),
+  memory_status: z.object({}),
+  codex_task_run: z.object({
+    prompt: z.string().min(1),
+    cwd: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    sandbox: z.enum(["read_only", "workspace_write"]).optional().default("read_only"),
+    timeoutMs: z.number().int().min(10000).max(1800000).optional().default(config.codexTurnTimeoutMs),
+    memoryIds: z.array(z.string()).optional().default([]),
+  }),
   yolo_mode_set: z.object({ enabled: z.boolean() }),
   file_list: z.object({ path: z.string().min(1), includeHidden: z.boolean().optional().default(false) }),
   file_search: z.object({ root: z.string().min(1), query: z.string(), maxDepth: z.number().int().min(1).max(8).optional().default(4), limit: z.number().int().min(1).max(50).optional().default(20) }),
@@ -131,6 +164,26 @@ type PermissionManager = {
 
 type TaskPriority = "low" | "normal" | "high";
 type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "needs_confirmation";
+type TaskRoutePreference = "auto" | "native" | "search" | "codex";
+type TaskRouteInput = {
+  userRequest: string;
+  preference?: TaskRoutePreference;
+  cwd?: string;
+  activeApp?: string;
+  selectedText?: string;
+};
+type RouteProvider = "native" | "search" | "codex";
+type RouteStep = {
+  provider: RouteProvider;
+  status: "ready" | "not_implemented" | "needs_clarification";
+  title: string;
+  toolName?: ToolName;
+  arguments?: Record<string, unknown>;
+  priority?: TaskPriority;
+  requiresConfirmation?: boolean;
+  reason: string;
+};
+type TaskProgressEvent = Omit<CodexProgressEvent, "source"> & { source: "her" | "codex" };
 
 type QueuedTask = {
   id: string;
@@ -151,6 +204,7 @@ type QueuedTask = {
   summary?: string;
   attempts: number;
   nextBackoffMs?: number;
+  progress: TaskProgressEvent[];
 };
 
 const toolGroupLookup: Partial<Record<ToolName, ToolGroup>> = toolGroupByName;
@@ -185,6 +239,8 @@ export class ToolRegistry {
   private shell = new AdvancedShell();
   private music = new MusicControl();
   private video = new VideoControl();
+  private codex: CodexAppServerHarness;
+  private memory: MemoryStore;
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
   private tasks = new Map<string, QueuedTask>();
   private taskOrder: string[] = [];
@@ -202,7 +258,11 @@ export class ToolRegistry {
     private audit: AuditLog,
     private gate?: CapabilityGate,
     private permissions?: PermissionManager,
-  ) {}
+    memory?: MemoryStore,
+  ) {
+    this.codex = new CodexAppServerHarness(audit);
+    this.memory = memory ?? new MemoryStore();
+  }
 
   async execute(request: ToolCallRequest): Promise<ToolCallResult> {
     const source = request.source === "realtime" ? "realtime" : "local";
@@ -355,6 +415,16 @@ export class ToolRegistry {
         return this.listTasks(args.status as TaskStatus | undefined, args.limit as number, source);
       case "task_cancel":
         return this.cancelTask(args.taskId as string);
+      case "task_route":
+        return this.routeTask(args as TaskRouteInput);
+      case "memory_lookup":
+        return this.memory.lookup(args as MemoryLookupInput);
+      case "memory_save":
+        return this.memory.save(args as MemorySaveInput);
+      case "memory_forget":
+        return this.memory.forget(args.idOrKey as string);
+      case "memory_status":
+        return this.memory.status();
       default:
         throw new Error(`Not a task control tool: ${name}`);
     }
@@ -400,7 +470,17 @@ export class ToolRegistry {
             music: "macos-music-applescript",
             browser: "isolated-chrome-profile",
             shell: "confirm-first-safe-subset",
+            codex: config.codexEnabled ? "app-server-json-rpc-stdio" : "disabled",
+            router: "deterministic-her-router-v1",
           },
+          codex: {
+            enabled: config.codexEnabled,
+            command: config.codexCommand,
+            args: config.codexArgs,
+            model: config.codexModel || "app-server-default",
+            timeoutMs: config.codexTurnTimeoutMs,
+          },
+          memory: this.memory.status(),
           toolGroups: this.listToolGroups(),
           taskQueue: this.taskQueueSummary(),
         };
@@ -410,6 +490,8 @@ export class ToolRegistry {
         return this.decideConfirmation(args.confirmationId as string | undefined, args.approved as boolean);
       case "tool_result_read":
         return this.readCachedToolResult(args.handle as string, args.offset as number, args.maxChars as number);
+      case "codex_task_run":
+        return this.codex.runTask(this.enrichCodexTaskWithMemory(args as CodexTaskInput & { memoryIds?: string[] }));
       case "yolo_mode_set":
         return this.setYoloMode(args.enabled as boolean);
       case "app_permission_search":
@@ -528,7 +610,7 @@ export class ToolRegistry {
   }
 
   private isTaskControlTool(name: ToolName) {
-    return name === "tool_catalog_list" || name === "tool_group_set" || name === "task_create" || name === "task_status" || name === "task_list" || name === "task_cancel";
+    return name === "tool_catalog_list" || name === "tool_group_set" || name === "task_create" || name === "task_status" || name === "task_list" || name === "task_cancel" || name === "task_route" || name === "memory_lookup" || name === "memory_save" || name === "memory_forget" || name === "memory_status";
   }
 
   private isQueueManagedToolName(name: string): name is ToolName {
@@ -579,6 +661,69 @@ export class ToolRegistry {
     };
   }
 
+  private routeTask(input: TaskRouteInput) {
+    const request = input.userRequest.trim();
+    const preference = input.preference ?? "auto";
+    const memoryMatches = this.memory.lookup({
+      query: request,
+      types: ["path_alias", "preference", "task_template"],
+      limit: 5,
+    }).matches;
+    const signals = classifyRouteSignals(request, preference);
+    const plan = buildRoutePlan(request, input, signals, memoryMatches);
+    const executablePlan = plan.map((step) => {
+      if (!step.toolName || step.status !== "ready") return step;
+      return {
+        ...step,
+        requiresConfirmation: toolsRequiringConfirmation.has(step.toolName),
+        taskCreate: {
+          toolName: step.toolName,
+          arguments: step.arguments ?? {},
+          priority: step.priority ?? "normal",
+        },
+      };
+    });
+    return {
+      route: executablePlan.length > 1 ? "mixed" : (executablePlan[0]?.provider ?? "clarify"),
+      confidence: signals.confidence,
+      reason: signals.reason,
+      preference,
+      memoryUsed: memoryMatches.map((match) => ({
+        id: match.id,
+        type: match.type,
+        key: match.key,
+        summary: match.summary,
+        score: match.score,
+      })),
+      plan: executablePlan,
+      nextAction: nextRouteAction(executablePlan),
+    };
+  }
+
+  private enrichCodexTaskWithMemory(input: CodexTaskInput & { memoryIds?: string[] }): CodexTaskInput {
+    const memoryIds = input.memoryIds ?? [];
+    if (!memoryIds.length) return input;
+    const memories = this.memory.resolveForProvider(memoryIds);
+    const pathAlias = memories.find((item) => item.type === "path_alias" && item.value);
+    const context = memories
+      .filter((item) => item.type !== "path_alias")
+      .map((item) => {
+        const body = item.content ?? item.value ?? item.summary;
+        return `## ${item.type}: ${item.key}\n${body.slice(0, 6000)}`;
+      })
+      .join("\n\n");
+    const pathContext = memories
+      .filter((item) => item.type === "path_alias")
+      .map((item) => `- ${item.key}: ${item.value ?? item.summary}`)
+      .join("\n");
+    const memoryContext = [pathContext ? `Known paths:\n${pathContext}` : "", context].filter(Boolean).join("\n\n");
+    return {
+      ...input,
+      cwd: input.cwd ?? pathAlias?.value ?? input.cwd,
+      prompt: memoryContext ? `HER memory for this task:\n\n${memoryContext}\n\nUser task:\n${input.prompt}` : input.prompt,
+    };
+  }
+
   private createTask(
     toolName: string,
     rawArguments: Record<string, unknown>,
@@ -619,6 +764,7 @@ export class ToolRegistry {
       summary: this.summary(toolName, parsed.data as Record<string, unknown>),
       attempts: 0,
       nextBackoffMs: config.toolQueueBackoffBaseMs,
+      progress: [],
     };
     this.tasks.set(task.id, task);
     this.taskOrder.unshift(task.id);
@@ -677,6 +823,7 @@ export class ToolRegistry {
     task.status = "cancelled";
     task.updatedAt = Date.now();
     task.completedAt = task.updatedAt;
+    this.addTaskProgress(task, "warning", "HER 已取消排队任务");
     this.audit.write({
       action: "task.cancel",
       summary: `Cancelled queued task ${task.id}`,
@@ -727,6 +874,7 @@ export class ToolRegistry {
     task.startedAt = Date.now();
     this.lastTaskStartedAt = task.startedAt;
     task.updatedAt = task.startedAt;
+    this.addTaskProgress(task, "running", `HER 开始执行 ${task.toolName}`);
     this.audit.write({
       action: "task.run",
       summary: `Running ${task.toolName} task ${task.id}`,
@@ -739,13 +887,17 @@ export class ToolRegistry {
       },
     });
     try {
-      const result = await this.executeValidatedTool(task.toolName, task.arguments, task.source);
+      const result =
+        task.toolName === "codex_task_run"
+          ? await this.executeCodexQueuedTask(task)
+          : await this.executeValidatedTool(task.toolName, task.arguments, task.source);
       task.result = result;
       task.updatedAt = Date.now();
       if (result.ok && result.requiresConfirmation) {
         task.status = "needs_confirmation";
         task.confirmationId = result.confirmationId;
         task.summary = result.summary;
+        this.addTaskProgress(task, "warning", "HER 正在等待用户确认");
         this.audit.write({
           action: "task.confirmation",
           summary: `Task ${task.id} is waiting for confirmation ${result.confirmationId}`,
@@ -766,6 +918,7 @@ export class ToolRegistry {
         return;
       }
       task.completedAt = task.updatedAt;
+      this.addTaskProgress(task, result.ok ? "ok" : "error", result.ok ? "HER 已完成任务" : `HER 任务失败：${result.error}`);
       this.audit.write({
         action: "task.complete",
         summary: `${task.toolName} task ${task.id} ${task.status}`,
@@ -789,6 +942,7 @@ export class ToolRegistry {
       task.result = { ok: false, name: task.toolName, error: message };
       task.updatedAt = Date.now();
       task.completedAt = task.updatedAt;
+      this.addTaskProgress(task, "error", `HER 任务失败：${message}`);
       this.audit.write({
         action: "task.complete",
         summary: `${task.toolName} task ${task.id} failed: ${message}`,
@@ -803,6 +957,70 @@ export class ToolRegistry {
       });
     } finally {
       this.runningTaskCount = Math.max(0, this.runningTaskCount - 1);
+    }
+  }
+
+  private addTaskProgress(task: QueuedTask, status: TaskProgressEvent["status"], summary: string, method?: string) {
+    const last = task.progress.at(-1);
+    if (last?.summary === summary && last.status === status) {
+      last.at = new Date().toISOString();
+      last.method = method ?? last.method;
+      task.updatedAt = Date.now();
+      return;
+    }
+    task.progress.push({
+      at: new Date().toISOString(),
+      source: method ? "codex" : "her",
+      status,
+      summary: truncateText(summary, 300),
+      method,
+    });
+    if (task.progress.length > 30) task.progress.splice(0, task.progress.length - 30);
+    task.updatedAt = Date.now();
+  }
+
+  private async executeCodexQueuedTask(task: QueuedTask): Promise<ToolCallResult> {
+    if (this.gate) {
+      try {
+        await this.gate.assertToolAllowed(task.toolName, task.arguments);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false, name: task.toolName, error: message, code: "capability_denied" };
+      }
+    }
+
+    if (toolsRequiringConfirmation.has(task.toolName) && !this.isYoloMode()) {
+      const summary = this.summary(task.toolName, task.arguments);
+      const confirmation = this.confirmations.add({
+        name: task.toolName,
+        summary,
+        run: async () => {
+          const result = await this.codex.runTask({
+            ...this.enrichCodexTaskWithMemory(task.arguments as CodexTaskInput & { memoryIds?: string[] }),
+            onProgress: (event) => this.addTaskProgress(task, event.status, event.summary, event.method),
+          });
+          return this.compactResult(task.toolName, result, task.source);
+        },
+      });
+      return {
+        ok: true,
+        name: task.toolName,
+        requiresConfirmation: true,
+        confirmationId: confirmation.id,
+        summary,
+        expiresAt: new Date(confirmation.expiresAt).toISOString(),
+      };
+    }
+
+    try {
+      const result = await this.codex.runTask({
+        ...this.enrichCodexTaskWithMemory(task.arguments as CodexTaskInput & { memoryIds?: string[] }),
+        onProgress: (event) => this.addTaskProgress(task, event.status, event.summary, event.method),
+      });
+      return { ok: true, name: task.toolName, result: this.compactResult(task.toolName, result, task.source) };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, name: task.toolName, error: message };
     }
   }
 
@@ -838,6 +1056,7 @@ export class ToolRegistry {
     task.runAt = now + delayMs;
     task.nextBackoffMs = Math.min(backoffMs * 2, config.toolQueueBackoffMaxMs);
     this.taskCooldownUntil = Math.max(this.taskCooldownUntil, task.runAt);
+    this.addTaskProgress(task, "warning", `HER 因限流、空响应或超时重试：${message}`);
     this.audit.write({
       action: "task.backoff",
       summary: `Requeued ${task.toolName} task ${task.id} after ${delayMs}ms: ${message}`,
@@ -865,12 +1084,14 @@ export class ToolRegistry {
       task.status = "cancelled";
       task.error = confirmationResult.summary ?? "Confirmation rejected.";
       task.result = { ok: false, name: task.toolName, error: task.error, code: "confirmation_rejected" };
+      this.addTaskProgress(task, "warning", "HER 任务已因确认被拒绝而取消");
       return;
     }
 
     task.status = "completed";
     task.error = undefined;
     task.result = { ok: true, name: task.toolName, result: this.compactResult(task.toolName, confirmationResult.result, task.source) };
+    this.addTaskProgress(task, "ok", "HER 已完成确认后的任务");
   }
 
   private taskQueueSummary(compact = false) {
@@ -910,6 +1131,10 @@ export class ToolRegistry {
       summary: compact ? truncateText(task.summary ?? "", 180) : task.summary,
       confirmationId: task.confirmationId,
       error: task.error,
+      progress: task.progress.slice(compact ? -5 : -8).map((item) => ({
+        ...item,
+        summary: truncateText(item.summary, compact ? 160 : 220),
+      })),
       result: includeResult ? this.toTaskResultView(task.result) : undefined,
     };
     if (compact) return view;
@@ -1046,6 +1271,10 @@ export class ToolRegistry {
         return `List recent tasks${args.status ? ` with status ${args.status}` : ""}`;
       case "task_cancel":
         return `Cancel task ${args.taskId}`;
+      case "task_route":
+        return `Route user request: ${truncateText(String(args.userRequest ?? ""), 120)}`;
+      case "codex_task_run":
+        return `Run Codex background task: ${truncateText(String(args.prompt ?? ""), 120)}`;
       case "yolo_mode_set":
         return `Turn YOLO mode ${args.enabled ? "on" : "off"}`;
       case "email_read":
@@ -1311,6 +1540,168 @@ const truncateText = (value: string, maxChars: number) => {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, maxChars - 3)}...`;
 };
+
+const classifyRouteSignals = (request: string, preference: TaskRoutePreference) => {
+  const normalized = request.toLowerCase();
+  const externalDocumentation = /(官方文档|api\s*文档|docs?|documentation|reference)/i.test(request);
+  const localDocument = !externalDocumentation && /(本地|文件夹|文件|目录|周报|月报|日报|文档|资料夹|folder|file|directory|docx?|pdf|xlsx?|pptx?)/i.test(request);
+  const externalSearch = /(搜索.*网页|查.*官方文档|查.*最新|查.*新闻|查.*价格|找.*资料|来源|联网|网页|web|internet|search|look up|browse|verify|docs?|documentation|reference)/i.test(request);
+  const search = preference === "search" || (!localDocument && externalSearch);
+  const codex =
+    preference === "codex" ||
+    localDocument && /(写|生成|整理|总结|汇总|分析|归纳|月报|报告|草稿|提炼|write|summari[sz]e|report|analy[sz]e)/i.test(request) ||
+    /(代码|项目|仓库|测试|修复|实现|重构|构建|编译|提交|推送|改.*项目|改.*代码|bug|repo|repository|test|fix|implement|refactor|build|commit|push|review)/i.test(request);
+  const native =
+    preference === "native" ||
+    /(打开|启动|关闭|聚焦|切到|播放|暂停|音量|亮度|深色|窗口|最小化|最大化|排列|平铺|复制到剪贴板|\bopen\b|\blaunch\b|\bclose\b|\bfocus\b|\bplay\b|\bvolume\b|\bbrightness\b|\bwindow\b)/i.test(request) ||
+    /https?:\/\//i.test(normalized);
+
+  if (preference !== "auto") {
+    return { search: preference === "search", codex: preference === "codex", native: preference === "native", confidence: 0.95, reason: `Preference forced route to ${preference}.` };
+  }
+  const hits = [search, codex, native].filter(Boolean).length;
+  return {
+    search,
+    codex,
+    native,
+    confidence: hits === 0 ? 0.35 : hits === 1 ? 0.86 : 0.74,
+    reason: hits === 0 ? "No strong route signal; ask a short clarification or inspect tool catalog." : "Matched deterministic HER routing rules.",
+  };
+};
+
+const buildRoutePlan = (
+  request: string,
+  input: TaskRouteInput,
+  signals: ReturnType<typeof classifyRouteSignals>,
+  memoryMatches: Array<{ id: string; type: MemoryType; key: string; value?: string; summary: string }>,
+): RouteStep[] => {
+  const plan: RouteStep[] = [];
+  if (signals.native) plan.push(buildNativeRouteStep(request, input));
+  if (signals.search) plan.push(buildSearchRouteStep(request));
+  if (signals.codex) plan.push(buildCodexRouteStep(request, input, signals.search, memoryMatches));
+  return plan.length ? plan : [{
+    provider: "native",
+    status: "needs_clarification",
+    title: "Clarify HER task route",
+    reason: "The request does not clearly map to a native, search, or Codex task.",
+  }];
+};
+
+const buildNativeRouteStep = (request: string, input: TaskRouteInput): RouteStep => {
+  const url = request.match(/https?:\/\/\S+/i)?.[0];
+  if (url) {
+    return readyRouteStep("native", "Open URL", "browser_open_url", { url }, "URLs are direct HER browser tasks.");
+  }
+
+  const appName = extractKnownAppName(request) ?? input.activeApp;
+  if (/(打开|启动|open|launch)/i.test(request) && appName) {
+    return readyRouteStep("native", `Open ${appName}`, "app_open", { appName }, "Opening apps is a direct HER native task.");
+  }
+  if (/(关闭|退出|quit|close)/i.test(request) && appName) {
+    return readyRouteStep("native", `Close ${appName}`, "app_quit", { appName }, "Closing apps is a direct HER native task.");
+  }
+  if (/(聚焦|切到|focus|switch)/i.test(request) && appName) {
+    return readyRouteStep("native", `Focus ${appName}`, "app_focus", { appName }, "Focusing apps is a direct HER native task.");
+  }
+
+  const volume = extractPercent(request);
+  if (/(音量|volume)/i.test(request) && typeof volume === "number") {
+    return readyRouteStep("native", `Set volume to ${volume}`, "system_set_volume", { level: volume }, "Volume control is a direct HER system task.");
+  }
+  if (/(亮度|brightness)/i.test(request) && typeof volume === "number") {
+    return readyRouteStep("native", `Set brightness to ${volume}`, "system_set_brightness", { level: volume }, "Brightness control is a direct HER system task.");
+  }
+  if (/(播放|听|play).*(音乐|歌|music|song)/i.test(request)) {
+    return readyRouteStep("native", "Play music", "music_play_song", { query: request }, "Music playback is a direct HER media task.");
+  }
+  if (/(排列|平铺|整理|布局).*(窗口|windows?)/i.test(request)) {
+    return readyRouteStep("native", "Arrange windows", "window_auto_arrange", { appNames: [] }, "Window layout is a direct HER window task.");
+  }
+  if (/(最小化|隐藏).*(其他|无关|unrelated|other)/i.test(request)) {
+    return readyRouteStep("native", "Minimize unrelated windows", "window_minimize_unrelated", { keepAppNames: [], keepTitleKeywords: [], preserveFrontmost: true }, "Window cleanup is a direct HER window task.");
+  }
+
+  return {
+    provider: "native",
+    status: "needs_clarification",
+    title: "Native HER task needs a specific tool",
+    reason: "The request sounds like desktop control, but v1 router could not infer exact tool arguments.",
+  };
+};
+
+const buildSearchRouteStep = (request: string): RouteStep => ({
+  provider: "search",
+  status: "not_implemented",
+  title: "HER web search",
+  reason: "The request needs external information, but HER web_search_provider is not implemented yet.",
+  arguments: { query: request },
+});
+
+const buildCodexRouteStep = (
+  request: string,
+  input: TaskRouteInput,
+  includeSearchContext: boolean,
+  memoryMatches: Array<{ id: string; type: MemoryType; key: string; value?: string; summary: string }>,
+): RouteStep => {
+  const prompt = includeSearchContext
+    ? `Use the HER-provided search summary when available, then complete this task:\n\n${request}`
+    : request;
+  const pathAlias = memoryMatches.find((item) => item.type === "path_alias" && item.value);
+  const memoryIds = memoryMatches.map((item) => item.id);
+  return readyRouteStep(
+    "codex",
+    "Run Codex background task",
+    "codex_task_run",
+    {
+      prompt,
+      ...(input.cwd || pathAlias?.value ? { cwd: input.cwd ?? pathAlias?.value } : {}),
+      sandbox: /修改|修复|实现|重构|写入|改|fix|implement|refactor|edit|write/i.test(request) ? "workspace_write" : "read_only",
+      ...(memoryIds.length ? { memoryIds } : {}),
+    },
+    "Complex project, code, test, or multi-step analysis should run through HER's Codex runtime.",
+    "high",
+  );
+};
+
+const readyRouteStep = (
+  provider: RouteProvider,
+  title: string,
+  toolName: ToolName,
+  args: Record<string, unknown>,
+  reason: string,
+  priority: TaskPriority = "normal",
+): RouteStep => ({
+  provider,
+  status: "ready",
+  title,
+  toolName,
+  arguments: args,
+  priority,
+  reason,
+});
+
+const nextRouteAction = (plan: RouteStep[]) => {
+  const firstReady = plan.find((step) => step.status === "ready" && step.toolName);
+  if (firstReady?.toolName) return `Call task_create with toolName=${firstReady.toolName} and the provided arguments.`;
+  const missingSearch = plan.find((step) => step.provider === "search" && step.status === "not_implemented");
+  if (missingSearch) return "HER web_search_provider is not implemented yet; answer from existing context or route follow-up project work to codex_task_run.";
+  return "Ask one short clarification before queueing work.";
+};
+
+const extractKnownAppName = (request: string) => {
+  const knownApps = ["Google Chrome", "Chrome", "Safari", "Music", "Mail", "Calendar", "Notes", "Finder", "Terminal", "TV"];
+  return knownApps.find((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(request));
+};
+
+const extractPercent = (request: string) => {
+  const match = request.match(/(\d{1,3})\s*%?/);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return undefined;
+  return Math.min(100, Math.max(0, value));
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const findInstalledApp = (apps: InstalledApp[], query: string) => {
   const normalized = normalizeAppName(query);

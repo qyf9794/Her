@@ -29,6 +29,16 @@ const booleanEnv = (value: string | undefined, fallback: boolean) => {
 };
 
 const realtimeMode = process.env.HER_REALTIME_MODE === "economy" ? "economy" : "quality";
+const splitArgs = (value: string | undefined, fallback: string[]) => {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+  } catch {
+    // Fall back to shell-like whitespace splitting for simple local overrides.
+  }
+  return value.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+};
 
 const expandHome = (value: string) => {
   if (value === "~") return home;
@@ -54,6 +64,11 @@ export const config = {
   toolQueueMinStartIntervalMs: boundedNumber(process.env.HER_TOOL_QUEUE_MIN_START_INTERVAL_MS, 1200, 0, 60000),
   toolQueueBackoffBaseMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_BASE_MS, 2000, 250, 60000),
   toolQueueBackoffMaxMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_MAX_MS, 30000, 1000, 300000),
+  codexEnabled: booleanEnv(process.env.HER_CODEX_ENABLED, true),
+  codexCommand: process.env.HER_CODEX_COMMAND ?? "codex",
+  codexArgs: splitArgs(process.env.HER_CODEX_ARGS, ["app-server", "--listen", "stdio://"]),
+  codexModel: process.env.HER_CODEX_MODEL ?? "",
+  codexTurnTimeoutMs: boundedNumber(process.env.HER_CODEX_TURN_TIMEOUT_MS, 300000, 10000, 1800000),
   appleMusicCountry: process.env.HER_APPLE_MUSIC_COUNTRY ?? "us",
   allowedApps: splitList(process.env.HER_ALLOWED_APPS, [
     "Safari",

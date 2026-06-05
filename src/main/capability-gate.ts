@@ -36,6 +36,7 @@ const capabilityByTool: Partial<Record<ToolName, CapabilityKey>> = {
   system_set_dark_mode: "systemOperations",
   system_open_settings: "systemOperations",
   advanced_shell_command: "systemOperations",
+  codex_task_run: "systemOperations",
   app_quit: "systemOperations",
   window_list: "systemOperations",
   window_close_all: "systemOperations",

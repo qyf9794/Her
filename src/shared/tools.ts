@@ -9,6 +9,12 @@ export type ToolName =
   | "task_status"
   | "task_list"
   | "task_cancel"
+  | "task_route"
+  | "memory_lookup"
+  | "memory_save"
+  | "memory_forget"
+  | "memory_status"
+  | "codex_task_run"
   | "yolo_mode_set"
   | "app_permission_search"
   | "app_permission_set"
@@ -114,7 +120,8 @@ export type ToolGroup =
   | "windows"
   | "system"
   | "browser"
-  | "shell";
+  | "shell"
+  | "agents";
 
 const objectSchema = (
   properties: Record<string, JsonSchema>,
@@ -162,6 +169,84 @@ export const allToolDefinitions = [
         maxChars: { type: "integer", minimum: 200, maximum: 6000, default: 2000 },
       },
       ["handle"],
+    ),
+  },
+  {
+    type: "function",
+    name: "task_route",
+    description: "Classify a user request into HER native tools, HER web search, Codex background runtime, or a mixed plan. Use before task_create when the best provider is unclear.",
+    parameters: objectSchema(
+      {
+        userRequest: { type: "string", description: "The user's full request to route." },
+        preference: { type: "string", enum: ["auto", "native", "search", "codex"], default: "auto" },
+        cwd: { type: "string", description: "Optional working directory for Codex tasks." },
+        activeApp: { type: "string", description: "Optional current/frontmost app name." },
+        selectedText: { type: "string", description: "Optional selected text or short local context." },
+      },
+      ["userRequest"],
+    ),
+  },
+  {
+    type: "function",
+    name: "memory_lookup",
+    description: "Look up compact HER memory summaries such as path aliases, preferences, and task templates. Results are short; providers resolve full content internally when needed.",
+    parameters: objectSchema(
+      {
+        query: { type: "string" },
+        types: { type: "array", items: { type: "string", enum: ["path_alias", "preference", "task_template"] } },
+        limit: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "memory_save",
+    description: "Save a user-approved HER memory item. Use only when the user explicitly asks HER to remember a path, preference, or task template.",
+    parameters: objectSchema(
+      {
+        type: { type: "string", enum: ["path_alias", "preference", "task_template"] },
+        key: { type: "string" },
+        value: { type: "string" },
+        summary: { type: "string" },
+        content: { type: "string" },
+        aliases: { type: "array", items: { type: "string" } },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      ["type", "key"],
+    ),
+  },
+  {
+    type: "function",
+    name: "memory_forget",
+    description: "Forget a HER memory item by id or exact key. Use only when the user explicitly asks to forget it.",
+    parameters: objectSchema({ idOrKey: { type: "string" } }, ["idOrKey"]),
+  },
+  {
+    type: "function",
+    name: "memory_status",
+    description: "Return HER memory counts and storage status without exposing full memory content.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "codex_task_run",
+    description: "Run a complex background engineering, repo, or file-analysis task through HER's Codex app-server runtime. Use this for multi-step code/project work, not for direct desktop, media, browser, or window control.",
+    parameters: objectSchema(
+      {
+        prompt: { type: "string", description: "The complete task for HER's background Codex runtime." },
+        cwd: { type: "string", description: "Optional working directory. Defaults to HER's current project directory." },
+        model: { type: "string", description: "Optional Codex model override. Leave unset to use Codex app-server defaults." },
+        sandbox: {
+          type: "string",
+          enum: ["read_only", "workspace_write"],
+          default: "read_only",
+          description: "Filesystem permission for this Codex turn.",
+        },
+        timeoutMs: { type: "integer", minimum: 10000, maximum: 1800000, default: 300000 },
+        memoryIds: { type: "array", items: { type: "string" }, description: "Internal HER memory ids to resolve and inject into the Codex prompt." },
+      },
+      ["prompt"],
     ),
   },
   {
@@ -657,9 +742,15 @@ export const coreRealtimeToolNames = [
   "task_status",
   "task_list",
   "task_cancel",
+  "task_route",
+  "memory_lookup",
+  "memory_save",
+  "memory_forget",
+  "memory_status",
 ] as const satisfies readonly ToolName[];
 
 export const toolGroupByName = {
+  codex_task_run: "agents",
   yolo_mode_set: "permissions",
   app_permission_search: "permissions",
   app_permission_set: "permissions",
@@ -724,6 +815,7 @@ export const toolGroups = [
   "system",
   "browser",
   "shell",
+  "agents",
 ] as const satisfies readonly ToolGroup[];
 
 export const queueManagedToolDefinitions = allToolDefinitions.filter((definition) => definition.name in toolGroupByName);
@@ -765,6 +857,63 @@ export const realtimeToolDefinitions = [
       },
       ["handle"],
     ),
+  },
+  {
+    type: "function",
+    name: "task_route",
+    description: "Classify a user request into HER native tools, HER web search, Codex background runtime, or a mixed plan. Call this before task_create when routing is unclear.",
+    parameters: objectSchema(
+      {
+        userRequest: { type: "string", description: "The user's full request to route." },
+        preference: { type: "string", enum: ["auto", "native", "search", "codex"], default: "auto" },
+        cwd: { type: "string", description: "Optional working directory for Codex tasks." },
+        activeApp: { type: "string", description: "Optional current/frontmost app name." },
+        selectedText: { type: "string", description: "Optional selected text or short local context." },
+      },
+      ["userRequest"],
+    ),
+  },
+  {
+    type: "function",
+    name: "memory_lookup",
+    description: "Look up compact HER memory summaries. Prefer task_route first for normal task routing because it performs memory preflight internally.",
+    parameters: objectSchema(
+      {
+        query: { type: "string" },
+        types: { type: "array", items: { type: "string", enum: ["path_alias", "preference", "task_template"] } },
+        limit: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "memory_save",
+    description: "Save a user-approved HER memory item. Use only when the user explicitly asks HER to remember a path, preference, or task template.",
+    parameters: objectSchema(
+      {
+        type: { type: "string", enum: ["path_alias", "preference", "task_template"] },
+        key: { type: "string" },
+        value: { type: "string" },
+        summary: { type: "string" },
+        content: { type: "string" },
+        aliases: { type: "array", items: { type: "string" } },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      ["type", "key"],
+    ),
+  },
+  {
+    type: "function",
+    name: "memory_forget",
+    description: "Forget a HER memory item by id or exact key. Use only when the user explicitly asks to forget it.",
+    parameters: objectSchema({ idOrKey: { type: "string" } }, ["idOrKey"]),
+  },
+  {
+    type: "function",
+    name: "memory_status",
+    description: "Return HER memory counts and storage status without exposing full memory content.",
+    parameters: objectSchema({}),
   },
   {
     type: "function",
@@ -824,6 +973,7 @@ export const realtimeToolDefinitions = [
 ] as const;
 
 export const toolsRequiringConfirmation = new Set<ToolName>([
+  "codex_task_run",
   "file_rename",
   "file_create_folder",
   "file_move",
