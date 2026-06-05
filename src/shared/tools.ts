@@ -65,6 +65,7 @@ export type ToolCallRequest = {
   name: ToolName;
   arguments: Record<string, unknown>;
   callId?: string;
+  source?: "realtime" | "local";
 };
 
 export type ToolCallResult =

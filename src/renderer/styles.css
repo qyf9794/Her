@@ -353,6 +353,39 @@ h2 {
   font-size: 13px;
 }
 
+.usagePanel {
+  display: grid;
+  gap: 8px;
+  min-height: 46px;
+  border: 1px solid #303936;
+  border-radius: 8px;
+  padding: 10px;
+  background: #151b1a;
+  color: #9ba9a4;
+  font-size: 12px;
+}
+
+.usageGrid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 10px;
+}
+
+.usageGrid strong {
+  color: #edf2ef;
+  font-weight: 650;
+  text-align: right;
+}
+
+.usagePanel p {
+  color: #9ba9a4;
+  line-height: 1.35;
+}
+
+.usagePanel .usageError {
+  color: #ffb4a8;
+}
+
 .empty {
   align-items: flex-start;
   justify-content: center;

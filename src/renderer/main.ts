@@ -9,6 +9,14 @@ import {
 } from "@openai/agents/realtime";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../shared/app-settings";
 import { realtimeAgentInstructions } from "../shared/realtime-agent";
+import {
+  createRealtimeSessionConfig,
+  realtimeInputTokenBudget,
+  realtimeMaxOutputTokens,
+  realtimeTranscriptionModel,
+  realtimeTurnDetectionTuning,
+  type RealtimeRuntimeOptions,
+} from "../shared/realtime-config";
 import { realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
 import "./styles.css";
 
@@ -119,6 +127,10 @@ app.innerHTML = `
           <div id="runtimeCapabilities" class="toggleGrid compact"></div>
         </section>
         <section>
+          <h2>Realtime Usage</h2>
+          <div id="realtimeUsage" class="usagePanel"></div>
+        </section>
+        <section>
           <h2>Pending Confirmation</h2>
           <div id="confirmations" class="stack empty">No pending actions</div>
         </section>
@@ -166,6 +178,7 @@ const openaiKeyBadge = document.querySelector<HTMLSpanElement>("#openaiKeyBadge"
 const microphoneSelect = document.querySelector<HTMLSelectElement>("#microphoneSelect")!;
 const refreshMicrophonesBtn = document.querySelector<HTMLButtonElement>("#refreshMicrophonesBtn")!;
 const microphoneStatus = document.querySelector<HTMLParagraphElement>("#microphoneStatus")!;
+const realtimeUsage = document.querySelector<HTMLDivElement>("#realtimeUsage")!;
 
 const capabilityLabels: Record<CapabilityKey, string> = {
   fileManagement: "File management",
@@ -197,6 +210,35 @@ let aiLevel = 0;
 let hasOpenaiApiKey = false;
 let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
 
+type RealtimeUsageStats = {
+  responses: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  audioInputTokens: number;
+  audioOutputTokens: number;
+  textInputTokens: number;
+  textOutputTokens: number;
+  transcriptionTokens: number;
+  rateLimits: Array<{ name: string; remaining: number; limit: number; resetSeconds?: number }>;
+  lastError?: string;
+};
+
+type RealtimeRateLimitSnapshot = { name: string; remaining: number; limit: number; resetSeconds?: number };
+
+const realtimeUsageStats: RealtimeUsageStats = {
+  responses: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedTokens: 0,
+  audioInputTokens: 0,
+  audioOutputTokens: 0,
+  textInputTokens: 0,
+  textOutputTokens: 0,
+  transcriptionTokens: 0,
+  rateLimits: [],
+};
+
 const getJson = async <T>(path: string): Promise<T> => {
   const response = await fetch(`${LOCAL_API}${path}`);
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
@@ -217,6 +259,7 @@ const postJson = async <T>(path: string, body: unknown): Promise<T> => {
 
 const initialize = async () => {
   initOrb();
+  renderRealtimeUsage();
   try {
     settings = await getJson<UserSettings>("/api/settings");
     await loadOpenaiKeyStatus();
@@ -442,10 +485,37 @@ const addActivity = (text: string, status: "ok" | "pending" | "error" = "ok") =>
   activity.prepend(item);
 };
 
+const renderRealtimeUsage = () => {
+  const cacheRatio =
+    realtimeUsageStats.inputTokens > 0
+      ? Math.round((realtimeUsageStats.cachedTokens / realtimeUsageStats.inputTokens) * 100)
+      : 0;
+  const rateLimitText = realtimeUsageStats.rateLimits.length
+    ? realtimeUsageStats.rateLimits
+        .slice(0, 3)
+        .map((item) => `${item.name}: ${item.remaining}/${item.limit}`)
+        .join(" · ")
+    : "No rate limit update";
+
+  realtimeUsage.innerHTML = `
+    <div class="usageGrid">
+      <span>Responses</span><strong>${realtimeUsageStats.responses}</strong>
+      <span>Input</span><strong>${realtimeUsageStats.inputTokens}</strong>
+      <span>Output</span><strong>${realtimeUsageStats.outputTokens}</strong>
+      <span>Cached</span><strong>${realtimeUsageStats.cachedTokens} (${cacheRatio}%)</strong>
+      <span>Audio in/out</span><strong>${realtimeUsageStats.audioInputTokens}/${realtimeUsageStats.audioOutputTokens}</strong>
+      <span>ASR</span><strong>${realtimeUsageStats.transcriptionTokens}</strong>
+    </div>
+    <p>${escapeHtml(rateLimitText)}</p>
+    ${realtimeUsageStats.lastError ? `<p class="usageError">${escapeHtml(realtimeUsageStats.lastError)}</p>` : ""}
+  `;
+};
+
 type RealtimeAccess = {
   clientSecret: string;
   model: string;
   voice: string;
+  runtimeOptions: RealtimeRuntimeOptions;
 };
 
 const getRealtimeAccess = async (): Promise<RealtimeAccess> => {
@@ -454,11 +524,49 @@ const getRealtimeAccess = async (): Promise<RealtimeAccess> => {
   const nested = (payload.client_secret as { value?: string } | undefined)?.value;
   const secret = typeof direct === "string" ? direct : nested;
   if (!secret) throw new Error("Realtime client secret response did not include a usable value.");
-  const her = payload.her as { realtimeModel?: unknown; realtimeVoice?: unknown } | undefined;
+  const her = payload.her as {
+    realtimeModel?: unknown;
+    realtimeVoice?: unknown;
+    maxOutputTokens?: unknown;
+    truncation?: { postInstructions?: unknown; retentionRatio?: unknown };
+    transcription?: { enabled?: unknown; model?: unknown };
+    turnDetection?: { threshold?: unknown; silenceDurationMs?: unknown; prefixPaddingMs?: unknown };
+  } | undefined;
   return {
     clientSecret: secret,
     model: typeof her?.realtimeModel === "string" ? her.realtimeModel : "gpt-realtime-2",
     voice: typeof her?.realtimeVoice === "string" ? her.realtimeVoice : "marin",
+    runtimeOptions: {
+      budget: {
+        postInstructions:
+          typeof her?.truncation?.postInstructions === "number"
+            ? her.truncation.postInstructions
+            : realtimeInputTokenBudget.postInstructions,
+        retentionRatio:
+          typeof her?.truncation?.retentionRatio === "number"
+            ? her.truncation.retentionRatio
+            : realtimeInputTokenBudget.retentionRatio,
+      },
+      maxOutputTokens: typeof her?.maxOutputTokens === "number" ? her.maxOutputTokens : realtimeMaxOutputTokens,
+      transcriptionEnabled:
+        typeof her?.transcription?.enabled === "boolean" ? her.transcription.enabled : true,
+      transcriptionModel:
+        typeof her?.transcription?.model === "string" ? her.transcription.model : realtimeTranscriptionModel,
+      turnDetection: {
+        threshold:
+          typeof her?.turnDetection?.threshold === "number"
+            ? her.turnDetection.threshold
+            : realtimeTurnDetectionTuning.threshold,
+        silenceDurationMs:
+          typeof her?.turnDetection?.silenceDurationMs === "number"
+            ? her.turnDetection.silenceDurationMs
+            : realtimeTurnDetectionTuning.silenceDurationMs,
+        prefixPaddingMs:
+          typeof her?.turnDetection?.prefixPaddingMs === "number"
+            ? her.turnDetection.prefixPaddingMs
+            : realtimeTurnDetectionTuning.prefixPaddingMs,
+      },
+    },
   };
 };
 
@@ -560,25 +668,7 @@ const connect = async () => {
     realtimeSession = new RealtimeSession(agent, {
       model: access.model,
       transport: realtimeTransport,
-      config: {
-        outputModalities: ["audio"],
-        audio: {
-          output: {
-            voice: access.voice,
-          },
-          input: {
-            transcription: {
-              model: "gpt-4o-mini-transcribe",
-            },
-            turnDetection: {
-              type: "server_vad",
-              createResponse: true,
-              interruptResponse: true,
-            },
-          },
-        },
-        toolChoice: "auto",
-      },
+      config: createRealtimeSessionConfig(access.voice, access.runtimeOptions),
     });
 
     wireRealtimeSessionEvents(realtimeSession);
@@ -632,6 +722,8 @@ const wireRealtimeSessionEvents = (session: RealtimeSession) => {
 };
 
 const handleTransportEvent = (event: TransportEvent) => {
+  trackRealtimeTelemetry(event);
+
   if (event.type === "conversation.item.input_audio_transcription.completed") {
     addLine("user", event.transcript);
     setVisualState("thinking");
@@ -648,6 +740,84 @@ const handleTransportEvent = (event: TransportEvent) => {
     setVisualState("error");
     addLine("system", errorMessage(event.error));
   }
+};
+
+const trackRealtimeTelemetry = (event: TransportEvent) => {
+  const raw = event as unknown as Record<string, unknown>;
+  if (raw.type === "response.done") {
+    const response = raw.response as Record<string, unknown> | undefined;
+    addRealtimeUsage(response?.usage);
+    renderRealtimeUsage();
+    return;
+  }
+
+  if (raw.type === "conversation.item.input_audio_transcription.completed") {
+    addTranscriptionUsage(raw.usage);
+    renderRealtimeUsage();
+    return;
+  }
+
+  if (raw.type === "rate_limits.updated") {
+    const rateLimits = Array.isArray(raw.rate_limits) ? raw.rate_limits : [];
+    realtimeUsageStats.rateLimits = rateLimits
+      .map((item) => normalizeRateLimit(item))
+      .filter((item): item is RealtimeRateLimitSnapshot => Boolean(item));
+    renderRealtimeUsage();
+    return;
+  }
+
+  if (raw.type === "error") {
+    const message = errorMessage(raw.error);
+    realtimeUsageStats.lastError = message;
+    if (/rate limit|429|too many requests/i.test(message)) {
+      addActivity(`Realtime rate limit: ${message}`, "error");
+    }
+    renderRealtimeUsage();
+  }
+};
+
+const addRealtimeUsage = (usage: unknown) => {
+  if (!usage || typeof usage !== "object") return;
+  const value = usage as Record<string, unknown>;
+  const input = readNumber(value, "input_tokens");
+  const output = readNumber(value, "output_tokens");
+  realtimeUsageStats.responses += 1;
+  realtimeUsageStats.inputTokens += input;
+  realtimeUsageStats.outputTokens += output;
+
+  const inputDetails = value.input_token_details as Record<string, unknown> | undefined;
+  const outputDetails = value.output_token_details as Record<string, unknown> | undefined;
+  realtimeUsageStats.cachedTokens += readNumber(inputDetails, "cached_tokens");
+  realtimeUsageStats.textInputTokens += readNumber(inputDetails, "text_tokens");
+  realtimeUsageStats.audioInputTokens += readNumber(inputDetails, "audio_tokens");
+  realtimeUsageStats.textOutputTokens += readNumber(outputDetails, "text_tokens");
+  realtimeUsageStats.audioOutputTokens += readNumber(outputDetails, "audio_tokens");
+};
+
+const addTranscriptionUsage = (usage: unknown) => {
+  if (!usage || typeof usage !== "object") return;
+  const value = usage as Record<string, unknown>;
+  realtimeUsageStats.transcriptionTokens += readNumber(value, "input_tokens") + readNumber(value, "output_tokens");
+};
+
+const normalizeRateLimit = (value: unknown): RealtimeRateLimitSnapshot | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const item = value as Record<string, unknown>;
+  const name = typeof item.name === "string" ? item.name : "limit";
+  const remaining = readNumber(item, "remaining");
+  const limit = readNumber(item, "limit");
+  const resetSeconds = readNumber(item, "reset_seconds");
+  return {
+    name,
+    remaining,
+    limit,
+    ...(resetSeconds ? { resetSeconds } : {}),
+  };
+};
+
+const readNumber = (value: Record<string, unknown> | undefined, key: string) => {
+  const raw = value?.[key];
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
 };
 
 const createRealtimeTools = (): FunctionTool[] =>
@@ -693,6 +863,7 @@ const executeLocalToolForSdk = async (name: string, input: unknown, callId?: str
     name,
     arguments: coerceToolArguments(input),
     callId,
+    source: "realtime",
   } satisfies ToolCallRequest);
 
   if (result.ok && result.requiresConfirmation) {

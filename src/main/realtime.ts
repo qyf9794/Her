@@ -1,5 +1,21 @@
 import { config, readOpenaiApiKey } from "./config";
 import { realtimeAgentInstructions } from "../shared/realtime-agent";
+import { createRealtimeClientSecretSession } from "../shared/realtime-config";
+
+const realtimeRuntimeOptions = () => ({
+  budget: {
+    postInstructions: config.realtimePostInstructionsTokens,
+    retentionRatio: config.realtimeRetentionRatio,
+  },
+  maxOutputTokens: config.realtimeMaxOutputTokens,
+  transcriptionEnabled: config.realtimeTranscriptionEnabled,
+  transcriptionModel: config.realtimeTranscriptionModel,
+  turnDetection: {
+    threshold: config.realtimeVadThreshold,
+    silenceDurationMs: config.realtimeVadSilenceDurationMs,
+    prefixPaddingMs: config.realtimeVadPrefixPaddingMs,
+  },
+});
 
 export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
   const apiKey = readOpenaiApiKey();
@@ -19,27 +35,12 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
         anchor: "created_at",
         seconds: 600,
       },
-      session: {
-        type: "realtime",
+      session: createRealtimeClientSecretSession({
         model: config.realtimeModel,
+        voice: config.realtimeVoice,
         instructions: realtimeAgentInstructions,
-        output_modalities: ["audio"],
-        audio: {
-          output: {
-            voice: config.realtimeVoice,
-          },
-          input: {
-            transcription: {
-              model: "gpt-4o-mini-transcribe",
-            },
-            turn_detection: {
-              type: "server_vad",
-              create_response: true,
-              interrupt_response: true,
-            },
-          },
-        },
-      },
+        options: realtimeRuntimeOptions(),
+      }),
     }),
   });
 
@@ -56,7 +57,23 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
     ...payload,
     her: {
       realtimeModel: config.realtimeModel,
+      realtimeMode: config.realtimeMode,
+      realtimeEconomyModel: config.realtimeEconomyModel,
       realtimeVoice: config.realtimeVoice,
+      truncation: {
+        postInstructions: config.realtimePostInstructionsTokens,
+        retentionRatio: config.realtimeRetentionRatio,
+      },
+      maxOutputTokens: config.realtimeMaxOutputTokens,
+      transcription: {
+        enabled: config.realtimeTranscriptionEnabled,
+        model: config.realtimeTranscriptionModel,
+      },
+      turnDetection: {
+        threshold: config.realtimeVadThreshold,
+        silenceDurationMs: config.realtimeVadSilenceDurationMs,
+        prefixPaddingMs: config.realtimeVadPrefixPaddingMs,
+      },
     },
   };
 };

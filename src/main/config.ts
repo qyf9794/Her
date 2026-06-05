@@ -17,6 +17,19 @@ const splitList = (value: string | undefined, fallback: string[]) =>
 
 const home = os.homedir();
 
+const boundedNumber = (value: string | undefined, fallback: number, min: number, max: number) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
+const booleanEnv = (value: string | undefined, fallback: boolean) => {
+  if (typeof value === "undefined") return fallback;
+  return /^(1|true|yes|on)$/i.test(value.trim());
+};
+
+const realtimeMode = process.env.HER_REALTIME_MODE === "economy" ? "economy" : "quality";
+
 const expandHome = (value: string) => {
   if (value === "~") return home;
   if (value.startsWith("~/")) return path.join(home, value.slice(2));
@@ -25,8 +38,22 @@ const expandHome = (value: string) => {
 
 export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-  realtimeModel: process.env.HER_REALTIME_MODEL ?? "gpt-realtime-2",
+  realtimeMode,
+  realtimeModel: process.env.HER_REALTIME_MODEL ?? (realtimeMode === "economy" ? "gpt-realtime-mini" : "gpt-realtime-2"),
+  realtimeEconomyModel: process.env.HER_REALTIME_ECONOMY_MODEL ?? "gpt-realtime-mini",
   realtimeVoice: process.env.HER_REALTIME_VOICE ?? "marin",
+  realtimePostInstructionsTokens: boundedNumber(process.env.HER_REALTIME_POST_INSTRUCTIONS_TOKENS, 6000, 1000, 20000),
+  realtimeRetentionRatio: boundedNumber(process.env.HER_REALTIME_RETENTION_RATIO, 0.8, 0.1, 1),
+  realtimeMaxOutputTokens: boundedNumber(process.env.HER_REALTIME_MAX_OUTPUT_TOKENS, 1200, 1, 4096),
+  realtimeTranscriptionEnabled: booleanEnv(process.env.HER_REALTIME_TRANSCRIPTION_ENABLED, true),
+  realtimeTranscriptionModel: process.env.HER_REALTIME_TRANSCRIPTION_MODEL ?? "gpt-4o-mini-transcribe",
+  realtimeVadThreshold: boundedNumber(process.env.HER_REALTIME_VAD_THRESHOLD, 0.55, 0, 1),
+  realtimeVadSilenceDurationMs: boundedNumber(process.env.HER_REALTIME_VAD_SILENCE_DURATION_MS, 700, 100, 3000),
+  realtimeVadPrefixPaddingMs: boundedNumber(process.env.HER_REALTIME_VAD_PREFIX_PADDING_MS, 300, 0, 1000),
+  toolQueueMaxCreatesPerMinute: boundedNumber(process.env.HER_TOOL_QUEUE_MAX_CREATES_PER_MINUTE, 20, 1, 120),
+  toolQueueMinStartIntervalMs: boundedNumber(process.env.HER_TOOL_QUEUE_MIN_START_INTERVAL_MS, 1200, 0, 60000),
+  toolQueueBackoffBaseMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_BASE_MS, 2000, 250, 60000),
+  toolQueueBackoffMaxMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_MAX_MS, 30000, 1000, 300000),
   appleMusicCountry: process.env.HER_APPLE_MUSIC_COUNTRY ?? "us",
   allowedApps: splitList(process.env.HER_ALLOWED_APPS, [
     "Safari",

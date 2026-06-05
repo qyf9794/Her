@@ -18,6 +18,7 @@ import { CapabilityGate } from "../capability-gate";
 
 const limitSchema = z.number().int().min(1).max(10).optional().default(5);
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
+const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
 const TOOL_RESULT_CACHE_TTL_MS = 10 * 60 * 1000;
 const folderNameSchema = z.string().min(1).refine(
   (value) => {
@@ -137,6 +138,7 @@ type QueuedTask = {
   arguments: Record<string, unknown>;
   group: ToolGroup;
   priority: TaskPriority;
+  source: "realtime" | "local";
   status: TaskStatus;
   createdAt: number;
   updatedAt: number;
@@ -147,6 +149,8 @@ type QueuedTask = {
   error?: string;
   confirmationId?: string;
   summary?: string;
+  attempts: number;
+  nextBackoffMs?: number;
 };
 
 const toolGroupLookup: Partial<Record<ToolName, ToolGroup>> = toolGroupByName;
@@ -187,6 +191,9 @@ export class ToolRegistry {
   private enabledToolGroups = new Set<ToolGroup>(toolGroups);
   private runningTaskCount = 0;
   private isProcessingTasks = false;
+  private taskCreateWindow: number[] = [];
+  private lastTaskStartedAt = 0;
+  private taskCooldownUntil = 0;
   private readonly maxConcurrentTasks = 1;
   private readonly maxTasks = 100;
 
@@ -213,14 +220,19 @@ export class ToolRegistry {
     }
 
     const args = parsed.data as Record<string, unknown>;
+    const source = request.source === "realtime" ? "realtime" : "local";
     if (this.isTaskControlTool(request.name)) {
-      return this.executeTaskControlTool(request.name, args);
+      return this.executeTaskControlTool(request.name, args, source);
     }
 
-    return this.executeValidatedTool(request.name, args);
+    return this.executeValidatedTool(request.name, args, source);
   }
 
-  private async executeValidatedTool(name: ToolName, args: Record<string, unknown>): Promise<ToolCallResult> {
+  private async executeValidatedTool(
+    name: ToolName,
+    args: Record<string, unknown>,
+    source: "realtime" | "local" = "local",
+  ): Promise<ToolCallResult> {
     const run = () => this.run(name, args);
     let summary = this.summary(name, args);
 
@@ -271,7 +283,7 @@ export class ToolRegistry {
     try {
       const result = await run();
       this.audit.write({ action: name, summary, status: "ok" });
-      return { ok: true, name, result: this.compactResult(name, result) };
+      return { ok: true, name, result: this.compactResult(name, result, source) };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.audit.write({ action: name, summary: message, status: "error" });
@@ -279,11 +291,15 @@ export class ToolRegistry {
     }
   }
 
-  private async executeTaskControlTool(name: ToolName, args: Record<string, unknown>): Promise<ToolCallResult> {
+  private async executeTaskControlTool(
+    name: ToolName,
+    args: Record<string, unknown>,
+    source: "realtime" | "local",
+  ): Promise<ToolCallResult> {
     try {
-      const result = await this.runTaskControlTool(name, args);
+      const result = await this.runTaskControlTool(name, args, source);
       this.audit.write({ action: name, summary: this.summary(name, args), status: "ok" });
-      return { ok: true, name, result: this.compactResult(name, result) };
+      return { ok: true, name, result: this.compactResult(name, result, source) };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.audit.write({ action: name, summary: message, status: "error" });
@@ -291,7 +307,7 @@ export class ToolRegistry {
     }
   }
 
-  private runTaskControlTool(name: ToolName, args: Record<string, unknown>) {
+  private runTaskControlTool(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local") {
     switch (name) {
       case "tool_catalog_list":
         return this.listToolCatalog(args.group as ToolGroup | undefined);
@@ -303,11 +319,12 @@ export class ToolRegistry {
           args.arguments as Record<string, unknown>,
           args.priority as TaskPriority,
           args.runAfterMs as number,
+          source,
         );
       case "task_status":
-        return this.getTaskStatus(args.taskId as string);
+        return this.getTaskStatus(args.taskId as string, source);
       case "task_list":
-        return this.listTasks(args.status as TaskStatus | undefined, args.limit as number);
+        return this.listTasks(args.status as TaskStatus | undefined, args.limit as number, source);
       case "task_cancel":
         return this.cancelTask(args.taskId as string);
       default:
@@ -333,7 +350,15 @@ export class ToolRegistry {
       case "system_status":
         return {
           model: config.realtimeModel,
+          mode: config.realtimeMode,
           voice: config.realtimeVoice,
+          realtimeBudget: {
+            maxOutputTokens: config.realtimeMaxOutputTokens,
+            postInstructions: config.realtimePostInstructionsTokens,
+            retentionRatio: config.realtimeRetentionRatio,
+            transcriptionEnabled: config.realtimeTranscriptionEnabled,
+            vadThreshold: config.realtimeVadThreshold,
+          },
           safetyMode: this.isYoloMode() ? "YOLO mode: local confirmations bypassed" : "confirm writes and external side effects",
           allowedApps: config.allowedApps,
           allowedDirectories: config.allowedDirectories,
@@ -526,7 +551,14 @@ export class ToolRegistry {
     };
   }
 
-  private createTask(toolName: string, rawArguments: Record<string, unknown>, priority: TaskPriority, runAfterMs: number) {
+  private createTask(
+    toolName: string,
+    rawArguments: Record<string, unknown>,
+    priority: TaskPriority,
+    runAfterMs: number,
+    source: "realtime" | "local",
+  ) {
+    this.assertTaskCreateRateLimit();
     if (!this.isQueueManagedToolName(toolName)) {
       throw new Error(`Tool is not queue-managed or does not exist: ${toolName}. Use tool_catalog_list first.`);
     }
@@ -551,11 +583,14 @@ export class ToolRegistry {
       arguments: parsed.data as Record<string, unknown>,
       group,
       priority,
+      source,
       status: "queued",
       createdAt: now,
       updatedAt: now,
       runAt: now + runAfterMs,
       summary: this.summary(toolName, parsed.data as Record<string, unknown>),
+      attempts: 0,
+      nextBackoffMs: config.toolQueueBackoffBaseMs,
     };
     this.tasks.set(task.id, task);
     this.taskOrder.unshift(task.id);
@@ -563,27 +598,27 @@ export class ToolRegistry {
     if (runAfterMs > 0) setTimeout(() => void this.processTasks(), runAfterMs);
     void this.processTasks();
     return {
-      task: this.toTaskView(task),
+      task: this.toTaskView(task, true, source === "realtime"),
       queue: this.taskQueueSummary(),
       nextAction: "Use task_status with taskId, or task_list to monitor recent work.",
     };
   }
 
-  private getTaskStatus(taskId: string) {
+  private getTaskStatus(taskId: string, source: "realtime" | "local") {
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
-    return { task: this.toTaskView(task, true), queue: this.taskQueueSummary() };
+    return { task: this.toTaskView(task, true, source === "realtime"), queue: this.taskQueueSummary(source === "realtime") };
   }
 
-  private listTasks(status: TaskStatus | undefined, limit: number) {
+  private listTasks(status: TaskStatus | undefined, limit: number, source: "realtime" | "local") {
     const tasks = this.taskOrder
       .map((id) => this.tasks.get(id))
       .filter((task): task is QueuedTask => Boolean(task))
       .filter((task) => !status || task.status === status)
       .slice(0, limit)
-      .map((task) => this.toTaskView(task, false));
+      .map((task) => this.toTaskView(task, false, source === "realtime"));
 
-    return { tasks, queue: this.taskQueueSummary() };
+    return { tasks, queue: this.taskQueueSummary(source === "realtime") };
   }
 
   private cancelTask(taskId: string) {
@@ -608,6 +643,11 @@ export class ToolRegistry {
     this.isProcessingTasks = true;
     try {
       while (this.runningTaskCount < this.maxConcurrentTasks) {
+        const delayMs = this.taskStartDelayMs();
+        if (delayMs > 0) {
+          setTimeout(() => void this.processTasks(), delayMs);
+          return;
+        }
         const task = this.nextQueuedTask();
         if (!task) return;
         await this.runQueuedTask(task);
@@ -635,10 +675,12 @@ export class ToolRegistry {
   private async runQueuedTask(task: QueuedTask) {
     this.runningTaskCount += 1;
     task.status = "running";
+    task.attempts += 1;
     task.startedAt = Date.now();
+    this.lastTaskStartedAt = task.startedAt;
     task.updatedAt = task.startedAt;
     try {
-      const result = await this.executeValidatedTool(task.toolName, task.arguments);
+      const result = await this.executeValidatedTool(task.toolName, task.arguments, task.source);
       task.result = result;
       task.updatedAt = Date.now();
       if (result.ok && result.requiresConfirmation) {
@@ -649,9 +691,17 @@ export class ToolRegistry {
       }
       task.status = result.ok ? "completed" : "failed";
       task.error = result.ok ? undefined : result.error;
+      if (!result.ok && this.shouldBackoffTask(task, result.error)) {
+        this.requeueTaskAfterBackoff(task, result.error);
+        return;
+      }
       task.completedAt = task.updatedAt;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (this.shouldBackoffTask(task, message)) {
+        this.requeueTaskAfterBackoff(task, message);
+        return;
+      }
       task.status = "failed";
       task.error = message;
       task.result = { ok: false, name: task.toolName, error: message };
@@ -660,6 +710,41 @@ export class ToolRegistry {
     } finally {
       this.runningTaskCount = Math.max(0, this.runningTaskCount - 1);
     }
+  }
+
+  private assertTaskCreateRateLimit() {
+    const now = Date.now();
+    const cutoff = now - 60_000;
+    this.taskCreateWindow = this.taskCreateWindow.filter((item) => item >= cutoff);
+    if (this.taskCreateWindow.length >= config.toolQueueMaxCreatesPerMinute) {
+      throw new Error(`Task create rate limit reached: ${config.toolQueueMaxCreatesPerMinute}/minute. Wait before queueing more work.`);
+    }
+    this.taskCreateWindow.push(now);
+  }
+
+  private taskStartDelayMs() {
+    const now = Date.now();
+    const cooldownDelay = Math.max(0, this.taskCooldownUntil - now);
+    const spacingDelay = Math.max(0, this.lastTaskStartedAt + config.toolQueueMinStartIntervalMs - now);
+    return Math.max(cooldownDelay, spacingDelay);
+  }
+
+  private shouldBackoffTask(task: QueuedTask, message: string) {
+    return task.attempts < 2 && /rate limit|429|too many requests|empty response|timeout/i.test(message);
+  }
+
+  private requeueTaskAfterBackoff(task: QueuedTask, message: string) {
+    const backoffMs = Math.min(task.nextBackoffMs ?? config.toolQueueBackoffBaseMs, config.toolQueueBackoffMaxMs);
+    const jitterMs = Math.floor(Math.random() * Math.min(1000, backoffMs));
+    const delayMs = backoffMs + jitterMs;
+    const now = Date.now();
+    task.status = "queued";
+    task.error = message;
+    task.updatedAt = now;
+    task.runAt = now + delayMs;
+    task.nextBackoffMs = Math.min(backoffMs * 2, config.toolQueueBackoffMaxMs);
+    this.taskCooldownUntil = Math.max(this.taskCooldownUntil, task.runAt);
+    setTimeout(() => void this.processTasks(), delayMs);
   }
 
   private updateTaskForConfirmation(confirmationId: string, approved: boolean, confirmationResult: Awaited<ReturnType<ConfirmationQueue["decide"]>>) {
@@ -677,10 +762,10 @@ export class ToolRegistry {
 
     task.status = "completed";
     task.error = undefined;
-    task.result = { ok: true, name: task.toolName, result: this.compactResult(task.toolName, confirmationResult.result) };
+    task.result = { ok: true, name: task.toolName, result: this.compactResult(task.toolName, confirmationResult.result, task.source) };
   }
 
-  private taskQueueSummary() {
+  private taskQueueSummary(compact = false) {
     const counts = {
       queued: 0,
       running: 0,
@@ -690,29 +775,43 @@ export class ToolRegistry {
       needs_confirmation: 0,
     } satisfies Record<TaskStatus, number>;
     for (const task of this.tasks.values()) counts[task.status] += 1;
-    return {
+    const summary = {
       counts,
       maxConcurrentTasks: this.maxConcurrentTasks,
+      cooldownUntil: this.taskCooldownUntil > Date.now() ? new Date(this.taskCooldownUntil).toISOString() : undefined,
+      maxCreatesPerMinute: config.toolQueueMaxCreatesPerMinute,
+      minStartIntervalMs: config.toolQueueMinStartIntervalMs,
       recentTaskIds: this.taskOrder.slice(0, 5),
+    };
+    if (!compact) return summary;
+    return {
+      counts,
+      cooldownUntil: summary.cooldownUntil,
     };
   }
 
-  private toTaskView(task: QueuedTask, includeResult = true) {
-    return {
+  private toTaskView(task: QueuedTask, includeResult = true, compact = false) {
+    const view = {
       taskId: task.id,
       toolName: task.toolName,
       group: task.group,
       priority: task.priority,
+      source: task.source,
       status: task.status,
-      summary: task.summary,
+      attempts: task.attempts,
+      summary: compact ? truncateText(task.summary ?? "", 180) : task.summary,
+      confirmationId: task.confirmationId,
+      error: task.error,
+      result: includeResult ? this.toTaskResultView(task.result) : undefined,
+    };
+    if (compact) return view;
+    return {
+      ...view,
       createdAt: new Date(task.createdAt).toISOString(),
       updatedAt: new Date(task.updatedAt).toISOString(),
       runAt: new Date(task.runAt).toISOString(),
       startedAt: task.startedAt ? new Date(task.startedAt).toISOString() : undefined,
       completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : undefined,
-      confirmationId: task.confirmationId,
-      error: task.error,
-      result: includeResult ? this.toTaskResultView(task.result) : undefined,
     };
   }
 
@@ -773,10 +872,11 @@ export class ToolRegistry {
     }
   }
 
-  private compactResult(name: ToolName, result: unknown) {
+  private compactResult(name: ToolName, result: unknown, source: "realtime" | "local" = "local") {
     this.pruneResultCache();
     const serialized = stableSerialize(result);
-    if (serialized.length <= TOOL_OUTPUT_INLINE_LIMIT) return result;
+    const inlineLimit = source === "realtime" ? REALTIME_TOOL_OUTPUT_INLINE_LIMIT : TOOL_OUTPUT_INLINE_LIMIT;
+    if (serialized.length <= inlineLimit) return result;
 
     const handle = crypto.randomUUID();
     this.resultCache.set(handle, { value: serialized, createdAt: Date.now(), name });
@@ -784,8 +884,8 @@ export class ToolRegistry {
       truncated: true,
       handle,
       originalChars: serialized.length,
-      inlineChars: TOOL_OUTPUT_INLINE_LIMIT,
-      preview: serialized.slice(0, TOOL_OUTPUT_INLINE_LIMIT),
+      inlineChars: inlineLimit,
+      preview: serialized.slice(0, inlineLimit),
       nextAction: "Use tool_result_read with this handle only if more detail is required.",
     };
   }
