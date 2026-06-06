@@ -5,8 +5,11 @@
   "description": "Local GPT Realtime voice assistant for controlled desktop, copy, mail, and calendar workflows.",
   "main": "electron/dist/main/main.js",
   "scripts": {
+    "patch:electron-plist": "node scripts/patch-electron-plist.mjs",
+    "predev": "npm run patch:electron-plist",
     "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"tsc -p electron/tsconfig.json --watch\" \"wait-on http://127.0.0.1:5174 electron/dist/main/main.js && HER_RENDERER_DEV_URL=http://127.0.0.1:5174 electron electron/dist/main/main.js\"",
     "build": "tsc --noEmit && tsc -p electron/tsconfig.json && vite build",
+    "prestart": "npm run patch:electron-plist",
     "start": "electron electron/dist/main/main.js",
     "monitor": "node scripts/monitor-audit.mjs --follow",
     "monitor:summary": "node scripts/monitor-audit.mjs --summary",

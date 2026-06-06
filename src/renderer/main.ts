@@ -8,7 +8,7 @@ import {
   type TransportEvent,
 } from "@openai/agents/realtime";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../shared/app-settings";
-import { realtimeAgentInstructions } from "../shared/realtime-agent";
+import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
 import {
   createRealtimeSessionConfig,
   realtimeInputTokenBudget,
@@ -25,6 +25,14 @@ const LOCAL_API = "http://127.0.0.1:3939";
 
 type SessionState = "idle" | "connecting" | "connected" | "error";
 type VisualState = "idle" | "listening" | "thinking" | "speaking" | "tool" | "confirming" | "error";
+
+declare global {
+  interface Window {
+    herWindow?: {
+      setOrbOnlyMode: (enabled: boolean) => Promise<unknown>;
+    };
+  }
+}
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing #app root.");
@@ -64,11 +72,13 @@ app.innerHTML = `
           <div class="controls">
             <button id="connectBtn" type="button">Start voice</button>
             <button id="disconnectBtn" type="button" disabled>Stop</button>
+            <button id="orbOnlyBtn" type="button">Orb only</button>
           </div>
         </header>
 
         <section class="orbPanel" aria-label="Voice state">
           <div id="orbMount" class="orbMount"></div>
+          <button id="restorePanelBtn" class="restorePanelBtn" type="button" hidden>Panel</button>
           <div class="orbTelemetry" aria-hidden="true">
             <span id="userMeter"></span>
             <span id="aiMeter"></span>
@@ -187,6 +197,8 @@ const authorizedApps = document.querySelector<HTMLDivElement>("#authorizedApps")
 const statusText = document.querySelector<HTMLParagraphElement>("#statusText")!;
 const connectBtn = document.querySelector<HTMLButtonElement>("#connectBtn")!;
 const disconnectBtn = document.querySelector<HTMLButtonElement>("#disconnectBtn")!;
+const orbOnlyBtn = document.querySelector<HTMLButtonElement>("#orbOnlyBtn")!;
+const restorePanelBtn = document.querySelector<HTMLButtonElement>("#restorePanelBtn")!;
 const sendTextBtn = document.querySelector<HTMLButtonElement>("#sendTextBtn")!;
 const textInput = document.querySelector<HTMLInputElement>("#textInput")!;
 const transcript = document.querySelector<HTMLDivElement>("#transcript")!;
@@ -249,6 +261,21 @@ let userLevel = 0;
 let aiLevel = 0;
 let hasOpenaiApiKey = false;
 let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
+let isOrbOnly = window.localStorage.getItem("her:orbOnly") === "true";
+
+type OrbPosition = { left: number; top: number };
+
+const readStoredOrbPosition = (): OrbPosition | null => {
+  try {
+    const value = JSON.parse(window.localStorage.getItem("her:orbPosition") ?? "null") as Partial<OrbPosition> | null;
+    if (!value || typeof value.left !== "number" || typeof value.top !== "number") return null;
+    return { left: value.left, top: value.top };
+  } catch {
+    return null;
+  }
+};
+
+let orbPosition: OrbPosition | null = readStoredOrbPosition();
 
 type RealtimeUsageStats = {
   responses: number;
@@ -343,6 +370,85 @@ const showOnboarding = (visible: boolean) => {
   appView.classList.toggle("hidden", visible);
   onboardingStatus.textContent = `${installedApps.length} local apps found. Recommended low-risk apps are preselected.`;
   if (!visible) requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const orbOnlySize = 180;
+
+const defaultOrbPosition = (): OrbPosition => ({
+  left: Math.round((window.innerWidth - orbOnlySize) / 2),
+  top: Math.round((window.innerHeight - orbOnlySize) / 2),
+});
+
+const clampOrbPosition = (position: OrbPosition): OrbPosition => {
+  const rect = orbMount.parentElement?.getBoundingClientRect();
+  const width = rect?.width || orbOnlySize;
+  const height = rect?.height || orbOnlySize;
+  return {
+    left: clamp(position.left, 10, Math.max(10, window.innerWidth - width - 10)),
+    top: clamp(position.top, 10, Math.max(10, window.innerHeight - height - 10)),
+  };
+};
+
+const renderOrbPosition = () => {
+  const next = clampOrbPosition(orbPosition ?? defaultOrbPosition());
+  orbPosition = next;
+  appView.style.setProperty("--orb-left", `${next.left}px`);
+  appView.style.setProperty("--orb-top", `${next.top}px`);
+};
+
+const setOrbOnlyMode = (enabled: boolean) => {
+  isOrbOnly = enabled;
+  window.localStorage.setItem("her:orbOnly", String(enabled));
+  document.documentElement.classList.toggle("orbOnlyActive", enabled);
+  appView.classList.toggle("orbOnly", enabled);
+  document.body.classList.toggle("orbOnlyActive", enabled);
+  orbOnlyBtn.textContent = enabled ? "Show panel" : "Orb only";
+  restorePanelBtn.hidden = !enabled;
+  if (enabled) renderOrbPosition();
+  void window.herWindow?.setOrbOnlyMode(enabled).then(() => window.dispatchEvent(new Event("resize"))).catch(() => undefined);
+  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+};
+
+let activeOrbDrag:
+  | {
+      pointerId: number;
+      offsetX: number;
+      offsetY: number;
+    }
+  | null = null;
+
+const startOrbDrag = (event: PointerEvent) => {
+  if (!isOrbOnly || (event.target as HTMLElement).closest("button")) return;
+  const panel = orbMount.parentElement;
+  if (!panel) return;
+  const rect = panel.getBoundingClientRect();
+  activeOrbDrag = {
+    pointerId: event.pointerId,
+    offsetX: event.clientX - rect.left,
+    offsetY: event.clientY - rect.top,
+  };
+  panel.classList.add("dragging");
+  panel.setPointerCapture(event.pointerId);
+};
+
+const moveOrbDrag = (event: PointerEvent) => {
+  if (!activeOrbDrag || event.pointerId !== activeOrbDrag.pointerId) return;
+  orbPosition = clampOrbPosition({
+    left: event.clientX - activeOrbDrag.offsetX,
+    top: event.clientY - activeOrbDrag.offsetY,
+  });
+  renderOrbPosition();
+};
+
+const endOrbDrag = (event: PointerEvent) => {
+  if (!activeOrbDrag || event.pointerId !== activeOrbDrag.pointerId) return;
+  const panel = orbMount.parentElement;
+  panel?.classList.remove("dragging");
+  if (panel?.hasPointerCapture(event.pointerId)) panel.releasePointerCapture(event.pointerId);
+  activeOrbDrag = null;
+  if (orbPosition) window.localStorage.setItem("her:orbPosition", JSON.stringify(orbPosition));
 };
 
 const renderSettings = () => {
@@ -918,7 +1024,7 @@ const connect = async () => {
 
     const agent = new RealtimeAgent({
       name: "HER",
-      instructions: realtimeAgentInstructions,
+      instructions: buildRealtimeAgentInstructions(),
       voice: access.voice,
       tools: createRealtimeTools(),
     });
@@ -1266,6 +1372,7 @@ const setupInputAnalyser = (stream: MediaStream) => {
   audioContext ??= new AudioContext();
   inputAnalyser = audioContext.createAnalyser();
   inputAnalyser.fftSize = 256;
+  inputAnalyser.smoothingTimeConstant = 0.62;
   audioContext.createMediaStreamSource(stream).connect(inputAnalyser);
 };
 
@@ -1273,27 +1380,41 @@ const setupOutputAnalyser = (stream: MediaStream) => {
   audioContext ??= new AudioContext();
   outputAnalyser = audioContext.createAnalyser();
   outputAnalyser.fftSize = 256;
+  outputAnalyser.smoothingTimeConstant = 0.62;
   audioContext.createMediaStreamSource(stream).connect(outputAnalyser);
 };
 
+const analyserBuffers = new WeakMap<AnalyserNode, Uint8Array<ArrayBuffer>>();
+
 const readLevel = (analyser: AnalyserNode | null) => {
   if (!analyser) return 0;
-  const values = new Uint8Array(analyser.frequencyBinCount);
+  let values = analyserBuffers.get(analyser);
+  if (!values || values.length !== analyser.frequencyBinCount) {
+    values = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
+    analyserBuffers.set(analyser, values);
+  }
   analyser.getByteTimeDomainData(values);
   let sum = 0;
+  let peak = 0;
   for (const value of values) {
     const normalized = (value - 128) / 128;
+    peak = Math.max(peak, Math.abs(normalized));
     sum += normalized * normalized;
   }
-  return Math.min(1, Math.sqrt(sum / values.length) * 4);
+  const rms = Math.sqrt(sum / values.length);
+  const rmsSignal = Math.max(0, (rms - 0.012) / 0.105);
+  const peakSignal = Math.max(0, (peak - 0.035) / 0.36) * 0.45;
+  return Math.pow(Math.min(1, rmsSignal + peakSignal), 0.72);
 };
 
 const initOrb = () => {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  camera.position.set(0, 0, 6);
+  camera.position.set(0, 0, 9.5);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setClearAlpha(0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   orbMount.append(renderer.domElement);
 
@@ -1316,9 +1437,11 @@ const initOrb = () => {
       void main() {
         vNormal = normalize(normalMatrix * normal);
         vPosition = position;
-        float wave = sin(position.y * 7.0 + uTime * 1.7) * 0.05;
-        float pulse = 1.0 + uUserLevel * 0.16 + uAiLevel * 0.1;
-        vec3 displaced = position * pulse + normal * wave;
+        float energy = max(uUserLevel, uAiLevel);
+        float wave = sin(position.y * (7.0 + energy * 4.0) + uTime * (1.7 + energy * 4.6)) * (0.045 + energy * 0.16);
+        float ripple = sin((position.x + position.z) * 9.0 - uTime * (2.1 + energy * 5.0)) * energy * 0.08;
+        float pulse = 1.0 + uUserLevel * 0.42 + uAiLevel * 0.34;
+        vec3 displaced = position * pulse + normal * (wave + ripple);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
       }
     `,
@@ -1334,24 +1457,25 @@ const initOrb = () => {
         vec3 coral = vec3(1.0, 0.34, 0.46);
         vec3 violet = vec3(0.54, 0.42, 1.0);
         vec3 gold = vec3(1.0, 0.74, 0.25);
-        float flow = sin(vPosition.x * 3.0 + vPosition.y * 4.0 + uTime * (0.6 + uAiLevel * 2.0)) * 0.5 + 0.5;
+        float energy = max(uUserLevel, uAiLevel);
+        float flow = sin(vPosition.x * 3.0 + vPosition.y * 4.0 + uTime * (0.7 + energy * 3.8)) * 0.5 + 0.5;
         vec3 color = mix(aqua, violet, flow);
-        color = mix(color, coral, uUserLevel * 0.65);
-        color = mix(color, gold, uAiLevel * 0.55);
+        color = mix(color, coral, min(1.0, uUserLevel * 0.95));
+        color = mix(color, gold, min(1.0, uAiLevel * 0.85));
         color = mix(color, uStateColor, 0.35);
         float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.4);
-        float alpha = 0.72 + fresnel * 0.28;
-        gl_FragColor = vec4(color * (0.82 + fresnel + uAiLevel * 0.45), alpha);
+        float alpha = 0.66 + fresnel * 0.28 + energy * 0.18;
+        gl_FragColor = vec4(color * (0.82 + fresnel + energy * 0.85), min(1.0, alpha));
       }
     `,
   });
 
-  const sphere = new THREE.Mesh(new THREE.IcosahedronGeometry(1.55, 64), material);
+  const sphere = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8, 64), material);
   scene.add(sphere);
 
   const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(1.9, 64, 64),
-    new THREE.MeshBasicMaterial({ color: "#51ddf2", transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending }),
+    new THREE.SphereGeometry(2.175, 64, 64),
+    new THREE.MeshBasicMaterial({ color: "#51ddf2", transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending }),
   );
   scene.add(halo);
 
@@ -1359,7 +1483,7 @@ const initOrb = () => {
   const particleCount = 420;
   const positions = new Float32Array(particleCount * 3);
   for (let i = 0; i < particleCount; i += 1) {
-    const radius = 2.2 + Math.random() * 1.35;
+    const radius = 2.475 + Math.random() * 1.5;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(Math.random() * 2 - 1);
     positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
@@ -1384,6 +1508,7 @@ const initOrb = () => {
   };
 
   const resize = () => {
+    if (isOrbOnly) renderOrbPosition();
     const rect = orbMount.getBoundingClientRect();
     renderer.setSize(rect.width, rect.height, false);
     camera.aspect = rect.width / Math.max(1, rect.height);
@@ -1395,8 +1520,11 @@ const initOrb = () => {
   const clock = new THREE.Clock();
   const animate = () => {
     requestAnimationFrame(animate);
-    userLevel = userLevel * 0.82 + readLevel(inputAnalyser) * 0.18;
-    aiLevel = aiLevel * 0.82 + readLevel(outputAnalyser) * 0.18;
+    const nextUserLevel = readLevel(inputAnalyser);
+    const nextAiLevel = readLevel(outputAnalyser);
+    userLevel += (nextUserLevel - userLevel) * (nextUserLevel > userLevel ? 0.42 : 0.12);
+    aiLevel += (nextAiLevel - aiLevel) * (nextAiLevel > aiLevel ? 0.38 : 0.1);
+    const energy = Math.max(userLevel, aiLevel);
     userMeter.style.transform = `scaleX(${Math.max(0.04, userLevel)})`;
     aiMeter.style.transform = `scaleX(${Math.max(0.04, aiLevel)})`;
 
@@ -1407,10 +1535,12 @@ const initOrb = () => {
     uniforms.uStateColor.value.lerp(new THREE.Color(stateColors[visualState]), 0.05);
     sphere.rotation.y = elapsed * 0.12;
     sphere.rotation.x = Math.sin(elapsed * 0.28) * 0.08;
-    halo.scale.setScalar(1 + userLevel * 0.18 + aiLevel * 0.12);
-    (halo.material as THREE.MeshBasicMaterial).opacity = 0.08 + userLevel * 0.22 + aiLevel * 0.16;
-    particles.rotation.y = elapsed * (0.025 + userLevel * 0.05);
-    particles.rotation.x = elapsed * (0.015 + aiLevel * 0.04);
+    sphere.scale.setScalar(1 + userLevel * 0.12 + aiLevel * 0.1);
+    halo.scale.setScalar(1 + userLevel * 0.42 + aiLevel * 0.34);
+    (halo.material as THREE.MeshBasicMaterial).opacity = 0.07 + userLevel * 0.36 + aiLevel * 0.28;
+    particles.scale.setScalar(1 + energy * 0.22);
+    particles.rotation.y = elapsed * (0.025 + userLevel * 0.16);
+    particles.rotation.x = elapsed * (0.015 + aiLevel * 0.13);
     renderer.render(scene, camera);
   };
   animate();
@@ -1453,6 +1583,8 @@ onboardingYoloBtn.addEventListener("click", async () => {
 refreshAppsBtn.addEventListener("click", () => void refreshApps());
 openPermissionsBtn.addEventListener("click", () => showOnboarding(true));
 yoloModeBtn.addEventListener("click", () => void saveYoloMode(!settings?.yoloMode));
+orbOnlyBtn.addEventListener("click", () => setOrbOnlyMode(!isOrbOnly));
+restorePanelBtn.addEventListener("click", () => setOrbOnlyMode(false));
 saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
 refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus());
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
@@ -1489,6 +1621,10 @@ textInput.addEventListener("keydown", (event) => {
     textInput.value = "";
   }
 });
+orbMount.parentElement?.addEventListener("pointerdown", startOrbDrag);
+orbMount.parentElement?.addEventListener("pointermove", moveOrbDrag);
+orbMount.parentElement?.addEventListener("pointerup", endOrbDrag);
+orbMount.parentElement?.addEventListener("pointercancel", endOrbDrag);
 confirmations.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
   const button = target.closest<HTMLButtonElement>("button[data-decision]");
@@ -1498,4 +1634,5 @@ confirmations.addEventListener("click", (event) => {
 });
 
 setState("idle", "Idle");
+setOrbOnlyMode(isOrbOnly);
 void initialize();
