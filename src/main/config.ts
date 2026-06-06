@@ -2,6 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import dotenv from "dotenv";
+import { isRealtimeVoice, realtimeDefaultVoice, type RealtimeVoice } from "../shared/realtime-config";
 
 const envLocalPath = path.join(process.cwd(), ".env.local");
 const envPath = path.join(process.cwd(), ".env");
@@ -46,12 +47,17 @@ const expandHome = (value: string) => {
   return value;
 };
 
+const resolveRealtimeVoice = (value: string | undefined): RealtimeVoice => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && isRealtimeVoice(normalized) ? normalized : realtimeDefaultVoice;
+};
+
 export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   realtimeMode,
   realtimeModel: process.env.HER_REALTIME_MODEL ?? (realtimeMode === "economy" ? "gpt-realtime-mini" : "gpt-realtime-2"),
   realtimeEconomyModel: process.env.HER_REALTIME_ECONOMY_MODEL ?? "gpt-realtime-mini",
-  realtimeVoice: process.env.HER_REALTIME_VOICE ?? "marin",
+  realtimeVoice: resolveRealtimeVoice(process.env.HER_REALTIME_VOICE),
   realtimePostInstructionsTokens: boundedNumber(process.env.HER_REALTIME_POST_INSTRUCTIONS_TOKENS, 6000, 1000, 20000),
   realtimeRetentionRatio: boundedNumber(process.env.HER_REALTIME_RETENTION_RATIO, 0.8, 0.1, 1),
   realtimeMaxOutputTokens: boundedNumber(process.env.HER_REALTIME_MAX_OUTPUT_TOKENS, 1200, 1, 4096),
@@ -104,6 +110,9 @@ export const readOpenaiApiKey = () =>
 export const readCodexModel = () =>
   process.env.HER_CODEX_MODEL || readEnvValue(envLocalPath, "HER_CODEX_MODEL") || readEnvValue(envPath, "HER_CODEX_MODEL");
 
+export const readRealtimeVoice = () =>
+  resolveRealtimeVoice(process.env.HER_REALTIME_VOICE || readEnvValue(envLocalPath, "HER_REALTIME_VOICE") || readEnvValue(envPath, "HER_REALTIME_VOICE"));
+
 export const saveOpenaiApiKey = (apiKey: string) => {
   const trimmed = apiKey.trim();
   if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(trimmed)) {
@@ -126,6 +135,18 @@ export const saveCodexModel = (model: string) => {
   else delete process.env.HER_CODEX_MODEL;
   config.codexModel = trimmed;
   return trimmed;
+};
+
+export const saveRealtimeVoice = (voice: string) => {
+  const normalized = voice.trim().toLowerCase();
+  if (!isRealtimeVoice(normalized)) {
+    throw new Error("Choose a supported Realtime voice.");
+  }
+
+  writeEnvValue(envLocalPath, "HER_REALTIME_VOICE", normalized);
+  process.env.HER_REALTIME_VOICE = normalized;
+  config.realtimeVoice = normalized;
+  return normalized;
 };
 
 const writeEnvValue = (filePath: string, envName: string, value: string | undefined) => {

@@ -24,6 +24,22 @@ export type RealtimeRuntimeOptions = {
 
 export const realtimeTranscriptionModel = "gpt-4o-mini-transcribe";
 export const realtimeMaxOutputTokens = 1200;
+export const realtimeDefaultVoice = "marin";
+export const realtimeVoiceOptions = [
+  { value: "marin", label: "Marin", recommended: true },
+  { value: "cedar", label: "Cedar", recommended: true },
+  { value: "alloy", label: "Alloy" },
+  { value: "ash", label: "Ash" },
+  { value: "ballad", label: "Ballad" },
+  { value: "coral", label: "Coral" },
+  { value: "echo", label: "Echo" },
+  { value: "sage", label: "Sage" },
+  { value: "shimmer", label: "Shimmer" },
+  { value: "verse", label: "Verse" },
+] as const;
+export type RealtimeVoice = (typeof realtimeVoiceOptions)[number]["value"];
+export const isRealtimeVoice = (value: string): value is RealtimeVoice =>
+  realtimeVoiceOptions.some((option) => option.value === value);
 export const realtimeTurnDetectionTuning = {
   threshold: 0.55,
   silenceDurationMs: 700,

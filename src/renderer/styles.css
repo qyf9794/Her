@@ -271,6 +271,13 @@ h2 {
   background: #141c1b;
 }
 
+.voiceSettingsPanel {
+  border: 1px solid #30423f;
+  border-radius: 8px;
+  padding: 12px;
+  background: #151b1a;
+}
+
 .codexLoginPanel {
   border: 1px solid #30423f;
   border-radius: 8px;
@@ -285,10 +292,12 @@ h2 {
   background: #151b1a;
 }
 
+.voiceSettingsPanel select,
 .devicePanel select {
   margin-top: 12px;
 }
 
+.voiceSettingsPanel .muted,
 .devicePanel .muted {
   margin-top: 8px;
   line-height: 1.35;

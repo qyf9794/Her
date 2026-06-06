@@ -96,6 +96,16 @@ app.innerHTML = `
           </div>
           <p id="openaiKeyStatus" class="muted">Saved locally in .env.local for voice sessions.</p>
         </section>
+        <section class="voiceSettingsPanel">
+          <div class="sectionHeader">
+            <h2>Voice</h2>
+            <span id="realtimeVoiceBadge" class="keyBadge configured">Marin</span>
+          </div>
+          <select id="realtimeVoiceSelect" aria-label="Realtime voice">
+            <option value="marin">Marin</option>
+          </select>
+          <p id="realtimeVoiceStatus" class="muted">Voice changes apply to the next session.</p>
+        </section>
         <section class="codexLoginPanel">
           <div class="sectionHeader">
             <h2>Codex Login</h2>
@@ -195,6 +205,9 @@ const openaiKeyInput = document.querySelector<HTMLInputElement>("#openaiKeyInput
 const saveOpenaiKeyBtn = document.querySelector<HTMLButtonElement>("#saveOpenaiKeyBtn")!;
 const openaiKeyStatus = document.querySelector<HTMLParagraphElement>("#openaiKeyStatus")!;
 const openaiKeyBadge = document.querySelector<HTMLSpanElement>("#openaiKeyBadge")!;
+const realtimeVoiceSelect = document.querySelector<HTMLSelectElement>("#realtimeVoiceSelect")!;
+const realtimeVoiceStatus = document.querySelector<HTMLParagraphElement>("#realtimeVoiceStatus")!;
+const realtimeVoiceBadge = document.querySelector<HTMLSpanElement>("#realtimeVoiceBadge")!;
 const codexLoginBadge = document.querySelector<HTMLSpanElement>("#codexLoginBadge")!;
 const codexLoginStatus = document.querySelector<HTMLParagraphElement>("#codexLoginStatus")!;
 const refreshCodexLoginBtn = document.querySelector<HTMLButtonElement>("#refreshCodexLoginBtn")!;
@@ -303,6 +316,7 @@ const initialize = async () => {
   try {
     settings = await getJson<UserSettings>("/api/settings");
     await loadOpenaiKeyStatus();
+    await loadRealtimeVoice();
     await loadCodexLoginStatus();
     await loadCodexModel();
     await refreshMicrophoneDevices();
@@ -457,6 +471,12 @@ type CodexModelStatus = {
   note?: string;
 };
 
+type RealtimeVoiceStatus = {
+  voice: string;
+  options: Array<{ label: string; value: string; recommended?: boolean }>;
+  note?: string;
+};
+
 const renderOpenaiKeyStatus = (configured: boolean, message?: string) => {
   hasOpenaiApiKey = configured;
   openaiKeyBadge.textContent = configured ? "Configured" : "Missing";
@@ -537,6 +557,57 @@ const saveCodexModel = async () => {
     addActivity(`Codex model update failed: ${message}`, "error");
   } finally {
     codexModelSelect.disabled = false;
+  }
+};
+
+const renderRealtimeVoice = (status: RealtimeVoiceStatus, message?: string) => {
+  const options = [...status.options];
+  if (status.voice && !options.some((item) => item.value === status.voice)) {
+    options.push({ label: status.voice, value: status.voice });
+  }
+
+  realtimeVoiceSelect.innerHTML = "";
+  for (const option of options) {
+    const item = document.createElement("option");
+    item.value = option.value;
+    item.textContent = option.recommended ? `${option.label} - recommended` : option.label;
+    realtimeVoiceSelect.append(item);
+  }
+  realtimeVoiceSelect.value = status.voice;
+  realtimeVoiceBadge.textContent = status.voice || "Voice";
+  realtimeVoiceStatus.textContent =
+    message ??
+    (state === "connected"
+      ? `${status.voice} is saved. Stop and start voice to use it.`
+      : (status.note ?? "Voice changes apply to the next session."));
+};
+
+const loadRealtimeVoice = async () => {
+  try {
+    renderRealtimeVoice(await getJson<RealtimeVoiceStatus>("/api/realtime/voice"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    realtimeVoiceStatus.textContent = `Voice status failed: ${message}`;
+  }
+};
+
+const saveRealtimeVoice = async () => {
+  const voice = realtimeVoiceSelect.value;
+  realtimeVoiceSelect.disabled = true;
+  realtimeVoiceStatus.textContent = `Saving ${voice}...`;
+  try {
+    renderRealtimeVoice(
+      await postJson<RealtimeVoiceStatus>("/api/realtime/voice", { voice }),
+      state === "connected" ? `${voice} is saved. Stop and start voice to use it.` : `${voice} will be used for the next voice session.`,
+    );
+    addActivity(`Realtime voice set to ${voice}`, "ok");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    realtimeVoiceStatus.textContent = message;
+    addActivity(`Realtime voice update failed: ${message}`, "error");
+    await loadRealtimeVoice();
+  } finally {
+    realtimeVoiceSelect.disabled = false;
   }
 };
 
@@ -824,6 +895,7 @@ const connect = async () => {
   setState("connecting", "Requesting microphone and Realtime session...");
   writeAudit("realtime.connect", "Starting Realtime voice session", "started", {
     microphoneDeviceSelected: Boolean(selectedMicrophoneId),
+    selectedVoice: realtimeVoiceSelect.value,
   });
   try {
     await assertMicrophoneAvailable();
@@ -861,6 +933,7 @@ const connect = async () => {
     await realtimeSession.connect({ apiKey: access.clientSecret });
     setState("connected", "Connected. Speak naturally.");
     addLine("system", "Voice session connected.");
+    realtimeVoiceStatus.textContent = `Current session voice: ${access.voice}.`;
     writeAudit("realtime.connect", "Realtime voice session connected", "ok", {
       model: access.model,
       voice: access.voice,
@@ -1384,6 +1457,7 @@ saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
 refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus());
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
 codexModelSelect.addEventListener("change", () => void saveCodexModel());
+realtimeVoiceSelect.addEventListener("change", () => void saveRealtimeVoice());
 openaiKeyInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") void saveOpenaiKey();
 });

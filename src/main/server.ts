@@ -2,7 +2,7 @@ import express from "express";
 import type { Server } from "node:http";
 import crypto from "node:crypto";
 import { createRealtimeClientSecret } from "./realtime";
-import { readCodexModel, readOpenaiApiKey, saveCodexModel, saveOpenaiApiKey } from "./config";
+import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
 import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
@@ -14,6 +14,7 @@ import { ToolRegistry } from "./tools/registry";
 import { SystemControl } from "./tools/system-control";
 import type { CapabilitySettings } from "../shared/app-settings";
 import type { AuditEvent } from "../shared/events";
+import { realtimeVoiceOptions } from "../shared/realtime-config";
 import type { ConfirmationDecision, ToolCallRequest } from "../shared/tools";
 
 export type LocalServer = {
@@ -208,6 +209,40 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
         details: { model: model || "[app-server-default]" },
       });
       res.json({ model, options: codexModelOptions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/realtime/voice", (_req, res) => {
+    res.json({
+      voice: readRealtimeVoice(),
+      options: realtimeVoiceOptions,
+      note: "Voice changes apply when the next Realtime voice session starts.",
+    });
+  });
+
+  app.post("/api/realtime/voice", (req, res) => {
+    const body = req.body as { voice?: unknown };
+    if (typeof body.voice !== "string") {
+      res.status(400).json({ error: "Missing Realtime voice." });
+      return;
+    }
+
+    try {
+      const voice = saveRealtimeVoice(body.voice);
+      audit.write({
+        action: "realtime.voice",
+        summary: `Set Realtime voice to ${voice}`,
+        status: "ok",
+        details: { voice },
+      });
+      res.json({
+        voice,
+        options: realtimeVoiceOptions,
+        note: "Voice changes apply when the next Realtime voice session starts.",
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(400).json({ error: message });
