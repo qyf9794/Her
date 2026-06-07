@@ -28,6 +28,7 @@ const {
   allToolDefinitions,
   coreRealtimeToolNames,
   queueManagedToolDefinitions,
+  realtimeToolDefinitions,
   toolGroupByName,
   toolGroups,
 } = require("../electron/dist/shared/tools.js");
@@ -48,6 +49,22 @@ const samples = {
   task_list: { limit: 10 },
   task_cancel: { taskId: "missing-routing-smoke-task" },
   task_route: { userRequest: "Open Google Chrome and search for HER local routing.", preference: "auto" },
+  intent_route: {
+    intent: {
+      originalText: "播放钢琴曲",
+      intent: "play_music",
+      complexity: "simple",
+      domain: "media",
+      action: "play",
+      entities: { query: "钢琴曲" },
+      toolName: "music_play_song",
+      toolArguments: { query: "钢琴曲" },
+      candidateTools: ["music_play_song"],
+      missingInfo: [],
+      confidence: 0.92,
+      routePreference: "direct",
+    },
+  },
   memory_lookup: { query: "routing smoke", limit: 5 },
   memory_save: {
     type: "preference",
@@ -78,6 +95,8 @@ const samples = {
   email_read: { emailId: "missing-routing-smoke-email" },
   email_draft: { to: "person@example.com", subject: "Routing smoke", body: "Test draft body." },
   email_send: { draftId: "missing-routing-smoke-draft" },
+  mac_mail_draft_create: { to: "person@example.com", subject: "Routing smoke", body: "Visible Mail draft smoke body." },
+  weather_lookup: { location: "Los Angeles", date: "2026-06-06" },
   calendar_search: { from: "2026-06-05T00:00:00.000Z", to: "2026-06-06T00:00:00.000Z", query: "routing", limit: 5 },
   calendar_create: {
     title: "Routing smoke",
@@ -85,14 +104,36 @@ const samples = {
     end: "2026-06-05T12:30:00.000Z",
     attendees: [],
   },
+  mac_calendar_create: {
+    title: "Routing smoke macOS event",
+    start: "2026-06-05T12:00:00.000Z",
+    end: "2026-06-05T12:30:00.000Z",
+    attendees: [],
+  },
+  mac_reminder_create: { title: "Routing smoke reminder", dueAt: "2026-06-05T13:00:00.000Z" },
+  mac_note_create: { title: "Routing smoke note", body: "Routing smoke note body." },
   copy_search: { query: "routing", limit: 5 },
   copy_save_draft: { title: "Routing smoke", body: "Copy draft body.", project: "smoke" },
   copy_publish: { draftId: "missing-routing-smoke-copy" },
   music_open: {},
   music_play_song: { query: "Here Comes the Sun", artist: "The Beatles" },
   music_playback_state: {},
+  music_spotify_search: { query: "Here Comes the Sun", artist: "The Beatles", limit: 5 },
+  music_spotify_play: { query: "Here Comes the Sun", artist: "The Beatles" },
+  music_spotify_playback_state: {},
+  music_netease_open: { query: "晴天 周杰伦" },
+  music_qq_open: { query: "晴天 周杰伦", target: "web" },
+  media_key_control: { action: "play_pause", appName: "QQ音乐" },
   video_play: { service: "youtube", query: "lofi hip hop radio" },
+  video_playback_control: { action: "state" },
   apple_tv_playback_state: {},
+  social_x_search: { query: "from:openai", limit: 10 },
+  social_x_post: { text: "Routing smoke test draft." },
+  social_open: { service: "xiaohongshu", kind: "search", target: "咖啡", isolated: true },
+  news_search: { query: "artificial intelligence", provider: "gdelt", limit: 3 },
+  sec_filing_search: { company: "AAPL", forms: ["10-K", "10-Q"], limit: 5 },
+  macro_series_lookup: { seriesId: "CUSR0000SA0", startYear: "2025", endYear: "2026" },
+  market_quote_lookup: { symbol: "IBM" },
   shortcut_list: { limit: 5 },
   shortcut_run: { name: "Missing Routing Smoke Shortcut", input: "smoke", timeoutMs: 1000 },
   contacts_search: { query: "Alice", limit: 5 },
@@ -102,24 +143,37 @@ const samples = {
   app_quit: { appName: "Google Chrome" },
   window_list: {},
   window_close_all: {},
+  window_hide_all: { preserveFrontmost: true, preserveFinder: true },
+  window_minimize_all: {},
   window_auto_arrange: { appNames: ["Google Chrome"] },
   window_minimize_unrelated: { keepAppNames: ["Google Chrome"], keepTitleKeywords: ["routing"], preserveFrontmost: true },
   window_close: { appName: "Google Chrome" },
   window_minimize: { appName: "Google Chrome" },
   window_maximize: { appName: "Google Chrome" },
   window_move_resize: { appName: "Google Chrome", x: 80, y: 80, width: 800, height: 600 },
+  desktop_show: {},
   desktop_open_app: { appName: "Google Chrome" },
   system_close_app: { appName: "Google Chrome" },
+  system_sleep: {},
+  system_lock_screen: {},
   system_set_volume: { level: 20 },
+  system_get_volume: {},
+  system_mute_volume: { muted: true },
   system_set_brightness: { level: 50 },
   system_set_dark_mode: { enabled: false },
   system_open_settings: { pane: "sound" },
   desktop_clipboard_write: { text: "routing smoke clipboard text" },
+  desktop_clipboard_read: {},
+  system_speak: { text: "routing smoke", voice: "Tingting" },
+  system_notification: { title: "Routing smoke", message: "Notification smoke", dialog: false },
+  screenshot_capture: { mode: "clipboard" },
+  keyboard_shortcut: { action: "escape" },
   browser_open_url: { url: "https://example.com/" },
   browser_search_open: { query: "HER routing smoke", engine: "google", isolated: true },
   browser_isolated_open_url: { url: "https://example.com/" },
   browser_isolated_window_focus: {},
   browser_isolated_window_move_resize: { x: 100, y: 100, width: 900, height: 700 },
+  browser_read_page: { maxChars: 500 },
   browser_read_video_state: {},
   browser_fill_form: { fields: [{ selector: "input[name=q]", value: "routing smoke" }] },
   browser_click: { selector: "button[type=submit]", purpose: "Submit the routing smoke form" },
@@ -161,8 +215,15 @@ const duplicateDefinitions = definitionNames.filter((name, index) => definitionN
 for (const name of duplicateDefinitions) fail("definition", `${name} is defined more than once.`);
 
 const realtimeNames = coreRealtimeToolNames;
+const realtimeDefinitionNames = realtimeToolDefinitions.map((definition) => definition.name);
 for (const name of realtimeNames) {
   if (!definitionNames.includes(name)) fail("realtime-core", `${name} is not present in allToolDefinitions.`);
+}
+for (const name of realtimeNames) {
+  if (!realtimeDefinitionNames.includes(name)) fail("realtime-definitions", `${name} is missing from realtimeToolDefinitions.`);
+}
+for (const name of realtimeDefinitionNames) {
+  if (!realtimeNames.includes(name)) fail("realtime-definitions", `${name} is exposed by realtimeToolDefinitions but not listed as a core realtime tool.`);
 }
 
 for (const group of toolGroups) {
@@ -265,10 +326,113 @@ if (!timeoutCreate.ok) {
   }
 }
 
+const unrestrictedRegistry = new ToolRegistry(new ConfirmationQueue(), new AuditLog(), undefined, undefined, new MemoryStore(tmpRoot));
+const blockedXiaohongshuProfile = await unrestrictedRegistry.execute({
+  name: "social_open",
+  arguments: { service: "xiaohongshu", kind: "profile", target: "openai", isolated: false },
+  source: "local",
+});
+if (blockedXiaohongshuProfile.ok || !String(blockedXiaohongshuProfile.error ?? "").includes("only opening search, note, or share")) {
+  fail("social_scope", "xiaohongshu profile opening should be rejected before any browser action.");
+}
+
+const assertFirstReadyRoute = (scope, result, expectedTool, expectedArgs = {}) => {
+  if (!result.ok) {
+    fail(scope, `route failed: ${result.code ?? "error"} ${result.error}`);
+    return;
+  }
+  const step = result.result?.plan?.[0];
+  if (!step || step.status !== "ready" || step.toolName !== expectedTool) {
+    fail(scope, `expected first ready step ${expectedTool}; got ${JSON.stringify(step)}`);
+    return;
+  }
+  for (const [key, value] of Object.entries(expectedArgs)) {
+    if (step.arguments?.[key] !== value) {
+      fail(scope, `expected ${expectedTool}.${key}=${JSON.stringify(value)}; got ${JSON.stringify(step.arguments?.[key])}`);
+    }
+  }
+};
+
+const youtubeBrowserIntent = await unrestrictedRegistry.execute({
+  name: "intent_route",
+  arguments: {
+    intent: {
+      originalText: "请打开大耳朵视频。",
+      intent: "search_video",
+      complexity: "simple",
+      domain: "browser",
+      action: "search video",
+      entities: { query: "大耳朵 视频", site: "YouTube" },
+      confidence: 0.88,
+      routePreference: "auto",
+    },
+  },
+  source: "local",
+});
+assertFirstReadyRoute("youtube_intent", youtubeBrowserIntent, "video_play", { service: "youtube", mode: "play" });
+
+const youtubePlatformIntent = await unrestrictedRegistry.execute({
+  name: "intent_route",
+  arguments: {
+    intent: {
+      originalText: "用YouTube打开 大耳朵视频",
+      intent: "open_youtube_search",
+      complexity: "simple",
+      domain: "media",
+      action: "search on youtube",
+      entities: { platform: "YouTube", mode: "search", query: "大耳朵视频" },
+      toolName: "video_play",
+      toolArguments: { platform: "youtube", mode: "search", query: "大耳朵视频" },
+      confidence: 0.95,
+      routePreference: "auto",
+    },
+  },
+  source: "local",
+});
+assertFirstReadyRoute("youtube_platform_alias", youtubePlatformIntent, "video_play", { service: "youtube", mode: "play" });
+
+const youtubeTaskRoute = await unrestrictedRegistry.execute({
+  name: "task_route",
+  arguments: { userRequest: "用YouTube打开 大耳朵视频", preference: "auto" },
+  source: "local",
+});
+assertFirstReadyRoute("youtube_task_route", youtubeTaskRoute, "video_play", { service: "youtube", mode: "play" });
+
+const realtimeQueueRegistry = createRegistry();
+const realtimeIntentQueue = await realtimeQueueRegistry.execute({
+  name: "intent_route",
+  arguments: {
+    intent: {
+      originalText: "列出测试目录文件",
+      intent: "list_files",
+      complexity: "simple",
+      domain: "files",
+      action: "list",
+      entities: { path: tmpRoot },
+      toolName: "file_list",
+      toolArguments: { path: tmpRoot, includeHidden: false },
+      confidence: 0.95,
+      routePreference: "direct",
+    },
+  },
+  source: "realtime",
+});
+if (!realtimeIntentQueue.ok) {
+  fail("realtime_intent_queue", `intent_route realtime queue failed: ${realtimeIntentQueue.error}`);
+} else {
+  const queuedTask = realtimeIntentQueue.result?.queuedTasks?.[0];
+  if (realtimeIntentQueue.result?.mode !== "queued" || queuedTask?.toolName !== "file_list" || !queuedTask?.taskId) {
+    fail("realtime_intent_queue", `expected realtime intent_route to queue file_list; got ${JSON.stringify(realtimeIntentQueue.result)}`);
+  }
+}
+
 notes.push(`Checked ${definitionNames.length} tool definitions.`);
 notes.push(`Checked ${queueManagedToolDefinitions.length} queue-managed task_create routes.`);
 notes.push(`Checked ${realtimeNames.length} core realtime route names without using realtime.`);
 notes.push("Checked queue timeout for a hanging local tool.");
+notes.push("Checked Xiaohongshu social_open scope rejects profile/home-style pages.");
+notes.push("Checked YouTube video intents route to video_play instead of browser_search_open.");
+notes.push("Checked Realtime intent_route queues ready tasks without exposing task_create.");
 
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, notes, failures }, null, 2));

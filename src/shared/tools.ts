@@ -10,6 +10,7 @@ export type ToolName =
   | "task_list"
   | "task_cancel"
   | "task_route"
+  | "intent_route"
   | "memory_lookup"
   | "memory_save"
   | "memory_forget"
@@ -35,16 +36,35 @@ export type ToolName =
   | "email_read"
   | "email_draft"
   | "email_send"
+  | "mac_mail_draft_create"
+  | "weather_lookup"
   | "calendar_search"
   | "calendar_create"
+  | "mac_calendar_create"
+  | "mac_reminder_create"
+  | "mac_note_create"
   | "copy_search"
   | "copy_save_draft"
   | "copy_publish"
   | "music_open"
   | "music_play_song"
   | "music_playback_state"
+  | "music_spotify_search"
+  | "music_spotify_play"
+  | "music_spotify_playback_state"
+  | "music_netease_open"
+  | "music_qq_open"
+  | "media_key_control"
   | "video_play"
+  | "video_playback_control"
   | "apple_tv_playback_state"
+  | "social_x_search"
+  | "social_x_post"
+  | "social_open"
+  | "news_search"
+  | "sec_filing_search"
+  | "macro_series_lookup"
+  | "market_quote_lookup"
   | "shortcut_list"
   | "shortcut_run"
   | "contacts_search"
@@ -54,24 +74,37 @@ export type ToolName =
   | "app_quit"
   | "window_list"
   | "window_close_all"
+  | "window_hide_all"
+  | "window_minimize_all"
   | "window_auto_arrange"
   | "window_minimize_unrelated"
   | "window_close"
   | "window_minimize"
   | "window_maximize"
   | "window_move_resize"
+  | "desktop_show"
   | "desktop_open_app"
   | "system_close_app"
+  | "system_sleep"
+  | "system_lock_screen"
   | "system_set_volume"
+  | "system_get_volume"
+  | "system_mute_volume"
   | "system_set_brightness"
   | "system_set_dark_mode"
   | "system_open_settings"
   | "desktop_clipboard_write"
+  | "desktop_clipboard_read"
+  | "system_speak"
+  | "system_notification"
+  | "screenshot_capture"
+  | "keyboard_shortcut"
   | "browser_open_url"
   | "browser_search_open"
   | "browser_isolated_open_url"
   | "browser_isolated_window_focus"
   | "browser_isolated_window_move_resize"
+  | "browser_read_page"
   | "browser_read_video_state"
   | "browser_fill_form"
   | "browser_click"
@@ -126,6 +159,8 @@ export type ToolGroup =
   | "documents"
   | "text"
   | "media"
+  | "social"
+  | "research"
   | "phone"
   | "apps"
   | "windows"
@@ -140,6 +175,8 @@ export const toolGroups = [
   "documents",
   "text",
   "media",
+  "social",
+  "research",
   "phone",
   "apps",
   "windows",
@@ -269,6 +306,63 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "intent_route",
+    description: "Route a StandardIntent JSON object produced by Realtime. Realtime should parse natural language into this intent first; HER then chooses direct local tools or Codex.",
+    parameters: objectSchema(
+      {
+        intent: {
+          type: "object",
+          description: "StandardIntent JSON with originalText, intent, complexity, domain, action, entities, toolName/toolArguments, missingInfo, and confidence.",
+          properties: {
+            originalText: { type: "string" },
+            intent: { type: "string" },
+            complexity: { type: "string", enum: ["simple", "complex", "ambiguous"] },
+            domain: {
+              type: "string",
+              enum: [
+                "desktop",
+                "apps",
+                "windows",
+                "system",
+                "media",
+                "social",
+                "calendar",
+                "reminder",
+                "notes",
+                "weather",
+                "travel",
+                "browser",
+                "files",
+                "documents",
+                "email",
+                "coding",
+                "research",
+                "phone",
+                "memory",
+                "unknown",
+              ],
+            },
+            action: { type: "string" },
+            entities: { type: "object", additionalProperties: true },
+            toolName: { type: "string", description: "Preferred HER tool for simple direct execution, when known." },
+            toolArguments: { type: "object", additionalProperties: true },
+            candidateTools: { type: "array", items: { type: "string" } },
+            missingInfo: { type: "array", items: { type: "string" } },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            routePreference: { type: "string", enum: ["auto", "direct", "codex", "clarify"] },
+          },
+          required: ["originalText", "intent", "complexity", "domain", "confidence"],
+          additionalProperties: false,
+        },
+        cwd: { type: "string", description: "Optional working directory for Codex tasks." },
+        activeApp: { type: "string", description: "Optional current/frontmost app name." },
+        selectedText: { type: "string", description: "Optional selected text or short local context." },
+      },
+      ["intent"],
+    ),
+  },
+  {
+    type: "function",
     name: "memory_lookup",
     description: "Look up compact HER memory summaries such as path aliases, preferences, and task templates. Results are short; providers resolve full content internally when needed.",
     parameters: objectSchema(
@@ -312,7 +406,7 @@ export const allToolDefinitions = [
   {
     type: "function",
     name: "codex_task_run",
-    description: "Run a complex background engineering, repo, or file-analysis task through HER's Codex app-server runtime. Use this for multi-step code/project work, not for direct desktop, media, browser, or window control.",
+    description: "Run a complex background intent through HER's Codex app-server runtime. Codex may request HER local tools only through HER Tool Gateway; HER validates and queues any requested side effects.",
     parameters: objectSchema(
       {
         prompt: { type: "string", description: "The complete task for HER's background Codex runtime." },
@@ -513,7 +607,7 @@ export const allToolDefinitions = [
   {
     type: "function",
     name: "email_draft",
-    description: "Create an email draft. This never sends email.",
+    description: "Create a local HER email draft record. This does not appear in Mail.app and never sends email.",
     parameters: objectSchema(
       {
         to: { type: "string" },
@@ -531,6 +625,19 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "mac_mail_draft_create",
+    description: "Create a visible draft compose window in macOS Mail.app. This never sends email and requires explicit confirmation.",
+    parameters: objectSchema(
+      {
+        to: { type: "string", description: "Recipient email address." },
+        subject: { type: "string" },
+        body: { type: "string" },
+      },
+      ["to", "subject", "body"],
+    ),
+  },
+  {
+    type: "function",
     name: "calendar_search",
     description: "Search calendar events. This MVP uses the local adapter until Google Calendar or Microsoft Graph is configured.",
     parameters: objectSchema(
@@ -545,8 +652,20 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "weather_lookup",
+    description: "Look up current 7-day weather forecast for a location using HER's local no-key weather adapter.",
+    parameters: objectSchema(
+      {
+        location: { type: "string", description: "City, address, or place name, for example Los Angeles or 上海." },
+        date: { type: "string", description: "Optional target date or ISO date/time. Defaults to today." },
+      },
+      ["location"],
+    ),
+  },
+  {
+    type: "function",
     name: "calendar_create",
-    description: "Create a calendar event. This always requires explicit user confirmation.",
+    description: "Create a calendar event. Title/start/end are the main fields; location, notes, and attendees can default empty. This always requires explicit user confirmation.",
     parameters: objectSchema(
       {
         title: { type: "string" },
@@ -557,6 +676,50 @@ export const allToolDefinitions = [
         notes: { type: "string" },
       },
       ["title", "start", "end"],
+    ),
+  },
+  {
+    type: "function",
+    name: "mac_calendar_create",
+    description: "Create a native macOS Calendar event through AppleScript. Title/start/end are the main fields; calendar name, location, notes, and attendees can default empty. This always requires explicit user confirmation.",
+    parameters: objectSchema(
+      {
+        title: { type: "string" },
+        start: { type: "string", description: "ISO date/time." },
+        end: { type: "string", description: "ISO date/time." },
+        calendarName: { type: "string", description: "Optional target Calendar name. Defaults to the first available calendar." },
+        location: { type: "string" },
+        notes: { type: "string" },
+        attendees: { type: "array", items: { type: "string" }, default: [] },
+      },
+      ["title", "start", "end"],
+    ),
+  },
+  {
+    type: "function",
+    name: "mac_reminder_create",
+    description: "Create a native macOS Reminders item through AppleScript. This always requires explicit user confirmation.",
+    parameters: objectSchema(
+      {
+        title: { type: "string" },
+        dueAt: { type: "string", description: "Optional ISO reminder date/time." },
+        listName: { type: "string", description: "Optional Reminders list name. Defaults to the default list." },
+        notes: { type: "string" },
+      },
+      ["title"],
+    ),
+  },
+  {
+    type: "function",
+    name: "mac_note_create",
+    description: "Create a native macOS Notes note through AppleScript. This always requires explicit user confirmation.",
+    parameters: objectSchema(
+      {
+        title: { type: "string" },
+        body: { type: "string" },
+        folderName: { type: "string", description: "Optional Notes folder name. Defaults to the default folder." },
+      },
+      ["title", "body"],
     ),
   },
   {
@@ -604,6 +767,7 @@ export const allToolDefinitions = [
       {
         query: { type: "string", description: "Song title, artist, album, or natural language music request." },
         artist: { type: "string", description: "Optional artist name to narrow the search." },
+        mode: { type: "string", enum: ["play", "search"], description: "Use search when the user asks to open, find, or show search results instead of starting playback." },
       },
       ["query"],
     ),
@@ -616,14 +780,88 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
-    name: "video_play",
-    description: "Play or open a specific video by title or URL. For YouTube, resolves a search query to a concrete watch URL. For Apple TV, opens the catalog item or search URL directly in the macOS TV app but does not claim playback.",
+    name: "music_spotify_search",
+    description: "Search Spotify tracks using the official Spotify Web API. Requires HER_SPOTIFY_ACCESS_TOKEN.",
     parameters: objectSchema(
       {
-        service: { type: "string", enum: ["youtube", "apple_tv"], description: "Video service to use." },
+        query: { type: "string", description: "Song title, artist, album, or natural language music request." },
+        artist: { type: "string", description: "Optional artist name to narrow the search." },
+        limit: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "music_spotify_play",
+    description: "Play a Spotify track using official Spotify Web API search and playback. Requires OAuth scopes, Premium eligibility, and an active device.",
+    parameters: objectSchema(
+      {
+        query: { type: "string", description: "Song title, artist, album, or natural language music request." },
+        artist: { type: "string", description: "Optional artist name to narrow the search." },
+        deviceId: { type: "string", description: "Optional Spotify device id. If omitted, HER uses HER_SPOTIFY_DEVICE_ID or the first active device." },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "music_spotify_playback_state",
+    description: "Read current Spotify playback state using the official Spotify Web API.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "music_netease_open",
+    description: "Open NetEase Cloud Music client or official search page. This does not claim direct playback.",
+    parameters: objectSchema({
+      query: { type: "string", description: "Optional song, artist, or playlist query to open in NetEase Cloud Music web search." },
+      url: { type: "string", description: "Optional direct NetEase Cloud Music URL to open." },
+    }),
+  },
+  {
+    type: "function",
+    name: "music_qq_open",
+    description: "Open QQ Music client or QQ Music official web search page. This does not claim direct playback or bypass login/VIP/copyright restrictions.",
+    parameters: objectSchema({
+      query: { type: "string", description: "Optional song, artist, album, or playlist query to open in QQ Music search." },
+      target: { type: "string", enum: ["app", "web"], default: "web", description: "Open the QQ Music client or web search page. App mode requires the client to be installed." },
+    }),
+  },
+  {
+    type: "function",
+    name: "media_key_control",
+    description: "Send a basic media control keystroke such as play/pause, next, previous, volume up, or volume down. Works best after focusing a media app such as QQ Music.",
+    parameters: objectSchema(
+      {
+        action: { type: "string", enum: ["play_pause", "next", "previous", "volume_up", "volume_down"] },
+        appName: { type: "string", description: "Optional app to focus before sending the keystroke, for example QQMusic or Music." },
+      },
+      ["action"],
+    ),
+  },
+  {
+    type: "function",
+    name: "video_play",
+    description: "Play or open a video by title or URL. YouTube uses official Data API search when HER_YOUTUBE_API_KEY is configured and isolated Chrome playback. Bilibili opens search/video pages and browser-level playback only. Apple TV uses search/catalog URLs.",
+    parameters: objectSchema(
+      {
+        service: { type: "string", enum: ["youtube", "apple_tv", "bilibili"], description: "Video service to use." },
         query: { type: "string", description: "Video title, movie/show name, episode name, or a direct video URL." },
+        mode: { type: "string", enum: ["play", "search"], description: "Use search to show results instead of opening or attempting playback of the first resolved item." },
       },
       ["service", "query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "video_playback_control",
+    description: "Control or read the active video element in HER's isolated Chrome window. Useful for YouTube and Bilibili playback after opening a page.",
+    parameters: objectSchema(
+      {
+        action: { type: "string", enum: ["play", "pause", "toggle", "state"] },
+      },
+      ["action"],
     ),
   },
   {
@@ -631,6 +869,94 @@ export const allToolDefinitions = [
     name: "apple_tv_playback_state",
     description: "Read compact playback state from the macOS TV app. Apple TV exposes limited state and may not identify the requested catalog item.",
     parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "social_x_search",
+    description: "Read/search recent posts using the official X API v2. Requires HER_X_BEARER_TOKEN and is subject to X access tier limits.",
+    parameters: objectSchema(
+      {
+        query: { type: "string", description: "X API recent-search query." },
+        limit: { type: "integer", minimum: 10, maximum: 100, default: 10 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "social_x_post",
+    description: "Create a post on X using the official X API v2. Requires explicit confirmation and a user-context token with write permission.",
+    parameters: objectSchema(
+      {
+        text: { type: "string", minLength: 1, maxLength: 280 },
+        replyToTweetId: { type: "string", description: "Optional tweet id to reply to." },
+      },
+      ["text"],
+    ),
+  },
+  {
+    type: "function",
+    name: "social_open",
+    description: "Open a social media page without sensitive automation. For Xiaohongshu, only open search, note, or share pages.",
+    parameters: objectSchema(
+      {
+        service: { type: "string", enum: ["x", "xiaohongshu"] },
+        kind: { type: "string", enum: ["home", "search", "profile", "note", "share"], default: "search" },
+        target: { type: "string", description: "Search query, profile handle, note/share id, or URL." },
+        isolated: { type: "boolean", default: true },
+      },
+      ["service"],
+    ),
+  },
+  {
+    type: "function",
+    name: "news_search",
+    description: "Search news using a configured provider and return structured results for a popup display. GDELT is keyless but rate-limited; NewsAPI requires HER_NEWS_API_KEY.",
+    parameters: objectSchema(
+      {
+        query: { type: "string", description: "News search query." },
+        provider: { type: "string", enum: ["gdelt", "newsapi"], default: "gdelt" },
+        limit: { type: "integer", minimum: 1, maximum: 25, default: 8 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    type: "function",
+    name: "sec_filing_search",
+    description: "Search recent SEC EDGAR filings for a ticker, company name, or CIK and return structured results for a popup display.",
+    parameters: objectSchema(
+      {
+        company: { type: "string", description: "Ticker, company name, or CIK, for example AAPL or 0000320193." },
+        forms: { type: "array", items: { type: "string" }, default: [], description: "Optional SEC forms to include, such as 10-K, 10-Q, 8-K, 4." },
+        limit: { type: "integer", minimum: 1, maximum: 30, default: 10 },
+      },
+      ["company"],
+    ),
+  },
+  {
+    type: "function",
+    name: "macro_series_lookup",
+    description: "Read an official macroeconomic time series from BLS Public Data API and return structured results for a popup display.",
+    parameters: objectSchema(
+      {
+        seriesId: { type: "string", description: "BLS series id, for example CUSR0000SA0 for CPI-U all items." },
+        startYear: { type: "string", description: "Optional start year." },
+        endYear: { type: "string", description: "Optional end year." },
+      },
+      ["seriesId"],
+    ),
+  },
+  {
+    type: "function",
+    name: "market_quote_lookup",
+    description: "Read a market quote from Alpha Vantage and return structured results for a popup display. Requires HER_ALPHA_VANTAGE_API_KEY for non-demo use.",
+    parameters: objectSchema(
+      {
+        symbol: { type: "string", description: "Ticker symbol, for example AAPL, MSFT, or IBM." },
+      },
+      ["symbol"],
+    ),
   },
   {
     type: "function",
@@ -708,6 +1034,29 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "window_hide_all",
+    description: "Hide visible app windows directly with macOS System Events. Use for hide all, clear view, or keep only the current/frontmost app visible. Does not use Codex.",
+    parameters: objectSchema({
+      preserveFrontmost: {
+        type: "boolean",
+        default: false,
+        description: "Keep the current frontmost app visible and hide the rest.",
+      },
+      preserveFinder: {
+        type: "boolean",
+        default: true,
+        description: "Keep Finder visible. Defaults to true.",
+      },
+    }),
+  },
+  {
+    type: "function",
+    name: "window_minimize_all",
+    description: "Minimize all visible authorized app windows into the Dock using Accessibility. Does not use Codex.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
     name: "window_auto_arrange",
     description: "Automatically arrange visible windows for authorized apps into a grid on the current desktop. Use when the user asks to auto-arrange, tile, organize, or lay out windows.",
     parameters: objectSchema({
@@ -775,6 +1124,12 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "desktop_show",
+    description: "Trigger macOS Show Desktop directly using System Events. Does not use Codex.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
     name: "desktop_open_app",
     description: "Open an allowlisted macOS app.",
     parameters: objectSchema({ appName: { type: "string" } }, ["appName"]),
@@ -787,9 +1142,33 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "system_sleep",
+    description: "Put the Mac to sleep using the macOS pmset command. Requires explicit confirmation.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "system_lock_screen",
+    description: "Lock or display-sleep the Mac using the macOS pmset command. Requires explicit confirmation.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
     name: "system_set_volume",
     description: "Set macOS output volume from 0 to 100. Requires explicit confirmation.",
     parameters: objectSchema({ level: { type: "integer", minimum: 0, maximum: 100 } }, ["level"]),
+  },
+  {
+    type: "function",
+    name: "system_get_volume",
+    description: "Read current macOS output volume and mute state.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "system_mute_volume",
+    description: "Mute or unmute macOS output volume.",
+    parameters: objectSchema({ muted: { type: "boolean" } }, ["muted"]),
   },
   {
     type: "function",
@@ -814,6 +1193,47 @@ export const allToolDefinitions = [
     name: "desktop_clipboard_write",
     description: "Write text to the system clipboard. This always requires explicit user confirmation.",
     parameters: objectSchema({ text: { type: "string" } }, ["text"]),
+  },
+  {
+    type: "function",
+    name: "desktop_clipboard_read",
+    description: "Read plain text from the system clipboard.",
+    parameters: objectSchema({}),
+  },
+  {
+    type: "function",
+    name: "system_speak",
+    description: "Speak text through the macOS say command.",
+    parameters: objectSchema({
+      text: { type: "string" },
+      voice: { type: "string", description: "Optional macOS voice name, such as Tingting." },
+    }, ["text"]),
+  },
+  {
+    type: "function",
+    name: "system_notification",
+    description: "Show a macOS notification or confirmation dialog through AppleScript.",
+    parameters: objectSchema({
+      title: { type: "string" },
+      message: { type: "string" },
+      dialog: { type: "boolean", default: false },
+    }, ["title", "message"]),
+  },
+  {
+    type: "function",
+    name: "screenshot_capture",
+    description: "Take a screenshot to the clipboard, Desktop, or interactive selection using screencapture.",
+    parameters: objectSchema({
+      mode: { type: "string", enum: ["clipboard", "desktop", "selection"] },
+    }, ["mode"]),
+  },
+  {
+    type: "function",
+    name: "keyboard_shortcut",
+    description: "Send a small allowlisted keyboard shortcut to the frontmost app, such as copy, paste, new tab, refresh, escape, or enter.",
+    parameters: objectSchema({
+      action: { type: "string", enum: ["copy", "paste", "select_all", "undo", "enter", "escape", "tab", "new_window", "new_tab", "refresh", "browser_back", "browser_forward", "toggle_fullscreen"] },
+    }, ["action"]),
   },
   {
     type: "function",
@@ -859,6 +1279,12 @@ export const allToolDefinitions = [
       },
       ["x", "y", "width", "height"],
     ),
+  },
+  {
+    type: "function",
+    name: "browser_read_page",
+    description: "Read compact page state from HER's isolated browser: current URL, title, visible text excerpt, links, and form fields. Read-only.",
+    parameters: objectSchema({ maxChars: { type: "integer", minimum: 200, maximum: 10000, default: 3000 } }),
   },
   {
     type: "function",
@@ -912,14 +1338,10 @@ export const coreRealtimeToolNames = [
   "confirmation_list",
   "confirmation_decide",
   "tool_result_read",
-  "tool_catalog_list",
-  "tool_group_set",
-  "task_create",
+  "intent_route",
   "task_status",
   "task_list",
   "task_cancel",
-  "task_route",
-  "memory_lookup",
   "memory_save",
   "memory_forget",
   "memory_status",
@@ -947,16 +1369,35 @@ export const toolGroupByName = {
   email_read: "text",
   email_draft: "text",
   email_send: "text",
+  mac_mail_draft_create: "text",
+  weather_lookup: "text",
   calendar_search: "text",
   calendar_create: "text",
+  mac_calendar_create: "text",
+  mac_reminder_create: "text",
+  mac_note_create: "text",
   copy_search: "text",
   copy_save_draft: "text",
   copy_publish: "text",
   music_open: "media",
   music_play_song: "media",
   music_playback_state: "media",
+  music_spotify_search: "media",
+  music_spotify_play: "media",
+  music_spotify_playback_state: "media",
+  music_netease_open: "media",
+  music_qq_open: "media",
+  media_key_control: "media",
   video_play: "media",
+  video_playback_control: "media",
   apple_tv_playback_state: "media",
+  social_x_search: "social",
+  social_x_post: "social",
+  social_open: "social",
+  news_search: "research",
+  sec_filing_search: "research",
+  macro_series_lookup: "research",
+  market_quote_lookup: "research",
   shortcut_list: "media",
   shortcut_run: "media",
   contacts_search: "phone",
@@ -967,23 +1408,36 @@ export const toolGroupByName = {
   desktop_open_app: "apps",
   window_list: "windows",
   window_close_all: "windows",
+  window_hide_all: "windows",
+  window_minimize_all: "windows",
   window_auto_arrange: "windows",
   window_minimize_unrelated: "windows",
   window_close: "windows",
   window_minimize: "windows",
   window_maximize: "windows",
   window_move_resize: "windows",
+  desktop_show: "windows",
   system_close_app: "system",
+  system_sleep: "system",
+  system_lock_screen: "system",
   system_set_volume: "system",
+  system_get_volume: "system",
+  system_mute_volume: "system",
   system_set_brightness: "system",
   system_set_dark_mode: "system",
   system_open_settings: "system",
   desktop_clipboard_write: "system",
+  desktop_clipboard_read: "system",
+  system_speak: "system",
+  system_notification: "system",
+  screenshot_capture: "system",
+  keyboard_shortcut: "system",
   browser_open_url: "browser",
   browser_search_open: "browser",
   browser_isolated_open_url: "browser",
   browser_isolated_window_focus: "browser",
   browser_isolated_window_move_resize: "browser",
+  browser_read_page: "browser",
   browser_read_video_state: "browser",
   browser_fill_form: "browser",
   browser_click: "browser",
@@ -1032,30 +1486,58 @@ export const realtimeToolDefinitions = [
   },
   {
     type: "function",
-    name: "task_route",
-    description: "Classify a user request into HER native tools, HER web search, Codex background runtime, or a mixed plan. Call this before task_create when routing is unclear.",
+    name: "intent_route",
+    description: "Route StandardIntent JSON created from the user's natural-language request. For Realtime callers this also queues ready HER local/Codex tasks; do not call task_create after it.",
     parameters: objectSchema(
       {
-        userRequest: { type: "string", description: "The user's full request to route." },
-        preference: { type: "string", enum: ["auto", "native", "search", "codex"], default: "auto" },
-        cwd: { type: "string", description: "Optional working directory for Codex tasks." },
-        activeApp: { type: "string", description: "Optional current/frontmost app name." },
-        selectedText: { type: "string", description: "Optional selected text or short local context." },
+        intent: {
+          type: "object",
+          properties: {
+            originalText: { type: "string" },
+            intent: { type: "string" },
+            complexity: { type: "string", enum: ["simple", "complex", "ambiguous"] },
+            domain: {
+              type: "string",
+              enum: [
+                "desktop",
+                "apps",
+                "windows",
+                "system",
+                "media",
+                "social",
+                "calendar",
+                "reminder",
+                "notes",
+                "weather",
+                "travel",
+                "browser",
+                "files",
+                "documents",
+                "email",
+                "coding",
+                "research",
+                "phone",
+                "memory",
+                "unknown",
+              ],
+            },
+            action: { type: "string" },
+            entities: { type: "object", additionalProperties: true },
+            toolName: { type: "string" },
+            toolArguments: { type: "object", additionalProperties: true },
+            candidateTools: { type: "array", items: { type: "string" } },
+            missingInfo: { type: "array", items: { type: "string" } },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            routePreference: { type: "string", enum: ["auto", "direct", "codex", "clarify"] },
+          },
+          required: ["originalText", "intent", "complexity", "domain", "confidence"],
+          additionalProperties: false,
+        },
+        cwd: { type: "string" },
+        activeApp: { type: "string" },
+        selectedText: { type: "string" },
       },
-      ["userRequest"],
-    ),
-  },
-  {
-    type: "function",
-    name: "memory_lookup",
-    description: "Look up compact HER memory summaries. Prefer task_route first for normal task routing because it performs memory preflight internally.",
-    parameters: objectSchema(
-      {
-        query: { type: "string" },
-        types: { type: "array", items: { type: "string", enum: ["path_alias", "preference", "task_template"] } },
-        limit: { type: "integer", minimum: 1, maximum: 10, default: 5 },
-      },
-      ["query"],
+      ["intent"],
     ),
   },
   {
@@ -1086,40 +1568,6 @@ export const realtimeToolDefinitions = [
     name: "memory_status",
     description: "Return HER memory counts and storage status without exposing full memory content.",
     parameters: objectSchema({}),
-  },
-  {
-    type: "function",
-    name: "tool_catalog_list",
-    description: "List available dynamic tool groups, or list the bounded tool catalog for one group. Call without group first; call again with a group only when you need tool names in that group.",
-    parameters: objectSchema({
-      group: { type: "string", enum: toolGroups, description: "Optional dynamic tool group to inspect." },
-    }),
-  },
-  {
-    type: "function",
-    name: "tool_group_set",
-    description: "Enable or disable a dynamic tool group for future queued tasks. Disabling a group prevents task_create from enqueueing tools in that group.",
-    parameters: objectSchema(
-      {
-        group: { type: "string", enum: toolGroups },
-        enabled: { type: "boolean" },
-      },
-      ["group", "enabled"],
-    ),
-  },
-  {
-    type: "function",
-    name: "task_create",
-    description: "Create a local task queue item for any non-core tool. Realtime should use this instead of directly carrying large or side-effecting tool calls in session context.",
-    parameters: objectSchema(
-      {
-        toolName: { type: "string", description: "Name from tool_catalog_list for the selected group." },
-        arguments: { type: "object", description: "Arguments for the selected tool.", additionalProperties: true },
-        priority: { type: "string", enum: ["low", "normal", "high"], default: "normal" },
-        runAfterMs: { type: "integer", minimum: 0, maximum: 600000, default: 0 },
-      },
-      ["toolName", "arguments"],
-    ),
   },
   {
     type: "function",
@@ -1154,17 +1602,26 @@ export const toolsRequiringConfirmation = new Set<ToolName>([
   "file_trash",
   "document_prepare_edit",
   "email_send",
+  "mac_mail_draft_create",
   "calendar_create",
+  "mac_calendar_create",
+  "mac_reminder_create",
+  "mac_note_create",
   "copy_publish",
+  "social_x_post",
   "shortcut_run",
   "app_quit",
   "window_close_all",
   "window_close",
   "system_close_app",
+  "system_sleep",
+  "system_lock_screen",
   "system_set_volume",
   "system_set_brightness",
   "system_set_dark_mode",
   "desktop_clipboard_write",
+  "system_notification",
+  "screenshot_capture",
   "browser_fill_form",
   "browser_click",
   "advanced_shell_command",
