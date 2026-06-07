@@ -188,6 +188,48 @@ export class BrowserAutomation {
     }
   }
 
+  async readPage(maxChars = 3000) {
+    const client = await this.connect();
+    try {
+      const expression = `(() => {
+        const text = document.body ? document.body.innerText : "";
+        return {
+          url: location.href,
+          title: document.title,
+          text: text.slice(0, ${Math.max(200, Math.min(10000, Math.round(maxChars)))}),
+          truncated: text.length > ${Math.max(200, Math.min(10000, Math.round(maxChars)))},
+          chars: text.length,
+        };
+      })()`;
+      return unwrapEvaluateResult(await client.call("Runtime.evaluate", { expression, returnByValue: true }));
+    } finally {
+      client.close();
+    }
+  }
+
+  async controlVideo(action: "play" | "pause" | "toggle" | "state") {
+    if (action === "state") return this.readVideoState();
+    if (action === "play") return this.playVideo();
+
+    const client = await this.connect();
+    try {
+      const expression = `(() => {
+        const video = document.querySelector("video");
+        if (!video) return { ok: false, error: "video_not_found", url: location.href, title: document.title };
+        if (${JSON.stringify(action)} === "toggle") {
+          if (video.paused) return Promise.resolve(video.play()).then(() => ({ ok: true, action: "play", paused: video.paused, url: location.href, title: document.title }));
+          video.pause();
+          return { ok: true, action: "pause", paused: video.paused, url: location.href, title: document.title };
+        }
+        video.pause();
+        return { ok: true, action: "pause", paused: video.paused, url: location.href, title: document.title };
+      })()`;
+      return unwrapEvaluateResult(await client.call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }));
+    } finally {
+      client.close();
+    }
+  }
+
   async playVideo() {
     const client = await this.connect();
     try {

@@ -1,6 +1,8 @@
 import express from "express";
 import type { Server } from "node:http";
 import crypto from "node:crypto";
+import { createLocalApiAuth, requireLocalApiAuth } from "./api/auth";
+import { localApiCors, requireTrustedLocalApiRequest } from "./api/cors";
 import { createRealtimeClientSecret } from "./realtime";
 import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
 import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
@@ -19,11 +21,14 @@ import type { ConfirmationDecision, ToolCallRequest } from "../shared/tools";
 
 export type LocalServer = {
   port: number;
+  localApiToken: string;
   close: () => Promise<void>;
 };
 
-export const startLocalServer = async (port: number, userDataDir: string): Promise<LocalServer> => {
+export const startLocalServer = async (port: number, userDataDir: string, isPackaged = false): Promise<LocalServer> => {
   const app = express();
+  const localApiAuth = createLocalApiAuth();
+  const requireAuth = requireLocalApiAuth(localApiAuth);
   const audit = new AuditLog();
   const confirmations = new ConfirmationQueue();
   const settings = new SettingsStore(userDataDir);
@@ -40,53 +45,12 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
   }, memory);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
-  const trustedOrigins = new Set(["http://127.0.0.1:5174", "http://localhost:5174", "file://", "null"]);
 
   app.use(express.json({ limit: "1mb" }));
-  app.use((_req, res, next) => {
-    const origin = _req.headers.origin;
-    if (!origin || trustedOrigins.has(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin ?? "null");
-    }
-    res.setHeader("Access-Control-Allow-Headers", "content-type");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    next();
-  });
-  app.options("*", (_req, res) => res.sendStatus(204));
-
-  app.use("/api", (req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin && !trustedOrigins.has(origin)) {
-      res.status(403).json({ error: "Untrusted local API origin." });
-      return;
-    }
-    next();
-  });
+  app.use(localApiCors(isPackaged));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "her-local-agent" });
-  });
-
-  app.get("/api/settings", (_req, res) => {
-    res.json(settings.read());
-  });
-
-  app.post("/api/settings/capabilities", (req, res) => {
-    res.json(settings.setCapabilities(req.body as Partial<CapabilitySettings>));
-  });
-
-  app.post("/api/settings/yolo", async (req, res) => {
-    const body = req.body as { enabled?: boolean };
-    const enabled = Boolean(body.enabled);
-    const appPermissions = enabled
-      ? Object.fromEntries((await inventory.listApps()).map((item) => [item.bundleId, true]))
-      : {};
-    res.json(settings.setYoloMode(enabled, appPermissions));
-  });
-
-  app.get("/api/apps", async (req, res) => {
-    const refresh = req.query.refresh === "true";
-    res.json(await inventory.listApps(refresh));
   });
 
   app.get("/api/apps/icon", async (req, res) => {
@@ -110,12 +74,36 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.post("/api/apps/permissions", (req, res) => {
+  app.use("/api", requireTrustedLocalApiRequest(isPackaged));
+
+  app.get("/api/settings", requireAuth, (_req, res) => {
+    res.json(settings.read());
+  });
+
+  app.post("/api/settings/capabilities", requireAuth, (req, res) => {
+    res.json(settings.setCapabilities(req.body as Partial<CapabilitySettings>));
+  });
+
+  app.post("/api/settings/yolo", requireAuth, async (req, res) => {
+    const body = req.body as { enabled?: boolean };
+    const enabled = Boolean(body.enabled);
+    const appPermissions = enabled
+      ? Object.fromEntries((await inventory.listApps()).map((item) => [item.bundleId, true]))
+      : {};
+    res.json(settings.setYoloMode(enabled, appPermissions));
+  });
+
+  app.get("/api/apps", requireAuth, async (req, res) => {
+    const refresh = req.query.refresh === "true";
+    res.json(await inventory.listApps(refresh));
+  });
+
+  app.post("/api/apps/permissions", requireAuth, (req, res) => {
     const body = req.body as { appPermissions?: Record<string, boolean> };
     res.json(settings.setAppPermissions(body.appPermissions ?? {}));
   });
 
-  app.post("/api/system/settings", async (req, res) => {
+  app.post("/api/system/settings", requireAuth, async (req, res) => {
     const body = req.body as { pane?: string };
     try {
       res.json(await system.openSettings(body.pane));
@@ -125,11 +113,11 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.get("/api/openai-key", (_req, res) => {
+  app.get("/api/openai-key", requireAuth, (_req, res) => {
     res.json({ configured: Boolean(readOpenaiApiKey()) });
   });
 
-  app.post("/api/openai-key", (req, res) => {
+  app.post("/api/openai-key", requireAuth, (req, res) => {
     const body = req.body as { apiKey?: unknown };
     if (typeof body.apiKey !== "string") {
       res.status(400).json({ error: "Missing OpenAI API key." });
@@ -145,7 +133,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.get("/api/codex-login/status", async (_req, res) => {
+  app.get("/api/codex-login/status", requireAuth, async (_req, res) => {
     try {
       res.json(await readCodexLoginStatus());
     } catch (error) {
@@ -160,11 +148,11 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.get("/api/codex-login/device-auth", (_req, res) => {
+  app.get("/api/codex-login/device-auth", requireAuth, (_req, res) => {
     res.json(readCodexDeviceAuth());
   });
 
-  app.post("/api/codex-login/device-auth", (_req, res) => {
+  app.post("/api/codex-login/device-auth", requireAuth, (_req, res) => {
     try {
       const result = startCodexDeviceAuth();
       audit.write({
@@ -185,7 +173,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.get("/api/codex/model", (_req, res) => {
+  app.get("/api/codex/model", requireAuth, (_req, res) => {
     res.json({
       model: readCodexModel(),
       options: codexModelOptions,
@@ -193,7 +181,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     });
   });
 
-  app.post("/api/codex/model", (req, res) => {
+  app.post("/api/codex/model", requireAuth, (req, res) => {
     const body = req.body as { model?: unknown };
     if (typeof body.model !== "string") {
       res.status(400).json({ error: "Missing Codex model." });
@@ -215,7 +203,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.get("/api/realtime/voice", (_req, res) => {
+  app.get("/api/realtime/voice", requireAuth, (_req, res) => {
     res.json({
       voice: readRealtimeVoice(),
       options: realtimeVoiceOptions,
@@ -223,7 +211,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     });
   });
 
-  app.post("/api/realtime/voice", (req, res) => {
+  app.post("/api/realtime/voice", requireAuth, (req, res) => {
     const body = req.body as { voice?: unknown };
     if (typeof body.voice !== "string") {
       res.status(400).json({ error: "Missing Realtime voice." });
@@ -249,7 +237,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.post("/api/audit", (req, res) => {
+  app.post("/api/audit", requireAuth, (req, res) => {
     const body = req.body as Partial<Omit<AuditEvent, "id" | "timestamp">>;
     if (typeof body.action !== "string" || typeof body.summary !== "string" || !isAuditStatus(body.status)) {
       res.status(400).json({ error: "Invalid audit event." });
@@ -264,7 +252,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     res.json({ ok: true, id: entry.id });
   });
 
-  app.post("/api/realtime/client-secret", async (_req, res) => {
+  app.post("/api/realtime/client-secret", requireAuth, async (_req, res) => {
     audit.write({
       action: "realtime.client_secret",
       summary: "Creating Realtime client secret",
@@ -290,12 +278,12 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.post("/api/tools/execute", async (req, res) => {
+  app.post("/api/tools/execute", requireAuth, async (req, res) => {
     const body = req.body as ToolCallRequest;
     res.json(await tools.execute(body));
   });
 
-  app.post("/api/tools/confirm", async (req, res) => {
+  app.post("/api/tools/confirm", requireAuth, async (req, res) => {
     const body = req.body as ConfirmationDecision;
     audit.write({
       action: "confirmation.request",
@@ -328,7 +316,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
     }
   });
 
-  app.get("/api/tools/pending", (_req, res) => {
+  app.get("/api/tools/pending", requireAuth, (_req, res) => {
     res.json(
       confirmations.list().map((item) => ({
         confirmationId: item.id,
@@ -348,6 +336,7 @@ export const startLocalServer = async (port: number, userDataDir: string): Promi
 
   return {
     port,
+    localApiToken: localApiAuth.token,
     close: () =>
       new Promise((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));

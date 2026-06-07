@@ -17,11 +17,9 @@ import {
   realtimeTurnDetectionTuning,
   type RealtimeRuntimeOptions,
 } from "../shared/realtime-config";
-import type { AuditEvent } from "../shared/events";
 import { allToolDefinitions, realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
+import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
 import "./styles.css";
-
-const LOCAL_API = "http://127.0.0.1:3939";
 
 type SessionState = "idle" | "connecting" | "connected" | "error";
 type VisualState = "idle" | "listening" | "thinking" | "speaking" | "tool" | "confirming" | "error";
@@ -306,37 +304,6 @@ const realtimeUsageStats: RealtimeUsageStats = {
   rateLimits: [],
 };
 
-const getJson = async <T>(path: string): Promise<T> => {
-  const response = await fetch(`${LOCAL_API}${path}`);
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-  return payload;
-};
-
-const postJson = async <T>(path: string, body: unknown): Promise<T> => {
-  const response = await fetch(`${LOCAL_API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-  return payload;
-};
-
-const writeAudit = (
-  action: string,
-  summary: string,
-  status: AuditEvent["status"],
-  details?: Record<string, unknown>,
-) => {
-  void fetch(`${LOCAL_API}/api/audit`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, summary, status, details }),
-  }).catch(() => undefined);
-};
-
 const initialize = async () => {
   initOrb();
   renderRealtimeUsage();
@@ -523,7 +490,7 @@ const renderAuthorizedApps = () => {
     : `<p class="muted">No authorized apps</p>`;
 };
 
-const iconSrc = (item: InstalledApp) => `${LOCAL_API}${item.iconUrl}`;
+const iconSrc = (item: InstalledApp) => localApiUrl(item.iconUrl);
 
 const saveCapabilities = async (capabilities: Partial<CapabilitySettings>) => {
   settings = await postJson<UserSettings>("/api/settings/capabilities", capabilities);

@@ -1,9 +1,10 @@
 import path from "node:path";
 import { app, BrowserWindow, ipcMain, shell, type Rectangle } from "electron";
 import { config } from "./config";
-import { startLocalServer } from "./server";
+import { startLocalServer, type LocalServer } from "./server";
 
 let mainWindow: BrowserWindow | null = null;
+let localServer: LocalServer | null = null;
 let restoreBounds: Rectangle | null = null;
 let orbBounds: Rectangle | null = null;
 
@@ -84,8 +85,15 @@ ipcMain.handle("her-window:set-orb-only", (event, enabled: unknown) => {
   return { ok: true };
 });
 
+ipcMain.handle("her-local-api:request", async (event, request: unknown) => {
+  if (!localServer) throw new Error("Local API server is not ready.");
+  const senderUrl = event.senderFrame?.url;
+  if (!senderUrl || !isTrustedRendererUrl(senderUrl)) throw new Error("Untrusted renderer local API caller.");
+  return localApiRequest(localServer, request);
+});
+
 app.whenReady().then(async () => {
-  await startLocalServer(config.serverPort, app.getPath("userData"));
+  localServer = await startLocalServer(config.serverPort, app.getPath("userData"), app.isPackaged);
   await createWindow();
 
   app.on("activate", async () => {
@@ -96,3 +104,56 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+const isTrustedRendererUrl = (rawUrl: string) => {
+  try {
+    const url = new URL(rawUrl);
+    if (shouldUseDevServer && rendererDevUrl) {
+      const devUrl = new URL(rendererDevUrl);
+      return url.origin === devUrl.origin;
+    }
+    return url.protocol === "file:";
+  } catch {
+    return false;
+  }
+};
+
+type LocalApiBridgeRequest = {
+  method?: unknown;
+  path?: unknown;
+  body?: unknown;
+};
+
+const localApiRequest = async (server: LocalServer, rawRequest: unknown) => {
+  const request = rawRequest as LocalApiBridgeRequest;
+  const method = typeof request.method === "string" ? request.method.toUpperCase() : "GET";
+  if (method !== "GET" && method !== "POST") throw new Error("Unsupported local API method.");
+  if (typeof request.path !== "string" || !request.path.startsWith("/") || request.path.startsWith("//")) {
+    throw new Error("Invalid local API path.");
+  }
+
+  const baseUrl = `http://127.0.0.1:${server.port}`;
+  const url = new URL(request.path, baseUrl);
+  if (url.origin !== baseUrl) throw new Error("Invalid local API target.");
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${server.localApiToken}`,
+      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(method === "POST" ? { body: JSON.stringify(request.body ?? {}) } : {}),
+  });
+
+  const text = await response.text();
+  const payload = text ? parseLocalApiPayload(text) : {};
+  return { ok: response.ok, status: response.status, payload };
+};
+
+const parseLocalApiPayload = (text: string) => {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { error: text };
+  }
+};

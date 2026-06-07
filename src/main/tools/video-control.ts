@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { BrowserAutomation } from "./browser-automation";
 
-type VideoService = "youtube" | "apple_tv";
+type VideoService = "youtube" | "apple_tv" | "bilibili";
 
 type ItunesVideoResult = {
   trackName?: string;
@@ -57,9 +57,14 @@ const appleScriptString = (value: string) => JSON.stringify(value);
 export class VideoControl {
   constructor(private browser = new BrowserAutomation()) {}
 
-  async play(service: VideoService, query: string) {
+  async play(service: VideoService, query: string, mode: "play" | "search" = "play") {
     if (service === "youtube") return this.playYouTube(query);
+    if (service === "bilibili") return this.openBilibili(query, mode);
     return this.playAppleTv(query);
+  }
+
+  async controlActiveVideo(action: "play" | "pause" | "toggle" | "state") {
+    return this.browser.controlVideo(action);
   }
 
   async appleTvPlaybackState() {
@@ -139,6 +144,21 @@ export class VideoControl {
       currentItem: result.snapshot.title ? { title: result.snapshot.title } : undefined,
       reasonCode: result.reasonCode,
       note: "Opened the Apple TV item directly in the macOS TV app with open -a TV. Playback is not claimed because Apple TV may require sign-in, subscription, purchase, or manual play.",
+    };
+  }
+
+  private async openBilibili(query: string, mode: "play" | "search") {
+    const url = isHttpUrl(query)
+      ? query
+      : `https://search.bilibili.com/all?keyword=${encodeURIComponent(query)}`;
+    await this.browser.openIsolatedUrl(url);
+    return {
+      status: mode === "play" ? "opened_search" : "opened",
+      service: "bilibili",
+      query,
+      url,
+      browser: "isolated_chrome",
+      note: "Opened Bilibili in isolated Chrome. HER did not claim playback because the site may require account, consent, or manual play.",
     };
   }
 }
