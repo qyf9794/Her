@@ -61,8 +61,8 @@ export class AdvancedShell {
         resolve({
           command,
           exitCode: code,
-          stdout: stdout.slice(0, 8000),
-          stderr: stderr.slice(0, 8000),
+          stdout: stdout.slice(0, 3000),
+          stderr: stderr.slice(0, 3000),
         });
       });
     });

@@ -67,7 +67,14 @@ export class LocalStore {
     const draft = drafts.find((item) => item.id === emailId);
     if (!draft) throw new Error(`Email not found: ${emailId}`);
     return {
-      ...draft,
+      id: draft.id,
+      to: draft.to,
+      subject: draft.subject,
+      createdAt: draft.createdAt,
+      sentAt: draft.sentAt,
+      bodyChars: draft.body.length,
+      bodyPreview: draft.body.slice(0, 1200),
+      truncated: draft.body.length > 1200,
       source: "local-draft-adapter",
       note: "This MVP reads local email draft data. Connect Gmail or Microsoft Graph for real inbox messages.",
     };
@@ -82,7 +89,14 @@ export class LocalStore {
     };
     drafts.unshift(draft);
     writeJson(this.emailDraftsPath, drafts);
-    return { ...draft, bodyPreview: draft.body.slice(0, 240) };
+    return {
+      id: draft.id,
+      to: draft.to,
+      subject: draft.subject,
+      createdAt: draft.createdAt,
+      bodyChars: draft.body.length,
+      bodyPreview: draft.body.slice(0, 240),
+    };
   }
 
   markEmailSent(draftId: string) {
@@ -94,16 +108,23 @@ export class LocalStore {
     return { draftId, sentAt: draft.sentAt, note: "Local adapter marked the draft as sent. Configure Gmail or Microsoft Graph for real delivery." };
   }
 
-  searchCalendar(from: string, to: string, query?: string) {
+  searchCalendar(from: string, to: string, query?: string, limit = 10) {
     const events = readJson<CalendarEvent[]>(this.calendarPath, []);
     const start = new Date(from).getTime();
     const end = new Date(to).getTime();
     const q = query?.toLowerCase();
-    return events.filter((event) => {
-      const eventStart = new Date(event.start).getTime();
-      const text = [event.title, event.location, event.notes, ...event.attendees].join(" ").toLowerCase();
-      return eventStart >= start && eventStart <= end && (!q || text.includes(q));
-    });
+    return events
+      .filter((event) => {
+        const eventStart = new Date(event.start).getTime();
+        const text = [event.title, event.location, event.notes, ...event.attendees].join(" ").toLowerCase();
+        return eventStart >= start && eventStart <= end && (!q || text.includes(q));
+      })
+      .slice(0, limit)
+      .map((event) => ({
+        ...event,
+        notes: event.notes ? event.notes.slice(0, 500) : undefined,
+        notesTruncated: Boolean(event.notes && event.notes.length > 500),
+      }));
   }
 
   createCalendarEvent(input: Omit<CalendarEvent, "id" | "createdAt">) {
@@ -140,7 +161,14 @@ export class LocalStore {
     };
     drafts.unshift(draft);
     writeJson(this.copyDraftsPath, drafts);
-    return { ...draft, preview: draft.body.slice(0, 300) };
+    return {
+      id: draft.id,
+      title: draft.title,
+      project: draft.project,
+      createdAt: draft.createdAt,
+      bodyChars: draft.body.length,
+      preview: draft.body.slice(0, 300),
+    };
   }
 
   publishCopyDraft(draftId: string) {

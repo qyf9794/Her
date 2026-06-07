@@ -1,17 +1,42 @@
 import { spawn } from "node:child_process";
-const run = (command: string, args: string[], input?: string) =>
+import fs from "node:fs/promises";
+import path from "node:path";
+type KeyboardShortcutAction =
+  | "copy"
+  | "paste"
+  | "select_all"
+  | "undo"
+  | "enter"
+  | "escape"
+  | "tab"
+  | "new_window"
+  | "new_tab"
+  | "refresh"
+  | "browser_back"
+  | "browser_forward"
+  | "toggle_fullscreen";
+
+const run = (command: string, args: string[], input?: string, timeoutMs = 8000) =>
   new Promise<string>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`${command} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (code) => {
+      clearTimeout(timeout);
       if (code === 0) resolve(stdout.trim());
       else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
     });
@@ -42,22 +67,34 @@ export class SystemControl {
   async listWindows() {
     const script = `
       tell application "System Events"
-        set sep to ASCII character 31
+        set sep to character id 31
         set output to ""
         repeat with proc in (application processes whose visible is true)
           set appName to name of proc
           try
             repeat with targetWindow in windows of proc
-              set winPosition to position of targetWindow
-              set winSize to size of targetWindow
-              set output to output & appName & sep & name of targetWindow & sep & item 1 of winPosition & sep & item 2 of winPosition & sep & item 1 of winSize & sep & item 2 of winSize & linefeed
+              set winName to ""
+              set winX to 0
+              set winY to 0
+              set winWidth to 0
+              set winHeight to 0
+              try
+                set winName to name of targetWindow as text
+                set winPosition to position of targetWindow
+                set winSize to size of targetWindow
+                set winX to item 1 of winPosition
+                set winY to item 2 of winPosition
+                set winWidth to item 1 of winSize
+                set winHeight to item 2 of winSize
+                set output to output & appName & sep & winName & sep & (winX as text) & sep & (winY as text) & sep & (winWidth as text) & sep & (winHeight as text) & linefeed
+              end try
             end repeat
           end try
         end repeat
         return output
       end tell
     `;
-    const output = await run("osascript", ["-e", script]);
+    const output = await run("osascript", ["-e", script], undefined, 20000);
     return output
       .split("\n")
       .filter(Boolean)
@@ -75,8 +112,18 @@ export class SystemControl {
   }
 
   async closeWindow(appName: string) {
-    await run("osascript", ["-e", windowActionScript(appName, `click button 1 of targetWindow`)]);
-    return { closedWindowFor: appName };
+    const output = await run("osascript", ["-e", closeWindowScript(appName)], undefined, 10000);
+    const [before, after, method] = output.split("|");
+    const windowsBefore = Number(before) || 0;
+    const windowsAfter = Number(after) || 0;
+    return {
+      closedWindowFor: appName,
+      windowsBefore,
+      windowsAfter,
+      verified: windowsAfter < windowsBefore,
+      method,
+      note: windowsAfter < windowsBefore ? "Verified that the app has fewer visible windows after the close action." : "Close action ran, but the visible window count did not decrease.",
+    };
   }
 
   async closeAllWindows(appNames?: Iterable<string>) {
@@ -94,7 +141,7 @@ export class SystemControl {
             if (count of allowedApps) is 0 or appName is in allowedApps then
               set appClosedCount to 0
               tell proc
-                repeat while (count of windows) > 0
+                repeat while (count of windows) is greater than 0
                   try
                     set targetWindow to window 1
                     if exists button 1 of targetWindow then
@@ -110,17 +157,132 @@ export class SystemControl {
                   end try
                 end repeat
               end tell
-              if appClosedCount > 0 then set appCount to appCount + 1
+              if appClosedCount is greater than 0 then set appCount to appCount + 1
             end if
           end if
         end repeat
 
-        return (closedCount as text) & "|" & (appCount as text)
+        set remainingCount to 0
+        repeat with proc in (application processes whose visible is true)
+          set appName to name of proc
+          if appName is not in skippedApps then
+            if (count of allowedApps) is 0 or appName is in allowedApps then
+              tell proc
+                repeat with targetWindow in windows
+                  try
+                    if subrole of targetWindow is "AXStandardWindow" then set remainingCount to remainingCount + 1
+                  end try
+                end repeat
+              end tell
+            end if
+          end if
+        end repeat
+
+        return (closedCount as text) & "|" & (appCount as text) & "|" & (remainingCount as text)
       end tell
     `;
-    const output = await run("osascript", ["-e", script]);
-    const [windowsClosed, appsAffected] = output.split("|").map((value) => Number(value) || 0);
-    return { windowsClosed, appsAffected, scope: allowedApps.length ? "authorized_apps" : "all_visible_apps" };
+    const output = await run("osascript", ["-e", script], undefined, 20000);
+    const [windowsClosed, appsAffected, windowsRemaining] = output.split("|").map((value) => Number(value) || 0);
+    return {
+      windowsClosed,
+      appsAffected,
+      windowsRemaining,
+      verified: windowsClosed > 0 && windowsRemaining === 0,
+      scope: allowedApps.length ? "authorized_apps" : "all_visible_apps",
+    };
+  }
+
+  async hideAllWindows(options: { preserveFrontmost?: boolean; preserveFinder?: boolean } = {}) {
+    const preserveFrontmost = options.preserveFrontmost ?? false;
+    const preserveFinder = options.preserveFinder ?? true;
+    const script = `
+      tell application "System Events"
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Events"}
+        set frontAppName to ""
+        if ${preserveFrontmost ? "true" : "false"} then
+          repeat with proc in application processes
+            try
+              if frontmost of proc is true then
+                set frontAppName to name of proc
+                exit repeat
+              end if
+            end try
+          end repeat
+        end if
+
+        set hiddenCount to 0
+        set preservedCount to 0
+        repeat with proc in (application processes whose visible is true)
+          set appName to name of proc
+          set shouldPreserve to false
+          if appName is in skippedApps then set shouldPreserve to true
+          if ${preserveFinder ? "true" : "false"} then
+            if appName is "Finder" then set shouldPreserve to true
+          end if
+          if ${preserveFrontmost ? "true" : "false"} then
+            if appName is frontAppName then set shouldPreserve to true
+          end if
+
+          if shouldPreserve is true then
+            set preservedCount to preservedCount + 1
+          else
+            try
+              set visible of proc to false
+              set hiddenCount to hiddenCount + 1
+            end try
+          end if
+        end repeat
+
+        return (hiddenCount as text) & "|" & (preservedCount as text) & "|" & frontAppName
+      end tell
+    `;
+    const output = await run("osascript", ["-e", script], undefined, 10000);
+    const [hiddenCount, preservedCount, frontmostApp] = output.split("|");
+    return {
+      hiddenCount: Number(hiddenCount) || 0,
+      preservedCount: Number(preservedCount) || 0,
+      frontmostApp,
+      preserveFrontmost,
+      preserveFinder,
+      verified: Number(hiddenCount) > 0,
+      note: preserveFrontmost ? "Hid visible apps except the current frontmost app and protected apps." : "Hid visible apps except protected apps.",
+    };
+  }
+
+  async minimizeAllWindows() {
+    const script = `
+      tell application "System Events"
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Settings"}
+        set minimizedCount to 0
+        set appCount to 0
+
+        repeat with proc in (application processes whose visible is true)
+          set appName to name of proc
+          if appName is not in skippedApps then
+            set appMinimizedCount to 0
+            tell proc
+              repeat with targetWindow in windows
+                try
+                  set value of attribute "AXMinimized" of targetWindow to true
+                  set minimizedCount to minimizedCount + 1
+                  set appMinimizedCount to appMinimizedCount + 1
+                end try
+              end repeat
+            end tell
+            if appMinimizedCount is greater than 0 then set appCount to appCount + 1
+          end if
+        end repeat
+
+        return (minimizedCount as text) & "|" & (appCount as text)
+      end tell
+    `;
+    const output = await run("osascript", ["-e", script], undefined, 20000);
+    const [windowsMinimized, appsAffected] = output.split("|");
+    return {
+      windowsMinimized: Number(windowsMinimized) || 0,
+      appsAffected: Number(appsAffected) || 0,
+      verified: Number(windowsMinimized) > 0,
+    };
   }
 
   async autoArrangeWindows(appNames?: Iterable<string>) {
@@ -131,10 +293,25 @@ export class SystemControl {
         set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Settings"}
         set targetCount to 0
 
-        repeat with proc in (application processes whose visible is true)
-          set appName to name of proc
-          if appName is not in skippedApps then
-            if (count of allowedApps) is 0 or appName is in allowedApps then
+        if (count of allowedApps) is greater than 0 then
+          repeat with requestedApp in allowedApps
+            set appName to requestedApp as text
+            if appName is not in skippedApps then
+              if exists process appName then
+                tell process appName
+                  repeat with targetWindow in windows
+                    try
+                      if subrole of targetWindow is "AXStandardWindow" then set targetCount to targetCount + 1
+                    end try
+                  end repeat
+                end tell
+              end if
+            end if
+          end repeat
+        else
+          repeat with proc in (application processes whose visible is true)
+            set appName to name of proc
+            if appName is not in skippedApps then
               tell proc
                 repeat with targetWindow in windows
                   try
@@ -143,8 +320,8 @@ export class SystemControl {
                 end repeat
               end tell
             end if
-          end if
-        end repeat
+          end repeat
+        end if
 
         if targetCount is 0 then return "0|0|0"
 
@@ -173,10 +350,36 @@ export class SystemControl {
         set arrangedCount to 0
         set appCount to 0
 
-        repeat with proc in (application processes whose visible is true)
-          set appName to name of proc
-          if appName is not in skippedApps then
-            if (count of allowedApps) is 0 or appName is in allowedApps then
+        if (count of allowedApps) is greater than 0 then
+          repeat with requestedApp in allowedApps
+            set appName to requestedApp as text
+            if appName is not in skippedApps then
+              if exists process appName then
+                set appArrangedCount to 0
+                tell process appName
+                  repeat with targetWindow in windows
+                    try
+                      if subrole of targetWindow is "AXStandardWindow" then
+                        set winIndex to arrangedCount
+                        set columnIndex to winIndex mod columnsCount
+                        set rowIndex to winIndex div columnsCount
+                        set position of targetWindow to {leftEdge + (columnIndex * cellWidth), topEdge + (rowIndex * cellHeight)}
+                        set size of targetWindow to {cellWidth, cellHeight}
+                        set arrangedCount to arrangedCount + 1
+                        set appArrangedCount to appArrangedCount + 1
+                        delay 0.03
+                      end if
+                    end try
+                  end repeat
+                end tell
+                if appArrangedCount is greater than 0 then set appCount to appCount + 1
+              end if
+            end if
+          end repeat
+        else
+          repeat with proc in (application processes whose visible is true)
+            set appName to name of proc
+            if appName is not in skippedApps then
               set appArrangedCount to 0
               tell proc
                 repeat with targetWindow in windows
@@ -194,20 +397,25 @@ export class SystemControl {
                   end try
                 end repeat
               end tell
-              if appArrangedCount > 0 then set appCount to appCount + 1
+              if appArrangedCount is greater than 0 then set appCount to appCount + 1
             end if
-          end if
-        end repeat
+          end repeat
+        end if
 
-        return (arrangedCount as text) & "|" & (appCount as text) & "|" & (columnsCount as text) & "x" & (rowsCount as text)
+        return (arrangedCount as text) & "|" & (appCount as text) & "|" & (columnsCount as text) & "x" & (rowsCount as text) & "|" & (targetCount as text)
       end tell
     `;
-    const output = await run("osascript", ["-e", script]);
-    const [windowsArranged, appsAffected, layout] = output.split("|");
+    await writeDebugScript("auto-arrange.applescript", script);
+    const output = await run("osascript", ["-e", script], undefined, 20000);
+    const [windowsArranged, appsAffected, layout, targetWindows] = output.split("|");
+    const arranged = Number(windowsArranged) || 0;
+    const target = Number(targetWindows) || 0;
     return {
-      windowsArranged: Number(windowsArranged) || 0,
+      windowsArranged: arranged,
+      targetWindows: target,
       appsAffected: Number(appsAffected) || 0,
       layout,
+      verified: target > 0 && arranged === target,
       scope: allowedApps.length ? "authorized_apps" : "all_visible_apps",
     };
   }
@@ -239,17 +447,58 @@ export class SystemControl {
             try
               if frontmost of proc is true then
                 set frontAppName to name of proc
-                if (count of windows of proc) > 0 then set frontWindowName to name of window 1 of proc
+                if (count of windows of proc) is greater than 0 then set frontWindowName to name of window 1 of proc
                 exit repeat
               end if
             end try
           end repeat
         end if
 
-        repeat with proc in (application processes whose visible is true)
-          set appName to name of proc
-          if appName is not in skippedApps then
-            if (count of allowedApps) is 0 or appName is in allowedApps then
+        if (count of allowedApps) is greater than 0 then
+          repeat with requestedApp in allowedApps
+            set appName to requestedApp as text
+            if appName is not in skippedApps then
+              if exists process appName then
+                set appMinimizedCount to 0
+                tell process appName
+                  repeat with targetWindow in windows
+                    try
+                      if subrole of targetWindow is "AXStandardWindow" then
+                        set winName to name of targetWindow as text
+                        set shouldKeep to false
+                        if appName is in keepApps then set shouldKeep to true
+                        if ${preserveFrontmost ? "true" : "false"} then
+                          if appName is frontAppName then
+                            if winName is frontWindowName then set shouldKeep to true
+                          end if
+                        end if
+                        repeat with keyword in keepKeywords
+                          set keywordText to keyword as text
+                          ignoring case
+                            if winName contains keywordText then set shouldKeep to true
+                          end ignoring
+                        end repeat
+
+                        if shouldKeep is true then
+                          set preservedCount to preservedCount + 1
+                        else
+                          set value of attribute "AXMinimized" of targetWindow to true
+                          set minimizedCount to minimizedCount + 1
+                          set appMinimizedCount to appMinimizedCount + 1
+                          delay 0.03
+                        end if
+                      end if
+                    end try
+                  end repeat
+                end tell
+                if appMinimizedCount is greater than 0 then set appCount to appCount + 1
+              end if
+            end if
+          end repeat
+        else
+          repeat with proc in (application processes whose visible is true)
+            set appName to name of proc
+            if appName is not in skippedApps then
               set appMinimizedCount to 0
               tell proc
                 repeat with targetWindow in windows
@@ -258,14 +507,19 @@ export class SystemControl {
                       set winName to name of targetWindow as text
                       set shouldKeep to false
                       if appName is in keepApps then set shouldKeep to true
-                      if (${preserveFrontmost ? "true" : "false"}) and appName is frontAppName and winName is frontWindowName then set shouldKeep to true
+                      if ${preserveFrontmost ? "true" : "false"} then
+                        if appName is frontAppName then
+                          if winName is frontWindowName then set shouldKeep to true
+                        end if
+                      end if
                       repeat with keyword in keepKeywords
+                        set keywordText to keyword as text
                         ignoring case
-                          if winName contains (keyword as text) then set shouldKeep to true
-                        end ignoring case
+                          if winName contains keywordText then set shouldKeep to true
+                        end ignoring
                       end repeat
 
-                      if shouldKeep then
+                      if shouldKeep is true then
                         set preservedCount to preservedCount + 1
                       else
                         set value of attribute "AXMinimized" of targetWindow to true
@@ -277,15 +531,16 @@ export class SystemControl {
                   end try
                 end repeat
               end tell
-              if appMinimizedCount > 0 then set appCount to appCount + 1
+              if appMinimizedCount is greater than 0 then set appCount to appCount + 1
             end if
-          end if
-        end repeat
+          end repeat
+        end if
 
         return (minimizedCount as text) & "|" & (preservedCount as text) & "|" & (appCount as text) & "|" & frontAppName & "|" & frontWindowName
       end tell
     `;
-    const output = await run("osascript", ["-e", script]);
+    await writeDebugScript("minimize-unrelated.applescript", script);
+    const output = await run("osascript", ["-e", script], undefined, 20000);
     const [windowsMinimized, windowsPreserved, appsAffected, frontmostApp, frontmostWindow] = output.split("|");
     return {
       windowsMinimized: Number(windowsMinimized) || 0,
@@ -327,6 +582,21 @@ export class SystemControl {
     return { volume: Math.round(level) };
   }
 
+  async getVolume() {
+    const output = await run("osascript", [
+      "-e",
+      `set settings to get volume settings
+       return (output volume of settings as text) & "|" & (output muted of settings as text)`,
+    ]);
+    const [volume, muted] = output.split("|");
+    return { volume: Number(volume) || 0, muted: muted === "true" };
+  }
+
+  async muteVolume(muted: boolean) {
+    await run("osascript", ["-e", `set volume ${muted ? "with" : "without"} output muted`]);
+    return { muted };
+  }
+
   async setBrightness(level: number) {
     const normalized = Math.max(0, Math.min(1, level / 100));
     try {
@@ -347,11 +617,14 @@ export class SystemControl {
 
   async openSettings(pane?: string) {
     const panes: Record<string, string> = {
+      system: "x-apple.systempreferences:",
       displays: "x-apple.systempreferences:com.apple.Displays-Settings.extension",
       sound: "x-apple.systempreferences:com.apple.Sound-Settings.extension",
       bluetooth: "x-apple.systempreferences:com.apple.BluetoothSettings",
+      wifi: "x-apple.systempreferences:com.apple.wifi-settings-extension",
       keyboard: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension",
       privacy: "x-apple.systempreferences:com.apple.preference.security?Privacy",
+      microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
       accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
       screenrecording: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
       automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
@@ -362,7 +635,208 @@ export class SystemControl {
     await run("open", target ? [target] : ["-b", "com.apple.systempreferences"]);
     return { opened: pane ?? "System Settings" };
   }
+
+  async sleepMac() {
+    await run("pmset", ["sleepnow"], undefined, 5000);
+    return { sleeping: true };
+  }
+
+  async lockScreen() {
+    await run("pmset", ["displaysleepnow"], undefined, 5000);
+    return { displaySleep: true };
+  }
+
+  async showDesktop() {
+    await run("osascript", ["-e", `tell application "System Events" to key code 103`], undefined, 5000);
+    return {
+      action: "show_desktop",
+      attempted: true,
+      note: "Triggered macOS Show Desktop with System Events key code 103.",
+    };
+  }
+
+  async readClipboard() {
+    const text = await run("pbpaste", [], undefined, 5000);
+    return { text };
+  }
+
+  async speakText(text: string, voice?: string) {
+    const args = voice?.trim() ? ["-v", voice.trim(), text] : [text];
+    await run("say", args, undefined, 20000);
+    return { spoken: true, voice: voice?.trim() || undefined };
+  }
+
+  async showNotification(title: string, message: string, dialog = false) {
+    const script = dialog
+      ? `display dialog ${JSON.stringify(message)} buttons {"取消", "继续"} default button "继续" with title ${JSON.stringify(title)}`
+      : `display notification ${JSON.stringify(message)} with title ${JSON.stringify(title)}`;
+    const output = await run("osascript", ["-e", script], undefined, 10000);
+    return { shown: true, dialog, output: output || undefined };
+  }
+
+  async captureScreenshot(mode: "clipboard" | "desktop" | "selection") {
+    if (mode === "clipboard") {
+      await run("screencapture", ["-c"], undefined, 10000);
+      return { captured: true, mode };
+    }
+    const fileName = `screenshot-${timestampForFileName()}.png`;
+    const path = `${process.env.HOME || ""}/Desktop/${fileName}`;
+    if (mode === "selection") {
+      await run("screencapture", ["-i", path], undefined, 60000);
+    } else {
+      await run("screencapture", [path], undefined, 10000);
+    }
+    return { captured: true, mode, path };
+  }
+
+  async keyboardShortcut(action: KeyboardShortcutAction) {
+    const script = `tell application "System Events" to ${keyboardShortcutAppleScript(action)}`;
+    await run("osascript", ["-e", script], undefined, 5000);
+    return { action, sent: true };
+  }
+
+  async mediaKeyControl(action: "play_pause" | "next" | "previous" | "volume_up" | "volume_down", appName?: string) {
+    if (action === "volume_up" || action === "volume_down") {
+      const delta = action === "volume_up" ? 10 : -10;
+      const output = await run("osascript", [
+        "-e",
+        `set currentVolume to output volume of (get volume settings)
+         set nextVolume to currentVolume + (${delta})
+         if nextVolume is greater than 100 then set nextVolume to 100
+         if nextVolume is less than 0 then set nextVolume to 0
+         set volume output volume nextVolume
+         return nextVolume as text`,
+      ]);
+      return {
+        action,
+        volume: Number(output) || undefined,
+        attempted: true,
+        note: "Adjusted system output volume.",
+      };
+    }
+
+    const targetAppName = appName ? normalizeMediaAppName(appName) : undefined;
+    const script = `
+      ${targetAppName ? `tell application ${JSON.stringify(targetAppName)} to activate\n      delay 0.2` : ""}
+      tell application "System Events"
+        ${mediaKeyAppleScript(action)}
+      end tell
+    `;
+    await run("osascript", ["-e", script], undefined, 5000);
+    return {
+      action,
+      appName: targetAppName,
+      requestedAppName: appName,
+      attempted: true,
+      note: appName
+        ? "Focused the requested app and sent a basic media/control keystroke. App-specific support depends on the media client and current focus."
+        : "Sent a basic media/control keystroke to the current focused app. App-specific support depends on the media client and current focus.",
+    };
+  }
 }
+
+const mediaKeyAppleScript = (action: "play_pause" | "next" | "previous" | "volume_up" | "volume_down") => {
+  switch (action) {
+    case "play_pause":
+      return "key code 49";
+    case "next":
+      return "key code 124 using {command down}";
+    case "previous":
+      return "key code 123 using {command down}";
+    case "volume_up":
+    case "volume_down":
+      return "";
+  }
+};
+
+const keyboardShortcutAppleScript = (action: KeyboardShortcutAction) => {
+  switch (action) {
+    case "copy":
+      return `keystroke "c" using {command down}`;
+    case "paste":
+      return `keystroke "v" using {command down}`;
+    case "select_all":
+      return `keystroke "a" using {command down}`;
+    case "undo":
+      return `keystroke "z" using {command down}`;
+    case "enter":
+      return "key code 36";
+    case "escape":
+      return "key code 53";
+    case "tab":
+      return "key code 48";
+    case "new_window":
+      return `keystroke "n" using {command down}`;
+    case "new_tab":
+      return `keystroke "t" using {command down}`;
+    case "refresh":
+      return `keystroke "r" using {command down}`;
+    case "browser_back":
+      return "key code 123 using {command down}";
+    case "browser_forward":
+      return "key code 124 using {command down}";
+    case "toggle_fullscreen":
+      return `keystroke "f" using {control down, command down}`;
+  }
+};
+
+const timestampForFileName = () => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+};
+
+const normalizeMediaAppName = (appName: string) => {
+  const normalized = appName.trim().toLowerCase();
+  if (normalized === "qq音乐" || normalized === "qq music" || normalized === "qqmusic") return "QQMusic";
+  if (normalized === "网易云" || normalized === "网易云音乐" || normalized === "netease" || normalized === "neteasemusic") {
+    return "NeteaseMusic";
+  }
+  return appName;
+};
+
+const closeWindowScript = (appName: string) => `
+  tell application ${JSON.stringify(appName)} to activate
+  delay 0.2
+
+  tell application "System Events"
+    set targetAppName to ${JSON.stringify(appName)}
+    set beforeCount to 0
+    set afterCount to 0
+
+    repeat 10 times
+      repeat with proc in (application processes whose visible is true)
+        if name of proc is targetAppName then
+          tell proc
+            try
+              set beforeCount to count of windows
+            end try
+          end tell
+        end if
+      end repeat
+      if beforeCount is greater than 0 then exit repeat
+      delay 0.1
+    end repeat
+
+    if beforeCount is 0 then error "No controllable windows found for ${escapeAppleScriptString(appName)}. Open or create a window first."
+
+    set closeMethod to "command_w"
+    keystroke "w" using {command down}
+    delay 0.4
+
+    repeat with proc in (application processes whose visible is true)
+      if name of proc is targetAppName then
+        tell proc
+          try
+            set afterCount to count of windows
+          end try
+        end tell
+      end if
+    end repeat
+
+    return (beforeCount as text) & "|" & (afterCount as text) & "|" & closeMethod
+  end tell
+`;
 
 const windowActionScript = (appName: string, action: string) => `
   tell application ${JSON.stringify(appName)} to activate
@@ -373,7 +847,7 @@ const windowActionScript = (appName: string, action: string) => `
 
     tell process ${JSON.stringify(appName)}
       repeat 10 times
-        if (count of windows) > 0 then exit repeat
+        if (count of windows) is greater than 0 then exit repeat
         delay 0.1
       end repeat
 
@@ -393,3 +867,10 @@ const windowActionScript = (appName: string, action: string) => `
 const escapeAppleScriptString = (value: string) => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 const appleScriptList = (values: string[]) => `{${values.map((value) => JSON.stringify(value)).join(", ")}}`;
+
+const writeDebugScript = async (name: string, script: string) => {
+  const folder = process.env.HER_DEBUG_APPLESCRIPT_DIR;
+  if (!folder) return;
+  await fs.mkdir(folder, { recursive: true });
+  await fs.writeFile(path.join(folder, name), script, "utf8");
+};
