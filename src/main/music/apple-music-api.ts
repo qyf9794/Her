@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { getAppleMusicDeveloperToken } from "./apple-music-token";
 
 export type AppleMusicCatalogSong = {
   id?: string;
@@ -50,7 +51,8 @@ export class AppleMusicCatalogClient {
   }
 
   private async findWithAppleMusicApi(searchText: string): Promise<AppleMusicCatalogSong | null> {
-    if (!config.appleMusicDeveloperToken) return null;
+    const developerToken = getAppleMusicDeveloperToken();
+    if (!developerToken) return null;
 
     const url = new URL(`https://api.music.apple.com/v1/catalog/${config.appleMusicCountry}/search`);
     url.searchParams.set("term", searchText);
@@ -60,7 +62,7 @@ export class AppleMusicCatalogClient {
     try {
       const response = await fetch(url, {
         headers: {
-          authorization: `Bearer ${config.appleMusicDeveloperToken}`,
+          authorization: `Bearer ${developerToken}`,
           accept: "application/json",
         },
         signal: AbortSignal.timeout(5000),
