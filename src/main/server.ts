@@ -13,6 +13,7 @@ import { SettingsStore } from "./settings-store";
 import { MemoryStore } from "./memory-store";
 import { ConfirmationQueue } from "./tools/confirmation";
 import { ToolRegistry } from "./tools/registry";
+import { manifestRealtimeToolDefinitions } from "./tools/manifest";
 import { SystemControl } from "./tools/system-control";
 import type { CapabilitySettings } from "../shared/app-settings";
 import type { AuditEvent } from "../shared/events";
@@ -276,6 +277,12 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
       });
       res.status(500).json({ error: message });
     }
+  });
+
+  app.get("/api/realtime/tools", requireAuth, (_req, res) => {
+    res.json({
+      tools: manifestRealtimeToolDefinitions,
+    });
   });
 
   app.post("/api/tools/execute", requireAuth, async (req, res) => {

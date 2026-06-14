@@ -14,6 +14,7 @@ const {
   toolRiskByName,
   toolRequiresConfirmation,
   toolBundles,
+  manifestRealtimeToolDefinitions,
 } = require("../electron/dist/main/tools/manifest.js");
 const { ApprovalPolicy } = require("../electron/dist/main/policy/approval-policy.js");
 const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.js");
@@ -46,6 +47,21 @@ for (const name of definitionNames) {
 
 for (const bundle of ["core", "filesystem", "documents", "comms", "media", "desktop", "browser", "shell"]) {
   if (!toolBundles[bundle]) fail(`Missing tool bundle metadata: ${bundle}`);
+}
+
+const realtimeManifestNames = new Set(manifestRealtimeToolDefinitions.map((definition) => definition.name));
+if (realtimeManifestNames.size !== manifestRealtimeToolDefinitions.length) {
+  fail("Manifest-generated Realtime tool names are not unique.");
+}
+for (const definition of manifestRealtimeToolDefinitions) {
+  const entry = toolManifest[definition.name];
+  if (!entry) fail(`${definition.name} Realtime definition is missing from manifest.`);
+  if (entry && definition.description !== (entry.realtimeDescription ?? entry.description)) {
+    fail(`${definition.name} Realtime description is not generated from manifest metadata.`);
+  }
+  if (entry && definition.parameters !== entry.parameters) {
+    fail(`${definition.name} Realtime parameters are not generated from manifest metadata.`);
+  }
 }
 
 const policy = new ApprovalPolicy();
@@ -158,6 +174,7 @@ console.log(JSON.stringify({
     toolDefinitions: definitionNames.length,
     manifestEntries: Object.keys(toolManifest).length,
     bundles: Object.keys(toolBundles).length,
+    realtimeToolDefinitions: manifestRealtimeToolDefinitions.length,
     approvalPolicy: true,
     actionPlanConfirmation: true,
     schemaValidation: true,

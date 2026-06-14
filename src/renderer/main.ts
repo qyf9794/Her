@@ -17,12 +17,13 @@ import {
   realtimeTurnDetectionTuning,
   type RealtimeRuntimeOptions,
 } from "../shared/realtime-config";
-import { realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
+import { realtimeToolDefinitions as fallbackRealtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
 import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
 import "./styles.css";
 
 type SessionState = "idle" | "connecting" | "connected" | "error";
 type VisualState = "idle" | "listening" | "thinking" | "speaking" | "tool" | "confirming" | "error";
+type RealtimeToolDefinition = (typeof fallbackRealtimeToolDefinitions)[number];
 
 declare global {
   interface Window {
@@ -1093,11 +1094,12 @@ const connect = async () => {
       audioElement: audio,
     });
 
+    const realtimeTools = await loadRealtimeTools();
     const agent = new RealtimeAgent({
       name: "HER",
       instructions: buildRealtimeAgentInstructions(),
       voice: access.voice,
-      tools: createRealtimeTools(),
+      tools: createRealtimeTools(realtimeTools),
     });
 
     realtimeSession = new RealtimeSession(agent, {
@@ -1280,8 +1282,21 @@ const readNumber = (value: Record<string, unknown> | undefined, key: string) => 
   return typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
 };
 
-const createRealtimeTools = (): FunctionTool[] =>
-  realtimeToolDefinitions.map((definition) =>
+const loadRealtimeTools = async (): Promise<readonly RealtimeToolDefinition[]> => {
+  try {
+    const response = await getJson<{ tools: RealtimeToolDefinition[] }>("/api/realtime/tools");
+    if (Array.isArray(response.tools) && response.tools.length > 0) {
+      realtimeToolNames = new Set(response.tools.map((definition) => definition.name));
+      return response.tools;
+    }
+  } catch (error) {
+    writeAudit("realtime.tools", errorMessage(error), "error");
+  }
+  return fallbackRealtimeToolDefinitions;
+};
+
+const createRealtimeTools = (definitions: readonly RealtimeToolDefinition[]): FunctionTool[] =>
+  definitions.map((definition) =>
     tool({
       name: definition.name,
       description: definition.description,
@@ -1369,7 +1384,7 @@ const appendAssistantDelta = (text: string) => {
   transcript.scrollTop = transcript.scrollHeight;
 };
 
-const realtimeToolNames = new Set<string>(realtimeToolDefinitions.map((definition) => definition.name));
+let realtimeToolNames = new Set<string>(fallbackRealtimeToolDefinitions.map((definition) => definition.name));
 
 const isToolName = (name: string): name is ToolName => realtimeToolNames.has(name);
 
