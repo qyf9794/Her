@@ -1,6 +1,7 @@
 import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName, type ToolGroup, type ToolName } from "../../shared/tools";
 import type { CapabilityKey } from "../../shared/app-settings";
 import { defineTool, type ToolBundle, type ToolDefinition, type ToolHandler, type ToolRisk } from "./define-tool";
+import { toolBundles } from "./bundles";
 import type { z } from "zod";
 
 export type ToolManifestEntry = ToolDefinition<Record<string, unknown>> & {
@@ -8,16 +9,7 @@ export type ToolManifestEntry = ToolDefinition<Record<string, unknown>> & {
   realtime: boolean;
 };
 
-export const toolBundles: Record<ToolBundle, { title: string; groups: ToolGroup[] }> = {
-  core: { title: "Core runtime", groups: ["permissions", "agents"] },
-  filesystem: { title: "Files", groups: ["files"] },
-  documents: { title: "Documents", groups: ["documents"] },
-  comms: { title: "Communications and productivity", groups: ["text", "phone", "social", "research"] },
-  media: { title: "Media", groups: ["media"] },
-  desktop: { title: "Desktop, apps, windows, system", groups: ["apps", "windows", "system"] },
-  browser: { title: "Browser", groups: ["browser"] },
-  shell: { title: "Shell", groups: ["shell"] },
-};
+export { toolBundles };
 
 const coreRealtimeNames = new Set<ToolName>(coreRealtimeToolNames);
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { config } from "../config";
 import { AuditLog } from "../audit";
 import type { ToolCallRequest, ToolCallResult, ToolGroup, ToolName } from "../../shared/tools";
-import { allToolDefinitions, toolGroupByName, toolGroups } from "../../shared/tools";
+import { toolGroups } from "../../shared/tools";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../../shared/app-settings";
 import { ConfirmationQueue } from "./confirmation";
 import { ApprovalPolicy, type ActionPlan } from "../policy/approval-policy";
@@ -401,7 +401,11 @@ type QueuedTask = {
   progress: TaskProgressEvent[];
 };
 
-const toolGroupLookup: Partial<Record<ToolName, ToolGroup>> = toolGroupByName;
+const toolGroupLookup = Object.fromEntries(
+  Object.values(toolManifest)
+    .filter((entry) => Boolean(entry.group))
+    .map((entry) => [entry.name, entry.group]),
+) as Partial<Record<ToolName, ToolGroup>>;
 const approvalPolicy = new ApprovalPolicy();
 
 const runCommand = (command: string, args: string[]) =>
@@ -1002,15 +1006,15 @@ export class ToolRegistry {
       };
     }
 
-    const tools = allToolDefinitions
-      .filter((definition) => toolGroupLookup[definition.name] === group)
-      .filter((definition) => this.isToolAvailable(definition.name))
-      .map((definition) => ({
-        name: definition.name,
+    const tools = Object.values(toolManifest)
+      .filter((entry) => entry.group === group)
+      .filter((entry) => this.isToolAvailable(entry.name))
+      .map((entry) => ({
+        name: entry.name,
         group,
-        description: truncateText(definition.description, 220),
-        requiresConfirmation: toolRequiresConfirmation(definition.name),
-        arguments: compactJsonSchema(definition.parameters),
+        description: truncateText(entry.description, 220),
+        requiresConfirmation: toolRequiresConfirmation(entry.name),
+        arguments: compactJsonSchema(entry.parameters),
       }));
 
     return {
@@ -1025,9 +1029,9 @@ export class ToolRegistry {
     return toolGroups.map((group) => ({
       group,
       enabled: this.enabledToolGroups.has(group),
-      toolCount: allToolDefinitions
-        .filter((definition) => toolGroupLookup[definition.name] === group)
-        .filter((definition) => this.isToolAvailable(definition.name)).length,
+      toolCount: Object.values(toolManifest)
+        .filter((entry) => entry.group === group)
+        .filter((entry) => this.isToolAvailable(entry.name)).length,
     }));
   }
 
@@ -1550,21 +1554,21 @@ export class ToolRegistry {
 
   private codexToolNamespace(prompt: string) {
     const selectedGroups = selectCodexToolGroups(prompt);
-    const detailedTools = allToolDefinitions
-      .filter((definition) => {
-        const group = toolGroupLookup[definition.name];
+    const detailedTools = Object.values(toolManifest)
+      .filter((entry) => {
+        const group = entry.group;
         if (!group || group === "agents") return false;
-        return selectedGroups.has(group) && this.enabledToolGroups.has(group) && this.isToolAvailable(definition.name);
+        return selectedGroups.has(group) && this.enabledToolGroups.has(group) && this.isToolAvailable(entry.name);
       })
       .slice(0, 80)
-      .map((definition) => {
-        const group = toolGroupLookup[definition.name];
-        const args = compactJsonSchema(definition.parameters);
+      .map((entry) => {
+        const group = entry.group;
+        const args = compactJsonSchema(entry.parameters);
         return {
-          name: definition.name,
+          name: entry.name,
           group,
-          capability: truncateText(definition.description, 140),
-          requiresConfirmation: toolRequiresConfirmation(definition.name),
+          capability: truncateText(entry.description, 140),
+          requiresConfirmation: toolRequiresConfirmation(entry.name),
           args,
         };
       });
@@ -1574,9 +1578,9 @@ export class ToolRegistry {
         group,
         enabled: this.enabledToolGroups.has(group),
         detailed: selectedGroups.has(group),
-        toolCount: allToolDefinitions
-          .filter((definition) => toolGroupLookup[definition.name] === group)
-          .filter((definition) => this.isToolAvailable(definition.name)).length,
+        toolCount: Object.values(toolManifest)
+          .filter((entry) => entry.group === group)
+          .filter((entry) => this.isToolAvailable(entry.name)).length,
       }));
     return `HER exposed tool namespace for Codex planning:
 - Codex cannot execute HER desktop/media/browser/phone tools directly. It may only request HER Tool Gateway calls.

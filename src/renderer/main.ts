@@ -17,7 +17,7 @@ import {
   realtimeTurnDetectionTuning,
   type RealtimeRuntimeOptions,
 } from "../shared/realtime-config";
-import { allToolDefinitions, realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
+import { realtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
 import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
 import "./styles.css";
 
@@ -1369,9 +1369,9 @@ const appendAssistantDelta = (text: string) => {
   transcript.scrollTop = transcript.scrollHeight;
 };
 
-const toolNames = new Set<string>(allToolDefinitions.map((definition) => definition.name));
+const realtimeToolNames = new Set<string>(realtimeToolDefinitions.map((definition) => definition.name));
 
-const isToolName = (name: string): name is ToolName => toolNames.has(name);
+const isToolName = (name: string): name is ToolName => realtimeToolNames.has(name);
 
 const sendUserText = (text: string) => {
   if (!realtimeSession || state !== "connected" || !text.trim()) return;
