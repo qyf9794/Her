@@ -20,6 +20,7 @@ const { ApprovalPolicy } = require("../electron/dist/main/policy/approval-policy
 const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.js");
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
 const { domainManifests } = require("../electron/dist/main/tools/domain-manifests.js");
+const { toolSchemas } = require("../electron/dist/main/tools/schemas.js");
 const { AuditLog } = require("../electron/dist/main/audit.js");
 const { MemoryStore } = require("../electron/dist/main/memory-store.js");
 const { CapabilityGate } = require("../electron/dist/main/capability-gate.js");
@@ -43,6 +44,7 @@ for (const name of definitionNames) {
   }
   if (typeof entry.summarize !== "function") fail(`${name} manifest summarize must be a function.`);
   if (typeof entry.handler !== "function") fail(`${name} manifest handler must be a function.`);
+  if (entry.schema !== toolSchemas[name]) fail(`${name} manifest schema does not reference toolSchemas.`);
   if (!toolRiskByName[name]) fail(`${name} is missing toolRiskByName.`);
 }
 
@@ -184,6 +186,7 @@ console.log(JSON.stringify({
     approvalPolicy: true,
     actionPlanConfirmation: true,
     schemaValidation: true,
+    manifestSchemaOwnership: true,
     disabledCapabilityDenied: true,
     unauthorizedAppDenied: true,
   },

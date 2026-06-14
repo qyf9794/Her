@@ -2,7 +2,7 @@ import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName, type ToolGr
 import type { CapabilityKey } from "../../shared/app-settings";
 import { defineTool, type ToolBundle, type ToolDefinition, type ToolHandler, type ToolRisk } from "./define-tool";
 import { toolBundles } from "./bundles";
-import type { z } from "zod";
+import { toolSchemas } from "./schemas";
 
 export type ToolManifestEntry = ToolDefinition<Record<string, unknown>> & {
   parameters: Record<string, unknown>;
@@ -103,6 +103,7 @@ export const toolManifest = Object.fromEntries(
       capability: capabilityForGroup(group),
       bundle: bundleForGroup(group, name),
       risk: riskForTool(name),
+      schema: toolSchemas[name],
       realtimeDescription: definition.description,
       summarize: (args) => runtimeSummaries[name]?.(args) ?? `${titleForTool(name)} ${JSON.stringify(args)}`,
       handler: (args, context) => {
@@ -147,12 +148,6 @@ export const toolRiskByName = Object.fromEntries(
 ) as Record<ToolName, ToolRisk>;
 
 export const toolRequiresConfirmation = (name: ToolName) => highRiskTools.has(toolManifest[name].risk);
-
-export const attachToolSchemas = (schemas: Record<ToolName, z.ZodTypeAny>) => {
-  for (const [name, schema] of Object.entries(schemas) as Array<[ToolName, z.ZodTypeAny]>) {
-    toolManifest[name].schema = schema;
-  }
-};
 
 export const attachToolHandlers = (handlers: Partial<Record<ToolName, ToolHandler<Record<string, unknown>>>>) => {
   Object.assign(runtimeHandlers, handlers);
