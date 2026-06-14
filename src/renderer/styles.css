@@ -426,7 +426,9 @@ body.orbOnlyActive .productShell {
   min-height: 0;
   overflow: hidden;
   border-bottom: 1px solid #74787d;
-  background: #ffffff;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #101318 0%, #3e5f6c 42%, #d8b287 100%);
 }
 
 .appView.orbOnly .orbPanel {
@@ -457,6 +459,7 @@ body.orbOnlyActive .productShell {
   width: min(46vw, 540px);
   height: 100%;
   min-height: 0;
+  z-index: 1;
 }
 
 .appView.orbOnly .orbMount {
@@ -469,6 +472,64 @@ body.orbOnlyActive .productShell {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.glassReply {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: min(430px, 74%);
+  max-height: 128px;
+  overflow: auto;
+  transform: translate(-50%, calc(-50% + 124px)) scale(0.96);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  padding: 1px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.08)),
+    rgba(34, 38, 42, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -18px 40px rgba(255, 255, 255, 0.08),
+    0 20px 54px rgba(0, 0, 0, 0.26);
+  color: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  scrollbar-width: none;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.42);
+  transition:
+    opacity 0.24s ease,
+    transform 0.32s cubic-bezier(0.19, 1, 0.22, 1);
+  backdrop-filter: blur(24px) saturate(1.45);
+}
+
+.glassReply::-webkit-scrollbar {
+  display: none;
+}
+
+.glassReply.on {
+  opacity: 1;
+  transform: translate(-50%, calc(-50% + 118px)) scale(1);
+  pointer-events: auto;
+}
+
+.glassReplyBody {
+  min-height: 54px;
+  padding: 15px 22px;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)),
+    rgba(12, 15, 18, 0.18);
+  font-size: 16px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.glassReplyBody span {
+  display: block;
 }
 
 .orbTelemetry {
@@ -524,6 +585,10 @@ body.orbOnlyActive .productShell {
 }
 
 .appView.orbOnly .orbTelemetry {
+  display: none;
+}
+
+.appView.orbOnly .glassReply {
   display: none;
 }
 

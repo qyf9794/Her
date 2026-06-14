@@ -91,6 +91,11 @@ app.innerHTML = `
 
         <section class="orbPanel" aria-label="Voice state">
           <div id="orbMount" class="orbMount"></div>
+          <div id="glassReply" class="glassReply" aria-live="polite" aria-hidden="true">
+            <div class="glassReplyBody">
+              <span id="glassReplyText"></span>
+            </div>
+          </div>
           <button id="restorePanelBtn" class="restorePanelBtn" type="button" hidden>Panel</button>
           <div class="orbTelemetry" aria-hidden="true">
             <span id="userMeter"></span>
@@ -264,6 +269,8 @@ const resultWindowSubtitle = document.querySelector<HTMLParagraphElement>("#resu
 const resultWindowBody = document.querySelector<HTMLDivElement>("#resultWindowBody")!;
 const resultWindowCloseBtn = document.querySelector<HTMLButtonElement>("#resultWindowCloseBtn")!;
 const orbMount = document.querySelector<HTMLDivElement>("#orbMount")!;
+const glassReply = document.querySelector<HTMLDivElement>("#glassReply")!;
+const glassReplyText = document.querySelector<HTMLSpanElement>("#glassReplyText")!;
 const userMeter = document.querySelector<HTMLSpanElement>("#userMeter")!;
 const aiMeter = document.querySelector<HTMLSpanElement>("#aiMeter")!;
 const finishOnboardingBtn = document.querySelector<HTMLButtonElement>("#finishOnboardingBtn")!;
@@ -1087,6 +1094,21 @@ const addLine = (kind: "user" | "assistant" | "system" | "tool", text: string) =
   transcript.scrollTop = transcript.scrollHeight;
 };
 
+const setGlassReplyText = (text: string) => {
+  glassReplyText.textContent = text;
+  const hasText = text.trim().length > 0;
+  glassReply.classList.toggle("on", hasText);
+  glassReply.setAttribute("aria-hidden", String(!hasText));
+  glassReply.scrollTop = glassReply.scrollHeight;
+};
+
+const clearGlassReply = () => setGlassReplyText("");
+
+const beginFreshAssistantReply = () => {
+  activeAssistantLine = null;
+  clearGlassReply();
+};
+
 const addActivity = (text: string, status: "ok" | "pending" | "error" = "ok") => {
   if (activity.classList.contains("empty")) {
     activity.textContent = "";
@@ -1408,13 +1430,16 @@ const disconnect = () => {
   localStream = null;
   inputAnalyser = null;
   outputAnalyser = null;
-  activeAssistantLine = null;
+  beginFreshAssistantReply();
   setState("idle", "Idle");
 };
 
 const wireRealtimeSessionEvents = (session: RealtimeSession) => {
   session.on("transport_event", (event) => handleTransportEvent(event));
-  session.on("agent_start", () => setVisualState("thinking"));
+  session.on("agent_start", () => {
+    beginFreshAssistantReply();
+    setVisualState("thinking");
+  });
   session.on("audio_start", () => setVisualState("speaking"));
   session.on("audio_stopped", () => {
     activeAssistantLine = null;
@@ -1443,6 +1468,7 @@ const handleTransportEvent = (event: TransportEvent) => {
 
   if (event.type === "conversation.item.input_audio_transcription.completed") {
     addLine("user", event.transcript);
+    beginFreshAssistantReply();
     setVisualState("thinking");
     void realtimeSessionService?.respondToTranscript(event.transcript);
     return;
@@ -1751,14 +1777,17 @@ const appendAssistantDelta = (text: string) => {
     activeAssistantLine = document.createElement("div");
     activeAssistantLine.className = "line assistant";
     transcript.append(activeAssistantLine);
+    setGlassReplyText("");
   }
   activeAssistantLine.textContent += text;
+  setGlassReplyText(activeAssistantLine.textContent);
   transcript.scrollTop = transcript.scrollHeight;
 };
 
 const sendUserText = (text: string) => {
   if (!realtimeSession || state !== "connected" || !text.trim()) return;
   addLine("user", text);
+  beginFreshAssistantReply();
   setVisualState("thinking");
   realtimeSession.sendMessage(text);
 };
@@ -1883,6 +1912,7 @@ const initOrb = () => {
   const material = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
+    depthWrite: false,
     vertexShader: `
       uniform float uTime;
       uniform float uUserLevel;
@@ -1893,10 +1923,12 @@ const initOrb = () => {
         vNormal = normalize(normalMatrix * normal);
         vPosition = position;
         float energy = max(uUserLevel, uAiLevel);
-        float wave = sin(position.y * (7.0 + energy * 4.0) + uTime * (1.7 + energy * 4.6)) * (0.045 + energy * 0.16);
-        float ripple = sin((position.x + position.z) * 9.0 - uTime * (2.1 + energy * 5.0)) * energy * 0.08;
-        float pulse = 1.0 + uUserLevel * 0.42 + uAiLevel * 0.34;
-        vec3 displaced = position * pulse + normal * (wave + ripple);
+        float wave = sin(position.y * (8.0 + energy * 4.0) + uTime * (1.4 + energy * 4.4)) * (0.035 + energy * 0.12);
+        float ribbon = sin((position.x * 1.8 - position.z * 1.2) * 5.0 + uTime * 2.2) * 0.035;
+        float ripple = sin((position.x + position.z) * 10.0 - uTime * (2.0 + energy * 4.8)) * energy * 0.07;
+        float pulse = 1.0 + uUserLevel * 0.22 + uAiLevel * 0.18;
+        float pressed = smoothstep(0.35, 1.0, energy) * 0.04;
+        vec3 displaced = position * (pulse + pressed) + normal * (wave + ribbon + ripple);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
       }
     `,
@@ -1908,25 +1940,58 @@ const initOrb = () => {
       varying vec3 vNormal;
       varying vec3 vPosition;
       void main() {
-        vec3 aqua = vec3(0.16, 0.92, 1.0);
-        vec3 coral = vec3(1.0, 0.34, 0.46);
-        vec3 violet = vec3(0.54, 0.42, 1.0);
-        vec3 gold = vec3(1.0, 0.74, 0.25);
+        vec3 cyan = vec3(0.28, 0.95, 1.0);
+        vec3 magenta = vec3(1.0, 0.28, 0.76);
+        vec3 blue = vec3(0.30, 0.50, 1.0);
+        vec3 amber = vec3(1.0, 0.72, 0.26);
+        vec3 white = vec3(1.0);
         float energy = max(uUserLevel, uAiLevel);
-        float flow = sin(vPosition.x * 3.0 + vPosition.y * 4.0 + uTime * (0.7 + energy * 3.8)) * 0.5 + 0.5;
-        vec3 color = mix(aqua, violet, flow);
-        color = mix(color, coral, min(1.0, uUserLevel * 0.95));
-        color = mix(color, gold, min(1.0, uAiLevel * 0.85));
-        color = mix(color, uStateColor, 0.35);
-        float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.4);
-        float alpha = 0.66 + fresnel * 0.28 + energy * 0.18;
-        gl_FragColor = vec4(color * (0.82 + fresnel + energy * 0.85), min(1.0, alpha));
+        float viewFacing = abs(dot(vNormal, vec3(0.0, 0.0, 1.0)));
+        float fresnel = pow(1.0 - viewFacing, 2.15);
+        float vertical = vPosition.y * 0.5 + 0.5;
+        float swirlA = sin(vPosition.x * 3.6 + vPosition.y * 5.4 + uTime * (0.7 + energy * 2.7)) * 0.5 + 0.5;
+        float swirlB = sin((vPosition.x - vPosition.z) * 7.0 - uTime * (1.25 + energy * 3.2)) * 0.5 + 0.5;
+        float ribbon = smoothstep(0.64, 1.0, sin(vPosition.y * 9.0 + vPosition.x * 4.0 + uTime * 2.1) * 0.5 + 0.5);
+        vec3 color = mix(cyan, blue, swirlA);
+        color = mix(color, magenta, swirlB * 0.62);
+        color = mix(color, amber, min(1.0, uAiLevel * 0.78));
+        color = mix(color, uStateColor, 0.22 + energy * 0.16);
+        vec3 innerGlow = mix(color, white, 0.18 + fresnel * 0.42 + ribbon * 0.18);
+        float glassBand = smoothstep(0.18, 0.88, vertical) * smoothstep(1.0, 0.24, vertical);
+        float alpha = 0.38 + fresnel * 0.44 + ribbon * 0.08 + glassBand * 0.12 + energy * 0.16;
+        gl_FragColor = vec4(innerGlow * (0.8 + fresnel * 0.95 + energy * 0.65), min(0.94, alpha));
       }
     `,
   });
 
   const sphere = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8, 64), material);
   scene.add(sphere);
+
+  const glassShell = new THREE.Mesh(
+    new THREE.SphereGeometry(1.86, 96, 96),
+    new THREE.MeshPhysicalMaterial({
+      color: "#ffffff",
+      transparent: true,
+      opacity: 0.18,
+      roughness: 0.04,
+      metalness: 0,
+      transmission: 0.68,
+      thickness: 1.25,
+      ior: 1.35,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  scene.add(glassShell);
+
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(1.9, 0.018, 12, 160),
+    new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending }),
+  );
+  rim.rotation.x = Math.PI * 0.5;
+  scene.add(rim);
 
   const halo = new THREE.Mesh(
     new THREE.SphereGeometry(2.175, 64, 64),
@@ -1951,6 +2016,24 @@ const initOrb = () => {
     new THREE.PointsMaterial({ color: "#d8fff7", size: 0.018, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending }),
   );
   scene.add(particles);
+
+  const thinkingDots = new THREE.Group();
+  const dotMaterials: THREE.MeshBasicMaterial[] = [];
+  for (let i = 0; i < 6; i += 1) {
+    const dotMaterial = new THREE.MeshBasicMaterial({
+      color: i % 2 ? "#ff71c8" : "#84f8ff",
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    dotMaterials.push(dotMaterial);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 20, 20), dotMaterial);
+    const angle = (i / 6) * Math.PI * 2;
+    dot.position.set(Math.cos(angle) * 2.28, Math.sin(angle) * 2.28, 0.45);
+    thinkingDots.add(dot);
+  }
+  scene.add(thinkingDots);
 
   const stateColors: Record<VisualState, string> = {
     idle: "#66d9d6",
@@ -1991,11 +2074,24 @@ const initOrb = () => {
     sphere.rotation.y = elapsed * 0.12;
     sphere.rotation.x = Math.sin(elapsed * 0.28) * 0.08;
     sphere.scale.setScalar(1 + userLevel * 0.12 + aiLevel * 0.1);
+    glassShell.rotation.copy(sphere.rotation);
+    glassShell.scale.setScalar(1 + userLevel * 0.08 + aiLevel * 0.07);
+    (glassShell.material as THREE.MeshPhysicalMaterial).opacity = 0.14 + energy * 0.1;
+    rim.rotation.z = elapsed * (0.22 + energy * 0.55);
+    rim.scale.setScalar(1 + energy * 0.12);
+    (rim.material as THREE.MeshBasicMaterial).opacity = 0.18 + energy * 0.32;
     halo.scale.setScalar(1 + userLevel * 0.42 + aiLevel * 0.34);
     (halo.material as THREE.MeshBasicMaterial).opacity = 0.07 + userLevel * 0.36 + aiLevel * 0.28;
     particles.scale.setScalar(1 + energy * 0.22);
     particles.rotation.y = elapsed * (0.025 + userLevel * 0.16);
     particles.rotation.x = elapsed * (0.015 + aiLevel * 0.13);
+    const dotVisibility = visualState === "thinking" || visualState === "tool" || visualState === "confirming" ? 1 : 0;
+    thinkingDots.rotation.z = -elapsed * (0.85 + energy * 0.7);
+    thinkingDots.scale.setScalar(1 + energy * 0.1);
+    dotMaterials.forEach((dotMaterial, index) => {
+      const wave = Math.sin(elapsed * 4.4 + index * 0.85) * 0.5 + 0.5;
+      dotMaterial.opacity += ((0.16 + wave * 0.54) * dotVisibility - dotMaterial.opacity) * 0.14;
+    });
     renderer.render(scene, camera);
   };
   animate();
