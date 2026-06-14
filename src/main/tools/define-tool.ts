@@ -1,16 +1,8 @@
 import type { z } from "zod";
 import type { CapabilityKey } from "../../shared/app-settings";
-import type { ToolGroup, ToolName } from "./metadata";
+import type { ToolGroup, ToolName, ToolRisk } from "./metadata";
 
-export type ToolRisk =
-  | "read"
-  | "local_open"
-  | "local_write"
-  | "external_send"
-  | "browser_submit"
-  | "system_change"
-  | "shell"
-  | "coding_agent";
+export type { ToolRisk } from "./metadata";
 
 export type ToolBundle =
   | "core"

@@ -50,6 +50,14 @@ for (const marker of [
   if (rendererSource.includes(marker)) fail(`Renderer must not keep static Realtime tool whitelist marker: ${marker}`);
 }
 
+const metadataSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/metadata.ts"), "utf8");
+const schemasSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/schemas.ts"), "utf8").trim();
+const manifestSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/manifest.ts"), "utf8");
+if (!metadataSource.includes("export const toolSchemas")) fail("Tool schemas must live in the main tool metadata source.");
+if (!metadataSource.includes("export const toolRiskOverrides")) fail("Tool risk metadata must live in the main tool metadata source.");
+if (schemasSource !== 'export { toolSchemas } from "./metadata";') fail("schemas.ts must be a compatibility re-export, not a duplicate schema manifest.");
+if (manifestSource.includes('from "./schemas"')) fail("manifest.ts must not import schemas from a duplicate schema manifest.");
+
 for (const name of definitionNames) {
   const entry = toolManifest[name];
   if (!entry) {
@@ -235,6 +243,7 @@ console.log(JSON.stringify({
     schemaValidation: true,
     manifestSchemaOwnership: true,
     manifestSummaryOwnership: true,
+    manifestMetadataOwnsSchemasAndRisk: true,
     rendererStaticToolWhitelistRemoved: true,
     explicitHandlerNames: toolHandlerNames.length,
     manifestHandlerExecution: true,

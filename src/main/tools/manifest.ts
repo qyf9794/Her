@@ -1,8 +1,7 @@
 import type { CapabilityKey } from "../../shared/app-settings";
 import { defineTool, type ToolBundle, type ToolDefinition, type ToolHandler, type ToolRisk } from "./define-tool";
 import { toolBundles } from "./bundles";
-import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName, type ToolGroup, type ToolName } from "./metadata";
-import { toolSchemas } from "./schemas";
+import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName, toolRiskOverrides, toolSchemas, type ToolGroup, type ToolName } from "./metadata";
 import { summarizeToolCall } from "./summaries";
 
 export type ToolManifestEntry = ToolDefinition<Record<string, unknown>> & {
@@ -27,72 +26,6 @@ const highRiskTools = new Set<ToolRisk>([
 ]);
 
 const runtimeHandlers: Partial<Record<ToolName, ToolHandler<Record<string, unknown>>>> = {};
-
-const riskOverrides: Partial<Record<ToolName, ToolRisk>> = {
-  codex_task_run: "coding_agent",
-  phone_call: "external_send",
-  file_open: "local_open",
-  file_create_folder: "local_write",
-  file_rename: "local_write",
-  file_move: "local_write",
-  file_copy: "local_write",
-  file_trash: "local_write",
-  document_prepare_edit: "local_write",
-  email_send: "external_send",
-  mac_mail_draft_create: "external_send",
-  calendar_create: "local_write",
-  mac_calendar_create: "local_write",
-  mac_reminder_create: "local_write",
-  mac_note_create: "local_write",
-  copy_save_draft: "local_write",
-  copy_publish: "external_send",
-  music_open: "local_open",
-  music_play_song: "local_open",
-  music_spotify_play: "local_open",
-  music_netease_open: "local_open",
-  music_qq_open: "local_open",
-  media_key_control: "local_open",
-  video_play: "local_open",
-  video_playback_control: "local_open",
-  social_x_post: "external_send",
-  social_open: "local_open",
-  shortcut_run: "system_change",
-  app_open: "local_open",
-  app_focus: "local_open",
-  app_quit: "system_change",
-  desktop_open_app: "local_open",
-  window_close_all: "system_change",
-  window_hide_all: "system_change",
-  window_minimize_all: "system_change",
-  window_auto_arrange: "system_change",
-  window_minimize_unrelated: "system_change",
-  window_close: "system_change",
-  window_minimize: "system_change",
-  window_maximize: "system_change",
-  window_move_resize: "system_change",
-  desktop_show: "local_open",
-  system_close_app: "system_change",
-  system_sleep: "system_change",
-  system_lock_screen: "system_change",
-  system_set_volume: "system_change",
-  system_mute_volume: "system_change",
-  system_set_brightness: "system_change",
-  system_set_dark_mode: "system_change",
-  system_open_settings: "local_open",
-  desktop_clipboard_write: "local_write",
-  system_speak: "local_open",
-  system_notification: "system_change",
-  screenshot_capture: "system_change",
-  keyboard_shortcut: "system_change",
-  browser_open_url: "local_open",
-  browser_search_open: "local_open",
-  browser_isolated_open_url: "local_open",
-  browser_isolated_window_focus: "local_open",
-  browser_isolated_window_move_resize: "system_change",
-  browser_fill_form: "browser_submit",
-  browser_click: "browser_submit",
-  advanced_shell_command: "shell",
-};
 
 export const toolManifest = Object.fromEntries(
   allToolDefinitions.map((definition) => {
@@ -178,7 +111,7 @@ function capabilityForGroup(group: ToolGroup | undefined): CapabilityKey | undef
 }
 
 function riskForTool(name: ToolName) {
-  return riskOverrides[name] ?? "read";
+  return toolRiskOverrides[name] ?? "read";
 }
 
 function titleForTool(name: ToolName) {
