@@ -1,0 +1,96 @@
+[
+  {
+    "id": "comms.email_search.zh.001",
+    "utterance": "找一下律师最近发来的邮件",
+    "locale": "zh-CN",
+    "category": "comms",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "comms"
+      ],
+      "tool": "email_search",
+      "args": {
+        "query": "律师 最近"
+      },
+      "risk": "read",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "comms.email_draft.zh.001",
+    "utterance": "帮我给律师写一封邮件，说明我会尽快补充材料",
+    "locale": "zh-CN",
+    "category": "comms",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "comms"
+      ],
+      "tool": "email_draft",
+      "args": {
+        "to": "律师",
+        "body": "我会尽快补充材料"
+      },
+      "risk": "local_write",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "comms.email_send.zh.001",
+    "utterance": "把刚才那封邮件发出去",
+    "locale": "zh-CN",
+    "category": "comms",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "comms"
+      ],
+      "tool": "email_send",
+      "args": {
+        "draftId": "<last_draft>"
+      },
+      "risk": "external_send",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "comms.calendar_create.zh.001",
+    "utterance": "明天下午三点提醒我和律师开会",
+    "locale": "zh-CN",
+    "category": "comms",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "comms"
+      ],
+      "tool": "calendar_create",
+      "args": {
+        "title": "和律师开会",
+        "start": "<tomorrow 15:00>",
+        "end": "<tomorrow 16:00>"
+      },
+      "risk": "external_send",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "comms.calendar_search.zh.001",
+    "utterance": "查一下我下周有哪些会议",
+    "locale": "zh-CN",
+    "category": "comms",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "comms"
+      ],
+      "tool": "calendar_search",
+      "args": {
+        "from": "<next_week_start>",
+        "to": "<next_week_end>"
+      },
+      "risk": "read",
+      "requiresConfirmation": false
+    }
+  }
+]

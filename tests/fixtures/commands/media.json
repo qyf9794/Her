@@ -1,0 +1,211 @@
+[
+  {
+    "id": "media.play_song.zh.001",
+    "utterance": "播放周杰伦的晴天",
+    "locale": "zh-CN",
+    "category": "media",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "music_play_song",
+      "args": {
+        "title": "晴天",
+        "artist": "周杰伦",
+        "type": "song"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "music_play_song"
+      ],
+      "argContains": {
+        "query": [
+          "晴天",
+          "周杰伦"
+        ],
+        "title": [
+          "晴天"
+        ],
+        "artist": [
+          "周杰伦"
+        ]
+      }
+    }
+  },
+  {
+    "id": "media.play_song.zh.002",
+    "utterance": "播放陈奕迅的富士山下",
+    "locale": "zh-CN",
+    "category": "media",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "music_play_song",
+      "args": {
+        "title": "富士山下",
+        "artist": "陈奕迅",
+        "type": "song"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "music_play_song"
+      ],
+      "argContains": {
+        "query": [
+          "富士山下",
+          "陈奕迅"
+        ]
+      }
+    }
+  },
+  {
+    "id": "media.play_song.en.001",
+    "utterance": "Play Taylor Swift Cruel Summer",
+    "locale": "en-US",
+    "category": "media",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "music_play_song",
+      "args": {
+        "title": "Cruel Summer",
+        "artist": "Taylor Swift",
+        "type": "song"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "music_play_song"
+      ],
+      "argContains": {
+        "query": [
+          "Taylor Swift",
+          "Cruel Summer"
+        ]
+      }
+    }
+  },
+  {
+    "id": "media.play_mood.zh.001",
+    "utterance": "播放适合专注工作的音乐",
+    "locale": "zh-CN",
+    "category": "media",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "music_play_song",
+      "args": {
+        "query": "适合专注工作的音乐",
+        "type": "mood"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "music_play_song"
+      ],
+      "argContains": {
+        "query": [
+          "专注",
+          "工作"
+        ]
+      }
+    }
+  },
+  {
+    "id": "media.open_music.zh.001",
+    "utterance": "打开音乐软件",
+    "locale": "zh-CN",
+    "category": "media",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "music_open",
+      "args": {},
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "music_open",
+        "app_open"
+      ],
+      "argContains": {
+        "appName": [
+          "Music",
+          "音乐"
+        ]
+      }
+    }
+  },
+  {
+    "id": "media.video.youtube.zh.001",
+    "utterance": "在 YouTube 播放苹果发布会视频",
+    "locale": "zh-CN",
+    "category": "media",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "video_play",
+      "args": {
+        "service": "youtube",
+        "query": "苹果发布会"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "video_play"
+      ],
+      "argContains": {
+        "service": [
+          "youtube"
+        ],
+        "query": [
+          "苹果发布会"
+        ]
+      }
+    }
+  },
+  {
+    "id": "media.low_confidence.zh.001",
+    "utterance": "放点最近很火的歌",
+    "locale": "zh-CN",
+    "category": "media",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": "music_play_song",
+      "args": {
+        "query": "最近很火的歌",
+        "type": "mood"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false,
+      "lowConfidenceBehavior": "return_candidates"
+    }
+  }
+]

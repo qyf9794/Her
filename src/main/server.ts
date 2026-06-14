@@ -1,5 +1,6 @@
 import express from "express";
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -11,6 +12,7 @@ import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
 import { CodingAgentRuntime } from "./agents/coding-agent/runtime";
 import { TaskQueue } from "./tasks/task-queue";
 import { TaskStore } from "./tasks/task-store";
+import { AliasStore } from "./memory/alias-store";
 import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
@@ -44,6 +46,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   const codingAgent = new CodingAgentRuntime();
   const taskStore = new TaskStore(userDataDir);
   const taskQueue = new TaskQueue(taskStore);
+  const aliasStore = new AliasStore(userDataDir);
   const inventory = new AppInventoryService(settings);
   const gate = new CapabilityGate(settings, () => inventory.listApps());
   const system = new SystemControl();
@@ -53,7 +56,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     setAppPermissions: (appPermissions) => settings.setAppPermissions(appPermissions),
     setCapabilities: (capabilities) => settings.setCapabilities(capabilities),
     setYoloMode: (enabled, appPermissions) => settings.setYoloMode(enabled, appPermissions),
-  }, memory, codingAgent, taskStore, taskQueue);
+  }, memory, codingAgent, taskStore, taskQueue, aliasStore);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
 
@@ -432,7 +435,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     );
   });
 
-  let server: Server;
+  let server!: Server;
   await new Promise<void>((resolve, reject) => {
     server = app
       .listen(port, "127.0.0.1", () => resolve())
@@ -440,7 +443,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   });
 
   return {
-    port,
+    port: typeof server.address() === "object" && server.address() ? (server.address() as AddressInfo).port : port,
     localApiToken: localApiAuth.token,
     close: () =>
       new Promise((resolve, reject) => {

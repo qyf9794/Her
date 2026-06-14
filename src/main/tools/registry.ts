@@ -34,6 +34,8 @@ import { classifyTaskExecution } from "../tasks/task-classifier";
 import { TaskQueue } from "../tasks/task-queue";
 import { TaskStore } from "../tasks/task-store";
 import type { HerTaskStatus, HerTaskView } from "../../shared/tasks";
+import { AliasStore } from "../memory/alias-store";
+import { AliasValidationError, validateAliasTarget } from "../memory/alias-validation";
 
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
@@ -188,6 +190,7 @@ export class ToolRegistry {
   private herTasks: TaskStore;
   private herTaskQueue: TaskQueue;
   private memory: MemoryStore;
+  private aliases: AliasStore;
   private confirmationTaskIds = new Map<string, string>();
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
   private tasks = new Map<string, QueuedTask>();
@@ -210,12 +213,14 @@ export class ToolRegistry {
     codingAgent?: CodingAgentRuntime,
     taskStore?: TaskStore,
     taskQueue?: TaskQueue,
+    aliasStore?: AliasStore,
   ) {
     this.codex = new CodexAppServerHarness(audit);
     this.codingAgent = codingAgent ?? new CodingAgentRuntime();
     this.herTasks = taskStore ?? new TaskStore();
     this.herTaskQueue = taskQueue ?? new TaskQueue(this.herTasks);
     this.memory = memory ?? new MemoryStore();
+    this.aliases = aliasStore ?? new AliasStore();
     this.bindManifestRuntime();
   }
 
@@ -376,6 +381,16 @@ export class ToolRegistry {
         const message = error instanceof Error ? error.message : String(error);
         this.audit.write({ action: name, summary: message, status: "error" });
         return { ok: false, name, error: message, code: "blocked_shell_command" };
+      }
+    }
+
+    if (name === "alias_create") {
+      try {
+        this.validateAliasCreateRequest(args);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.audit.write({ action: name, summary: message, status: "error" });
+        return { ok: false, name, error: message, code: error instanceof AliasValidationError ? error.code : "alias_invalid" };
       }
     }
 
@@ -621,6 +636,12 @@ export class ToolRegistry {
         return this.setAppPermission(args.appName as string, args.authorized as boolean);
       case "capability_set":
         return this.setCapability(args.capability as CapabilityKey, args.enabled as boolean);
+      case "alias_create":
+        return this.createAlias(args);
+      case "alias_list":
+        return { aliases: this.aliases.list(args.query as string | undefined) };
+      case "alias_delete":
+        return this.aliases.delete({ aliasId: args.aliasId as string | undefined, phrase: args.phrase as string | undefined });
       case "file_list":
         return this.files.list(args.path as string, args.includeHidden as boolean);
       case "file_search":
@@ -827,6 +848,36 @@ export class ToolRegistry {
       default:
         throw new Error(`Tool handler is not implemented: ${name}`);
     }
+  }
+
+  private validateAliasCreateRequest(args: Record<string, unknown>) {
+    const phrase = String(args.phrase ?? "");
+    if (this.aliases.getByPhrase(phrase) && args.overwrite !== true) {
+      throw new AliasValidationError(`Alias already exists for phrase: ${phrase}`, "alias_duplicate");
+    }
+    const target = validateAliasTarget({
+      toolName: String(args.toolName ?? ""),
+      arguments: args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments)
+        ? (args.arguments as Record<string, unknown>)
+        : {},
+    });
+    args.toolName = target.toolName;
+    args.arguments = target.arguments;
+  }
+
+  private createAlias(args: Record<string, unknown>) {
+    const target = validateAliasTarget({
+      toolName: String(args.toolName ?? ""),
+      arguments: args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments)
+        ? (args.arguments as Record<string, unknown>)
+        : {},
+    });
+    return this.aliases.create({
+      phrase: String(args.phrase ?? ""),
+      target,
+      description: typeof args.description === "string" ? args.description : undefined,
+      overwrite: args.overwrite === true,
+    });
   }
 
   private isTaskControlTool(name: ToolName) {

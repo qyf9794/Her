@@ -1,0 +1,77 @@
+[
+  {
+    "id": "browser.open_url.zh.001",
+    "utterance": "打开 openai.com",
+    "locale": "zh-CN",
+    "category": "browser",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "browser"
+      ],
+      "tool": "browser_open_url",
+      "args": {
+        "url": "https://openai.com"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "browser.isolated_open.zh.001",
+    "utterance": "用隔离浏览器打开 Apple Developer",
+    "locale": "zh-CN",
+    "category": "browser",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "browser"
+      ],
+      "tool": "browser_isolated_open_url",
+      "args": {
+        "url": "https://developer.apple.com"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "browser.fill_form.zh.001",
+    "utterance": "把网页表单里的姓名填成 Qian Yifeng",
+    "locale": "zh-CN",
+    "category": "browser",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "browser"
+      ],
+      "tool": "browser_fill_form",
+      "args": {
+        "fields": [
+          {
+            "selector": "input[name='name']",
+            "value": "Qian Yifeng"
+          }
+        ]
+      },
+      "risk": "browser_submit",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "browser.click_submit.zh.001",
+    "utterance": "点击提交按钮",
+    "locale": "zh-CN",
+    "category": "browser",
+    "strictness": "clarification",
+    "expected": {
+      "bundles": [
+        "browser"
+      ],
+      "tool": "browser_click",
+      "risk": "browser_submit",
+      "requiresConfirmation": true,
+      "requiresClarification": true
+    }
+  }
+]

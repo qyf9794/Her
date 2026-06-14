@@ -1,0 +1,61 @@
+[
+  {
+    "id": "document.extract_pdf.zh.001",
+    "utterance": "总结 Downloads 里的合同 PDF",
+    "locale": "zh-CN",
+    "category": "document",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "file",
+        "document"
+      ],
+      "tool": "document_extract",
+      "args": {
+        "path": "~/Downloads/合同.pdf"
+      },
+      "risk": "read",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "document.folder_digest.zh.001",
+    "utterance": "帮我看一下 Documents 里所有 EB5 材料还缺什么",
+    "locale": "zh-CN",
+    "category": "document",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "document",
+        "file"
+      ],
+      "tool": "document_folder_digest",
+      "args": {
+        "root": "Documents",
+        "query": "EB5"
+      },
+      "risk": "read",
+      "requiresConfirmation": false,
+      "taskKind": "long_running"
+    }
+  },
+  {
+    "id": "document.prepare_edit.zh.001",
+    "utterance": "把桌面上的 notes.md 改成一份会议纪要",
+    "locale": "zh-CN",
+    "category": "document",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "document",
+        "file"
+      ],
+      "tool": "document_prepare_edit",
+      "args": {
+        "path": "~/Desktop/notes.md"
+      },
+      "risk": "local_write",
+      "requiresConfirmation": true
+    }
+  }
+]

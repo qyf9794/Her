@@ -11,6 +11,11 @@
     "predev": "npm run patch:electron-plist",
     "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5174 --strictPort\" \"tsc -p electron/tsconfig.json --watch\" \"wait-on http://127.0.0.1:5174 electron/dist/main/main.js && HER_RENDERER_DEV_URL=http://127.0.0.1:5174 electron electron/dist/main/main.js\"",
     "build": "tsc --noEmit && tsc -p electron/tsconfig.json && vite build",
+    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:commands": "vitest run tests/command-fixtures.test.ts --reporter verbose",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run test && npm run build",
     "prepackage": "npm run build",
     "package": "electron-forge package",
     "premake": "npm run build",
@@ -61,6 +66,7 @@
     "electron": "^42.4.0",
     "typescript": "^5.7.2",
     "vite": "^6.4.3",
+    "vitest": "^4.1.8",
     "wait-on": "^8.0.1"
   }
 }

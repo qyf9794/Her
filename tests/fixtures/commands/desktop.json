@@ -1,0 +1,192 @@
+[
+  {
+    "id": "desktop.open_app.zh.001",
+    "utterance": "打开 Chrome",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop"
+      ],
+      "tool": "app_open",
+      "args": {
+        "appName": "Google Chrome"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "app_open",
+        "desktop_open_app"
+      ],
+      "argContains": {
+        "appName": [
+          "Chrome",
+          "Google Chrome"
+        ]
+      }
+    }
+  },
+  {
+    "id": "desktop.open_shadowrocket.zh.001",
+    "utterance": "打开 Shadowrocket",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop"
+      ],
+      "tool": "app_open",
+      "args": {
+        "appName": "Shadowrocket"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "desktop.focus_calendar.zh.001",
+    "utterance": "切到日历",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "desktop"
+      ],
+      "tool": "app_focus",
+      "args": {
+        "appName": "Calendar"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "app_focus",
+        "app_open"
+      ],
+      "argContains": {
+        "appName": [
+          "Calendar",
+          "日历"
+        ]
+      }
+    }
+  },
+  {
+    "id": "desktop.window_arrange.zh.001",
+    "utterance": "把 Chrome 和 Cursor 平铺",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop",
+        "system"
+      ],
+      "tool": "window_auto_arrange",
+      "args": {
+        "appNames": [
+          "Google Chrome",
+          "Cursor"
+        ]
+      },
+      "risk": "system_change",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "window_auto_arrange"
+      ],
+      "argContains": {
+        "appNames": [
+          "Chrome",
+          "Cursor"
+        ]
+      }
+    }
+  },
+  {
+    "id": "desktop.window_minimize_unrelated.zh.001",
+    "utterance": "只保留当前窗口，其他都最小化",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop",
+        "system"
+      ],
+      "tool": "window_minimize_unrelated",
+      "args": {
+        "preserveFrontmost": true
+      },
+      "risk": "system_change",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "desktop.window_close_all.zh.001",
+    "utterance": "关闭所有窗口",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop",
+        "system"
+      ],
+      "tool": "window_close_all",
+      "args": {},
+      "risk": "system_change",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "desktop.show_desktop.zh.001",
+    "utterance": "显示桌面",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop",
+        "system"
+      ],
+      "tool": "desktop_show",
+      "args": {},
+      "risk": "system_change",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "desktop_show",
+        "window_minimize_unrelated",
+        "window_minimize_all"
+      ]
+    }
+  },
+  {
+    "id": "desktop.ambiguous.zh.001",
+    "utterance": "帮我处理一下桌面",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "clarification",
+    "expected": {
+      "bundles": [
+        "desktop",
+        "file"
+      ],
+      "tool": null,
+      "requiresClarification": true,
+      "clarificationQuestionContains": [
+        "桌面文件",
+        "窗口"
+      ]
+    }
+  }
+]

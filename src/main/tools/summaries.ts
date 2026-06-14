@@ -26,6 +26,12 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return `Read task events for ${args.taskId}`;
       case "task_route":
         return `Route user request: ${truncateText(String(args.userRequest ?? ""), 120)}`;
+      case "alias_create":
+        return `Create alias "${args.phrase}" for ${args.toolName}`;
+      case "alias_list":
+        return args.query ? `List aliases matching "${args.query}"` : "List aliases";
+      case "alias_delete":
+        return `Delete alias ${args.aliasId ?? args.phrase}`;
       case "codex_task_run":
         return `Run Codex background task: ${truncateText(String(args.prompt ?? ""), 120)}`;
       case "coding_agent_start":

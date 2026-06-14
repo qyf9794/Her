@@ -1,0 +1,78 @@
+[
+  {
+    "id": "task.list.zh.001",
+    "utterance": "列出正在运行的任务",
+    "locale": "zh-CN",
+    "category": "task",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "task_list",
+      "args": {
+        "status": "running"
+      },
+      "risk": "read",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "task.status.zh.001",
+    "utterance": "刚才那个任务怎么样了",
+    "locale": "zh-CN",
+    "category": "task",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "task_status",
+      "args": {
+        "query": "刚才"
+      },
+      "risk": "read",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "task.cancel.zh.001",
+    "utterance": "取消刚才那个任务",
+    "locale": "zh-CN",
+    "category": "task",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "task_cancel",
+      "args": {
+        "query": "刚才"
+      },
+      "risk": "system_change",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "task.concurrent.zh.001",
+    "utterance": "运行 Codex 修复 bug，同时播放周杰伦的晴天",
+    "locale": "zh-CN",
+    "category": "task",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "coding",
+        "media"
+      ],
+      "multiIntent": true,
+      "expectedTools": [
+        "coding_agent_start",
+        "music_play_song"
+      ],
+      "taskBehavior": {
+        "coding_agent_start": "long_running",
+        "music_play_song": "immediate"
+      }
+    }
+  }
+]

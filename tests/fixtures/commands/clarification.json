@@ -1,0 +1,89 @@
+[
+  {
+    "id": "clarify.thing.zh.001",
+    "utterance": "帮我处理一下那个东西",
+    "locale": "zh-CN",
+    "category": "clarification",
+    "strictness": "clarification",
+    "expected": {
+      "tool": null,
+      "requiresClarification": true,
+      "clarificationQuestionContains": [
+        "哪个",
+        "具体",
+        "文件",
+        "窗口",
+        "邮件"
+      ]
+    }
+  },
+  {
+    "id": "clarify.delete.zh.001",
+    "utterance": "删掉那个",
+    "locale": "zh-CN",
+    "category": "clarification",
+    "strictness": "clarification",
+    "expected": {
+      "tool": null,
+      "requiresClarification": true,
+      "risk": "local_write",
+      "clarificationQuestionContains": [
+        "删除哪个",
+        "确认"
+      ]
+    }
+  },
+  {
+    "id": "clarify.send.zh.001",
+    "utterance": "发给他",
+    "locale": "zh-CN",
+    "category": "clarification",
+    "strictness": "clarification",
+    "expected": {
+      "tool": null,
+      "requiresClarification": true,
+      "risk": "external_send",
+      "clarificationQuestionContains": [
+        "发给谁",
+        "发送什么"
+      ]
+    }
+  },
+  {
+    "id": "clarify.music.zh.001",
+    "utterance": "播放那个歌",
+    "locale": "zh-CN",
+    "category": "clarification",
+    "strictness": "clarification",
+    "expected": {
+      "bundles": [
+        "media"
+      ],
+      "tool": null,
+      "requiresClarification": true,
+      "clarificationQuestionContains": [
+        "哪首",
+        "歌名",
+        "歌手"
+      ]
+    }
+  },
+  {
+    "id": "clarify.file_open.zh.001",
+    "utterance": "打开那个合同",
+    "locale": "zh-CN",
+    "category": "clarification",
+    "strictness": "flexible",
+    "expected": {
+      "bundles": [
+        "file",
+        "document"
+      ],
+      "tool": "file_search",
+      "args": {
+        "query": "合同"
+      },
+      "requiresClarificationIfMultipleCandidates": true
+    }
+  }
+]

@@ -287,6 +287,38 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "alias_create",
+    description: "Create or overwrite a user-approved personal alias that maps an exact phrase to one validated HER tool call. This stores persistent local memory and requires confirmation.",
+    parameters: objectSchema(
+      {
+        phrase: { type: "string", description: "Exact phrase the user wants HER to remember, such as 打开 VPN." },
+        toolName: { type: "string", description: "Existing HER target tool name from the manifest." },
+        arguments: { type: "object", description: "Arguments for the target tool. Must validate against the target tool schema.", additionalProperties: true },
+        description: { type: "string", description: "Optional short human-readable alias description." },
+        overwrite: { type: "boolean", description: "Set true to replace an existing alias with the same normalized phrase.", default: false },
+      },
+      ["phrase", "toolName", "arguments"],
+    ),
+  },
+  {
+    type: "function",
+    name: "alias_list",
+    description: "List stored personal aliases. This is read-only and does not execute alias targets.",
+    parameters: objectSchema({
+      query: { type: "string", description: "Optional phrase filter." },
+    }),
+  },
+  {
+    type: "function",
+    name: "alias_delete",
+    description: "Delete a stored personal alias by id or phrase. This changes persistent memory and requires confirmation.",
+    parameters: objectSchema({
+      aliasId: { type: "string", description: "Alias id to delete." },
+      phrase: { type: "string", description: "Alias phrase to delete when aliasId is not known." },
+    }),
+  },
+  {
+    type: "function",
     name: "codex_task_run",
     description: "Run a complex background intent through HER's Codex app-server runtime. Codex may request HER local tools only through HER Tool Gateway; HER validates and queues any requested side effects.",
     parameters: objectSchema(
@@ -1360,6 +1392,20 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   }),
   memory_forget: z.object({ idOrKey: z.string().min(1) }),
   memory_status: z.object({}),
+  alias_create: z.object({
+    phrase: z.string().min(1),
+    toolName: z.string().min(1),
+    arguments: z.record(z.string(), z.unknown()).optional().default({}),
+    description: z.string().optional(),
+    overwrite: z.boolean().optional().default(false),
+  }),
+  alias_list: z.object({ query: z.string().optional() }),
+  alias_delete: z.object({
+    aliasId: z.string().min(1).optional(),
+    phrase: z.string().min(1).optional(),
+  }).refine((value) => Boolean(value.aliasId || value.phrase), {
+    message: "aliasId or phrase is required",
+  }),
   codex_task_run: z.object({
     prompt: z.string().min(1),
     cwd: z.string().min(1).optional(),
@@ -1674,6 +1720,8 @@ export const toolGroupByName = {
 } as const satisfies Partial<Record<ToolName, ToolGroup>>;
 
 export const toolRiskOverrides: Partial<Record<ToolName, ToolRisk>> = {
+  alias_create: "local_write",
+  alias_delete: "local_write",
   codex_task_run: "coding_agent",
   coding_agent_start: "coding_agent",
   coding_agent_continue: "coding_agent",

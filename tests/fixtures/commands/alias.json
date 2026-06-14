@@ -1,0 +1,103 @@
+[
+  {
+    "id": "alias.create.vpn.zh.001",
+    "utterance": "以后我说打开 VPN，就是打开 Shadowrocket",
+    "locale": "zh-CN",
+    "category": "alias",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "alias_create",
+      "args": {
+        "phrase": "打开 VPN",
+        "toolName": "app_open",
+        "arguments": {
+          "appName": "Shadowrocket"
+        }
+      },
+      "risk": "local_write",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "alias.run.vpn.zh.001",
+    "utterance": "打开 VPN",
+    "locale": "zh-CN",
+    "category": "alias",
+    "strictness": "strict",
+    "preconditions": [
+      {
+        "alias": {
+          "phrase": "打开 VPN",
+          "toolName": "app_open",
+          "arguments": {
+            "appName": "Shadowrocket"
+          }
+        }
+      }
+    ],
+    "expected": {
+      "aliasMatched": true,
+      "bundles": [
+        "desktop"
+      ],
+      "tool": "app_open",
+      "args": {
+        "appName": "Shadowrocket"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "alias.list.zh.001",
+    "utterance": "列出我的快捷指令",
+    "locale": "zh-CN",
+    "category": "alias",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "alias_list",
+      "args": {},
+      "risk": "read",
+      "requiresConfirmation": false
+    }
+  },
+  {
+    "id": "alias.delete.zh.001",
+    "utterance": "删除打开 VPN 这个快捷指令",
+    "locale": "zh-CN",
+    "category": "alias",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "alias_delete",
+      "args": {
+        "phrase": "打开 VPN"
+      },
+      "risk": "local_write",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "id": "alias.secret.negative.zh.001",
+    "utterance": "记住以后我说登录就是使用 password 123456",
+    "locale": "zh-CN",
+    "category": "alias",
+    "strictness": "negative",
+    "expected": {
+      "bundles": [
+        "core"
+      ],
+      "tool": "alias_create",
+      "expectedPolicy": "deny",
+      "expectedErrorCode": "secret_like_key_rejected"
+    }
+  }
+]

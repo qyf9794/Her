@@ -1,0 +1,62 @@
+[
+  {
+    "id": "coding.review_repo.zh.001",
+    "utterance": "让 Codex review 这个 repo 的结构问题",
+    "locale": "zh-CN",
+    "category": "coding",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "coding"
+      ],
+      "tool": "coding_agent_start",
+      "args": {
+        "mode": "review",
+        "task": "review repo structure"
+      },
+      "risk": "coding_agent",
+      "requiresConfirmation": true,
+      "taskKind": "long_running"
+    }
+  },
+  {
+    "id": "coding.fix_test.zh.001",
+    "utterance": "让 Codex 修复 npm test 的失败",
+    "locale": "zh-CN",
+    "category": "coding",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "coding"
+      ],
+      "tool": "coding_agent_start",
+      "args": {
+        "mode": "test_fix",
+        "task": "fix npm test failures"
+      },
+      "risk": "coding_agent",
+      "requiresConfirmation": true,
+      "taskKind": "long_running"
+    }
+  },
+  {
+    "id": "coding.plan.zh.001",
+    "utterance": "让 Codex 先制定一个重构 Tool Manifest 的计划，不要改代码",
+    "locale": "zh-CN",
+    "category": "coding",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "coding"
+      ],
+      "tool": "coding_agent_start",
+      "args": {
+        "mode": "plan",
+        "task": "plan Tool Manifest refactor"
+      },
+      "risk": "coding_agent",
+      "requiresConfirmation": true,
+      "taskKind": "long_running"
+    }
+  }
+]
