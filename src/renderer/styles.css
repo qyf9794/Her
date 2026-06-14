@@ -134,6 +134,142 @@ h2 {
   display: none !important;
 }
 
+.resultWindow {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 30;
+  width: min(720px, calc(100vw - 56px));
+  max-height: min(760px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #b9c0c5;
+  border-radius: 8px;
+  background: #f8fafb;
+  color: #141719;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.resultWindowChrome {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #d7dcdf;
+  background: #eef1f3;
+}
+
+.resultWindowChrome h2 {
+  font-size: 18px;
+  color: #141719;
+}
+
+.resultWindowChrome p {
+  margin-top: 4px;
+  color: #58616a;
+  font-size: 12px;
+}
+
+.resultWindowChrome button {
+  min-height: 32px;
+  background: #ffffff;
+  color: #24282c;
+}
+
+.resultWindowBody {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px 18px;
+}
+
+.resultMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.resultMetric {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #d7dcdf;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.resultMetric span,
+.resultMetric small {
+  display: block;
+  color: #66707a;
+  font-size: 12px;
+}
+
+.resultMetric strong {
+  display: block;
+  margin-top: 4px;
+  color: #111315;
+  font-size: 20px;
+}
+
+.resultItems {
+  display: grid;
+  gap: 10px;
+}
+
+.resultItem {
+  padding: 12px 0;
+  border-bottom: 1px solid #dfe3e6;
+}
+
+.resultItem:last-child {
+  border-bottom: 0;
+}
+
+.resultItem h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #111315;
+}
+
+.resultItem a {
+  color: #0a6c8f;
+  text-decoration: none;
+}
+
+.resultItem a:hover {
+  text-decoration: underline;
+}
+
+.resultItem p {
+  margin-top: 6px;
+  line-height: 1.45;
+  color: #2d3338;
+}
+
+.resultSubtitle,
+.resultMeta,
+.resultNote,
+.resultEmpty {
+  color: #66707a;
+  font-size: 12px;
+}
+
+.resultMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.resultNote {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #dfe3e6;
+}
+
 .productShell {
   height: 100vh;
   overflow: hidden;

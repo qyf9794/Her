@@ -1,7 +1,10 @@
 import { spawn } from "node:child_process";
+import { config } from "../config";
 import { BrowserAutomation } from "./browser-automation";
 
 type VideoService = "youtube" | "apple_tv" | "bilibili";
+type VideoMode = "play" | "search";
+type VideoControlAction = "play" | "pause" | "toggle" | "state";
 
 type ItunesVideoResult = {
   trackName?: string;
@@ -57,21 +60,35 @@ const appleScriptString = (value: string) => JSON.stringify(value);
 export class VideoControl {
   constructor(private browser = new BrowserAutomation()) {}
 
-  async play(service: VideoService, query: string, mode: "play" | "search" = "play") {
-    if (service === "youtube") return this.playYouTube(query);
+  async play(service: VideoService, query: string, mode: VideoMode = "play") {
+    if (service === "youtube") return this.playYouTube(query, mode);
     if (service === "bilibili") return this.openBilibili(query, mode);
-    return this.playAppleTv(query);
-  }
-
-  async controlActiveVideo(action: "play" | "pause" | "toggle" | "state") {
-    return this.browser.controlVideo(action);
+    return this.playAppleTv(query, mode);
   }
 
   async appleTvPlaybackState() {
     return readAppleTvPlaybackState();
   }
 
-  private async playYouTube(query: string) {
+  async controlActiveVideo(action: VideoControlAction) {
+    return this.browser.controlVideo(action);
+  }
+
+  private async playYouTube(query: string, mode: VideoMode) {
+    if (mode === "search" && !normalizeYouTubeUrl(query)) {
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+      await this.browser.openIsolatedUrl(searchUrl);
+      return {
+        status: "opened_search",
+        service: "youtube",
+        query,
+        url: searchUrl,
+        resolved: false,
+        browser: "isolated_chrome",
+        note: "Opened YouTube search results in isolated Chrome.",
+      };
+    }
+
     const direct = normalizeYouTubeUrl(query);
     const resolved = direct ?? (await findYouTubeVideo(query));
     if (!resolved) {
@@ -85,7 +102,9 @@ export class VideoControl {
         resolved: false,
         retryRecommended: false,
         browser: "isolated_chrome",
-        note: "Could not resolve a specific YouTube video from search results, so opened YouTube search in isolated Chrome.",
+        note: config.youtubeApiKey
+          ? "Could not resolve a specific video through YouTube Data API, so opened YouTube search in isolated Chrome."
+          : "Missing HER_YOUTUBE_API_KEY. Opened YouTube search in isolated Chrome instead of scraping result pages.",
       };
     }
 
@@ -113,7 +132,59 @@ export class VideoControl {
     };
   }
 
-  private async playAppleTv(query: string) {
+  private async openBilibili(query: string, mode: VideoMode) {
+    const directUrl = normalizeBilibiliUrl(query);
+    const url = directUrl ?? `https://search.bilibili.com/all?keyword=${encodeURIComponent(query)}`;
+    await this.browser.openIsolatedUrl(url);
+
+    if (!directUrl || mode === "search") {
+      return {
+        status: "opened_search",
+        service: "bilibili",
+        query,
+        url,
+        browser: "isolated_chrome",
+        note: "Opened Bilibili search/video page in isolated Chrome. HER does not call unofficial Bilibili APIs.",
+      };
+    }
+
+    await delay(1800);
+    const playResult = await this.browser.playVideo().catch((error) => ({
+      ok: false,
+      error: "cdp_play_failed",
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    const videoState = await this.browser.readVideoState().catch((error) => ({
+      error: "cdp_state_failed",
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    return {
+      status: typeof playResult === "object" && playResult && "ok" in playResult && playResult.ok ? "playing" : "opened_video",
+      service: "bilibili",
+      query,
+      url,
+      browser: "isolated_chrome",
+      playResult,
+      videoState,
+      note: "Opened the Bilibili video page and attempted browser-level playback control only.",
+    };
+  }
+
+  private async playAppleTv(query: string, mode: VideoMode) {
+    if (mode === "search" && !isHttpUrl(query)) {
+      const searchUrl = `https://tv.apple.com/search?term=${encodeURIComponent(query)}`;
+      await openAppleTvUrl(searchUrl);
+      return {
+        status: "opened_search",
+        service: "apple_tv",
+        query,
+        url: searchUrl,
+        resolved: false,
+        retryRecommended: false,
+        note: "Opened Apple TV search results so you can choose the show, movie, or episode.",
+      };
+    }
+
     const direct = isHttpUrl(query) ? query : undefined;
     const resolved = direct ? { trackViewUrl: direct } : await findAppleTvVideo(query);
     if (!resolved?.trackViewUrl) {
@@ -146,21 +217,6 @@ export class VideoControl {
       note: "Opened the Apple TV item directly in the macOS TV app with open -a TV. Playback is not claimed because Apple TV may require sign-in, subscription, purchase, or manual play.",
     };
   }
-
-  private async openBilibili(query: string, mode: "play" | "search") {
-    const url = isHttpUrl(query)
-      ? query
-      : `https://search.bilibili.com/all?keyword=${encodeURIComponent(query)}`;
-    await this.browser.openIsolatedUrl(url);
-    return {
-      status: mode === "play" ? "opened_search" : "opened",
-      service: "bilibili",
-      query,
-      url,
-      browser: "isolated_chrome",
-      note: "Opened Bilibili in isolated Chrome. HER did not claim playback because the site may require account, consent, or manual play.",
-    };
-  }
 }
 
 const normalizeYouTubeUrl = (input: string): { url: string; title?: string } | null => {
@@ -178,30 +234,32 @@ const normalizeYouTubeUrl = (input: string): { url: string; title?: string } | n
 };
 
 const findYouTubeVideo = async (query: string) => {
+  if (!config.youtubeApiKey) return null;
   const cached = youtubeCache.get(query.toLowerCase());
   if (cached && Date.now() - cached.createdAt < VIDEO_CACHE_TTL_MS) return cached.value;
-  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("type", "video");
+  url.searchParams.set("maxResults", "1");
+  url.searchParams.set("q", query);
+  url.searchParams.set("key", config.youtubeApiKey);
   try {
-    const response = await fetch(url, {
-      headers: {
-        "accept-language": "en-US,en;q=0.9",
-        "user-agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-    const html = await response.text();
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const payload = (await response.json().catch(() => ({}))) as {
+      items?: Array<{ id?: { videoId?: string }; snippet?: { title?: string } }>;
+    };
     if (!response.ok) {
       youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value: null });
       return null;
     }
 
-    const id = firstYouTubeVideoId(html);
+    const item = payload.items?.find((entry) => entry.id?.videoId && isYouTubeVideoId(entry.id.videoId));
+    const id = item?.id?.videoId;
     if (!id) {
       youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value: null });
       return null;
     }
-    const value = { url: youtubeWatchUrl(id), title: titleForYouTubeId(html, id) };
+    const value = { url: youtubeWatchUrl(id), title: item?.snippet?.title };
     youtubeCache.set(query.toLowerCase(), { createdAt: Date.now(), value });
     return value;
   } catch {
@@ -210,42 +268,21 @@ const findYouTubeVideo = async (query: string) => {
   }
 };
 
-const firstYouTubeVideoId = (html: string) => {
-  const seen = new Set<string>();
-  for (const match of html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)) {
-    const id = match[1];
-    if (seen.has(id)) continue;
-    seen.add(id);
-    return id;
-  }
-  for (const match of html.matchAll(/watch\?v=([a-zA-Z0-9_-]{11})/g)) {
-    const id = match[1];
-    if (seen.has(id)) continue;
-    seen.add(id);
-    return id;
-  }
-  return "";
-};
-
-const titleForYouTubeId = (html: string, videoId: string) => {
-  const index = html.indexOf(`"videoId":"${videoId}"`);
-  if (index < 0) return undefined;
-  const slice = html.slice(index, index + 4000);
-  const match = /"title":\{"runs":\[\{"text":"([^"]+)"/.exec(slice) ?? /"title":\{"simpleText":"([^"]+)"/.exec(slice);
-  return match?.[1] ? decodeJsonString(match[1]) : undefined;
-};
-
-const decodeJsonString = (value: string) => {
-  try {
-    return JSON.parse(`"${value.replace(/"/g, '\\"')}"`) as string;
-  } catch {
-    return value;
-  }
-};
-
 const youtubeWatchUrl = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}&autoplay=1`;
 
 const isYouTubeVideoId = (value: string) => /^[a-zA-Z0-9_-]{11}$/.test(value);
+
+const normalizeBilibiliUrl = (input: string) => {
+  try {
+    const url = new URL(input);
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "bilibili.com" || host.endsWith(".bilibili.com") || host === "b23.tv") return url.toString();
+  } catch {
+    const bvid = /\b(BV[a-zA-Z0-9]{10})\b/.exec(input)?.[1];
+    if (bvid) return `https://www.bilibili.com/video/${bvid}`;
+  }
+  return null;
+};
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

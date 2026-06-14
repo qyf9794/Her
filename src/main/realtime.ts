@@ -1,5 +1,5 @@
 import { config, readOpenaiApiKey } from "./config";
-import { realtimeAgentInstructions } from "../shared/realtime-agent";
+import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
 import { createRealtimeClientSecretSession } from "../shared/realtime-config";
 
 const realtimeRuntimeOptions = () => ({
@@ -38,7 +38,7 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
       session: createRealtimeClientSecretSession({
         model: config.realtimeModel,
         voice: config.realtimeVoice,
-        instructions: realtimeAgentInstructions,
+        instructions: buildRealtimeAgentInstructions(),
         options: realtimeRuntimeOptions(),
       }),
     }),

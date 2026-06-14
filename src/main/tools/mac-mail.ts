@@ -1,19 +1,13 @@
 import { spawn } from "node:child_process";
 
-type MailDraftInput = {
-  to: string;
-  subject: string;
-  body: string;
-};
-
-const runJxa = (script: string, timeoutMs = 10000) =>
+const run = (command: string, args: string[], input?: string, timeoutMs = 15000) =>
   new Promise<string>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
-    const child = spawn("osascript", ["-l", "JavaScript", "-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error(`osascript timed out after ${timeoutMs}ms.`));
+      reject(new Error(`${command} timed out after ${timeoutMs}ms.`));
     }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -28,35 +22,43 @@ const runJxa = (script: string, timeoutMs = 10000) =>
     child.on("close", (code) => {
       clearTimeout(timeout);
       if (code === 0) resolve(stdout.trim());
-      else reject(new Error(stderr.trim() || `osascript exited with code ${code}`));
+      else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
     });
+    child.stdin.end(input);
   });
 
 export class MacMail {
-  async createDraft(input: MailDraftInput) {
-    const output = await runJxa(mailDraftScript(input));
+  async createDraft(input: { to: string; subject: string; body: string }) {
+    const messageId = await run(
+      "osascript",
+      [],
+      `tell application "Mail"
+  activate
+  set newMessage to make new outgoing message with properties {subject:${appleScriptString(input.subject)}, content:${appleScriptString(input.body)}, visible:true}
+  tell newMessage
+    make new to recipient at end of to recipients with properties {address:${appleScriptString(input.to)}}
+  end tell
+  save newMessage
+  return id of newMessage
+end tell
+`,
+      15000,
+    );
     return {
-      status: "created",
+      visible: true,
       app: "Mail",
+      messageId,
       to: input.to,
       subject: input.subject,
-      draftId: output || undefined,
-      bodyChars: input.body.length,
-      note: "Created a visible Mail draft. Sending still requires explicit user action or a separate confirmed tool.",
+      note: "Created and saved a visible Mail.app outgoing draft. HER did not send the email.",
     };
   }
 }
 
-const mailDraftScript = (input: MailDraftInput) => `
-  const app = Application("Mail");
-  app.includeStandardAdditions = true;
-  const message = app.OutgoingMessage({
-    subject: ${JSON.stringify(input.subject)},
-    content: ${JSON.stringify(input.body)},
-    visible: true
-  });
-  message.toRecipients.push(app.Recipient({ address: ${JSON.stringify(input.to)} }));
-  app.outgoingMessages.push(message);
-  app.activate();
-  message.id();
-`;
+const appleScriptString = (value: string) => {
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r?\n/g, "\\n");
+  return `"${escaped}"`;
+};

@@ -4,16 +4,16 @@ export type MacCalendarCreateInput = {
   title: string;
   start: string;
   end: string;
-  attendees?: string[];
   calendarName?: string;
   location?: string;
   notes?: string;
+  attendees?: string[];
 };
 
 export type MacReminderCreateInput = {
   title: string;
-  listName?: string;
   dueAt?: string;
+  listName?: string;
   notes?: string;
 };
 
@@ -23,11 +23,142 @@ export type MacNoteCreateInput = {
   folderName?: string;
 };
 
-const runJxa = (script: string, timeoutMs = 10000) =>
+export class MacProductivity {
+  async createCalendarEvent(input: MacCalendarCreateInput) {
+    const start = parseDateInput(input.start, "start");
+    const end = parseDateInput(input.end, "end");
+    const script = `
+      ${dateScript("startDate", start)}
+      ${dateScript("endDate", end)}
+      set eventTitle to ${asString(input.title)}
+      set eventLocation to ${asString(input.location ?? "")}
+      set eventNotes to ${asString(input.notes ?? "")}
+      set preferredCalendarName to ${asString(input.calendarName ?? "")}
+      tell application "Calendar"
+        activate
+        if preferredCalendarName is not "" then
+          set targetCalendar to missing value
+          repeat with candidateCalendar in calendars
+            if name of candidateCalendar is preferredCalendarName then
+              set targetCalendar to candidateCalendar
+              exit repeat
+            end if
+          end repeat
+          if targetCalendar is missing value then error "Calendar not found: " & preferredCalendarName
+        else
+          set targetCalendar to first calendar
+        end if
+        tell targetCalendar
+          set newEvent to make new event at end with properties {summary:eventTitle, start date:startDate, end date:endDate, location:eventLocation, description:eventNotes}
+        end tell
+        return (uid of newEvent as text) & "|" & (summary of newEvent as text)
+      end tell
+    `;
+    const output = await runAppleScript(script);
+    const [id, title] = splitAppleScriptResult(output);
+    return {
+      created: true,
+      app: "Calendar",
+      id,
+      title: title || input.title,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      calendarName: input.calendarName,
+      location: input.location,
+      notes: input.notes,
+      attendees: input.attendees ?? [],
+    };
+  }
+
+  async createReminder(input: MacReminderCreateInput) {
+    const dueAt = input.dueAt ? parseDateInput(input.dueAt, "dueAt") : undefined;
+    const script = `
+      ${dueAt ? dateScript("dueDate", dueAt) : ""}
+      set reminderTitle to ${asString(input.title)}
+      set reminderNotes to ${asString(input.notes ?? "")}
+      set preferredListName to ${asString(input.listName ?? "")}
+      tell application "Reminders"
+        activate
+        if preferredListName is not "" then
+          set targetList to missing value
+          repeat with candidateList in lists
+            if name of candidateList is preferredListName then
+              set targetList to candidateList
+              exit repeat
+            end if
+          end repeat
+          if targetList is missing value then error "Reminder list not found: " & preferredListName
+        else
+          set targetList to default list
+        end if
+        tell targetList
+          set newReminder to make new reminder with properties {name:reminderTitle, body:reminderNotes}
+          ${dueAt ? "set remind me date of newReminder to dueDate" : ""}
+        end tell
+        return (id of newReminder as text) & "|" & (name of newReminder as text)
+      end tell
+    `;
+    const output = await runAppleScript(script);
+    const [id, title] = splitAppleScriptResult(output);
+    return {
+      created: true,
+      app: "Reminders",
+      id,
+      title: title || input.title,
+      dueAt: dueAt?.toISOString(),
+      listName: input.listName,
+      notes: input.notes,
+    };
+  }
+
+  async createNote(input: MacNoteCreateInput) {
+    const bodyHtml = `<div>${escapeHtml(input.body).replace(/\n/g, "<br />")}</div>`;
+    const script = `
+      set noteTitle to ${asString(input.title)}
+      set noteBody to ${asString(bodyHtml)}
+      set preferredFolderName to ${asString(input.folderName ?? "")}
+      tell application "Notes"
+        activate
+        if preferredFolderName is not "" then
+          set targetFolder to missing value
+          repeat with candidateAccount in accounts
+            repeat with candidateFolder in folders of candidateAccount
+              if name of candidateFolder is preferredFolderName then
+                set targetFolder to candidateFolder
+                exit repeat
+              end if
+            end repeat
+            if targetFolder is not missing value then exit repeat
+          end repeat
+          if targetFolder is missing value then error "Notes folder not found: " & preferredFolderName
+        else
+          if (count of accounts) is 0 then error "No Notes account is available"
+          set targetAccount to first account
+          if (count of folders of targetAccount) is 0 then error "No Notes folder is available"
+          set targetFolder to first folder of targetAccount
+        end if
+        set newNote to make new note at targetFolder with properties {name:noteTitle, body:noteBody}
+        return (id of newNote as text) & "|" & (name of newNote as text)
+      end tell
+    `;
+    const output = await runAppleScript(script);
+    const [id, title] = splitAppleScriptResult(output);
+    return {
+      created: true,
+      app: "Notes",
+      id,
+      title: title || input.title,
+      folderName: input.folderName,
+      bodyLength: input.body.length,
+    };
+  }
+}
+
+const runAppleScript = (script: string, timeoutMs = 15000) =>
   new Promise<string>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
-    const child = spawn("osascript", ["-l", "JavaScript", "-e", script], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("osascript", ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`osascript timed out after ${timeoutMs}ms.`));
@@ -49,88 +180,50 @@ const runJxa = (script: string, timeoutMs = 10000) =>
     });
   });
 
-export class MacProductivity {
-  async createCalendarEvent(input: MacCalendarCreateInput) {
-    const output = await runJxa(calendarScript(input));
-    return {
-      status: "created",
-      app: "Calendar",
-      title: input.title,
-      start: input.start,
-      end: input.end,
-      calendarName: output || input.calendarName,
-      attendeeCount: input.attendees?.length ?? 0,
-    };
+const parseDateInput = (value: string, fieldName: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`${fieldName} must be a valid ISO date/time.`);
   }
+  return date;
+};
 
-  async createReminder(input: MacReminderCreateInput) {
-    const output = await runJxa(reminderScript(input));
-    return {
-      status: "created",
-      app: "Reminders",
-      title: input.title,
-      listName: output || input.listName,
-      dueAt: input.dueAt,
-    };
-  }
+const dateScript = (variableName: string, date: Date) => {
+  const month = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ][date.getMonth()];
+  return `
+    set ${variableName} to current date
+    set year of ${variableName} to ${date.getFullYear()}
+    set month of ${variableName} to ${month}
+    set day of ${variableName} to ${date.getDate()}
+    set time of ${variableName} to (${date.getHours()} * hours + ${date.getMinutes()} * minutes + ${date.getSeconds()})
+  `;
+};
 
-  async createNote(input: MacNoteCreateInput) {
-    const output = await runJxa(noteScript(input));
-    return {
-      status: "created",
-      app: "Notes",
-      title: input.title,
-      folderName: output || input.folderName,
-      bodyChars: input.body.length,
-    };
-  }
-}
+const asString = (value: string) => JSON.stringify(value);
 
-const calendarScript = (input: MacCalendarCreateInput) => `
-  const app = Application("Calendar");
-  app.includeStandardAdditions = true;
-  const calendars = app.calendars();
-  const targetName = ${JSON.stringify(input.calendarName ?? "")};
-  const calendar = targetName ? calendars.find((item) => item.name() === targetName) : calendars[0];
-  if (!calendar) throw new Error("No writable Calendar calendar found.");
-  const event = app.Event({
-    summary: ${JSON.stringify(input.title)},
-    startDate: new Date(${JSON.stringify(input.start)}),
-    endDate: new Date(${JSON.stringify(input.end)}),
-    location: ${JSON.stringify(input.location ?? "")},
-    description: ${JSON.stringify(input.notes ?? "")}
-  });
-  calendar.events.push(event);
-  calendar.name();
-`;
+const splitAppleScriptResult = (output: string) => {
+  const separator = output.indexOf("|");
+  if (separator === -1) return [output, ""] as const;
+  return [output.slice(0, separator), output.slice(separator + 1)] as const;
+};
 
-const reminderScript = (input: MacReminderCreateInput) => `
-  const app = Application("Reminders");
-  app.includeStandardAdditions = true;
-  const lists = app.lists();
-  const targetName = ${JSON.stringify(input.listName ?? "")};
-  const list = targetName ? lists.find((item) => item.name() === targetName) : lists[0];
-  if (!list) throw new Error("No writable Reminders list found.");
-  const properties = {
-    name: ${JSON.stringify(input.title)},
-    body: ${JSON.stringify(input.notes ?? "")}
-  };
-  const dueAt = ${JSON.stringify(input.dueAt ?? "")};
-  if (dueAt) properties.dueDate = new Date(dueAt);
-  list.reminders.push(app.Reminder(properties));
-  list.name();
-`;
-
-const noteScript = (input: MacNoteCreateInput) => `
-  const app = Application("Notes");
-  app.includeStandardAdditions = true;
-  const folders = app.folders();
-  const targetName = ${JSON.stringify(input.folderName ?? "")};
-  const folder = targetName ? folders.find((item) => item.name() === targetName) : folders[0];
-  if (!folder) throw new Error("No writable Notes folder found.");
-  folder.notes.push(app.Note({
-    name: ${JSON.stringify(input.title)},
-    body: ${JSON.stringify(input.body)}
-  }));
-  folder.name();
-`;
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
