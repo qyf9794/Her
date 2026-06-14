@@ -78,6 +78,7 @@ export const config = {
   codexTurnTimeoutMs: boundedNumber(process.env.HER_CODEX_TURN_TIMEOUT_MS, 300000, 10000, 1800000),
   codexNativeToolsFallback: booleanEnv(process.env.HER_CODEX_NATIVE_TOOLS_FALLBACK, true),
   appleMusicCountry: process.env.HER_APPLE_MUSIC_COUNTRY ?? "us",
+  appleMusicDeveloperToken: process.env.HER_APPLE_MUSIC_DEVELOPER_TOKEN ?? "",
   spotifyAccessToken: process.env.HER_SPOTIFY_ACCESS_TOKEN ?? "",
   spotifyDeviceId: process.env.HER_SPOTIFY_DEVICE_ID ?? "",
   spotifyMarket: process.env.HER_SPOTIFY_MARKET ?? "US",

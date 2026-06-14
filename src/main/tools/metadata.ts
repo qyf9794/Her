@@ -632,7 +632,7 @@ export const allToolDefinitions = [
   {
     type: "function",
     name: "music_play_song",
-    description: "Play a requested song in macOS Music. Searches the local Music library first; if not found, resolves an Apple Music catalog track and sends Music a play command.",
+    description: "Play a requested song in macOS Music. Searches the local Music library first; if not found, uses Apple Music catalog lookup to find the song, then sends Music a play command.",
     parameters: objectSchema(
       {
         query: { type: "string", description: "Song title, artist, album, or natural language music request." },
