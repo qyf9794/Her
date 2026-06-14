@@ -22,6 +22,12 @@ export type ToolBundle =
   | "browser"
   | "shell";
 
+export type ToolHandlerContext = {
+  source: "realtime" | "local";
+};
+
+export type ToolHandler<TArgs = unknown> = (args: TArgs, context: ToolHandlerContext) => Promise<unknown> | unknown;
+
 export type ToolDefinition<TArgs = unknown> = {
   name: ToolName;
   title: string;
@@ -30,9 +36,10 @@ export type ToolDefinition<TArgs = unknown> = {
   group?: ToolGroup;
   bundle: ToolBundle;
   risk: ToolRisk;
-  schema?: z.ZodType<TArgs>;
+  schema?: z.ZodTypeAny;
   realtimeDescription?: string;
   summarize?: (args: TArgs) => string;
+  handler?: ToolHandler<TArgs>;
 };
 
 export const defineTool = <TArgs>(definition: ToolDefinition<TArgs>) => definition;

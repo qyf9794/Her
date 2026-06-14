@@ -7,7 +7,7 @@ import { allToolDefinitions, toolGroupByName, toolGroups } from "../../shared/to
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../../shared/app-settings";
 import { ConfirmationQueue } from "./confirmation";
 import { ApprovalPolicy, type ActionPlan } from "../policy/approval-policy";
-import { toolRequiresConfirmation } from "./manifest";
+import { attachToolHandlers, attachToolSchemas, attachToolSummaries, toolManifest, toolRequiresConfirmation } from "./manifest";
 import { LocalStore } from "./local-store";
 import { FileManager } from "./file-manager";
 import { DocumentAssistant } from "./document-assistant";
@@ -302,6 +302,8 @@ const schemas: Record<ToolName, z.ZodTypeAny> = {
   capability_set: z.object({ capability: z.enum(["fileManagement", "browserAutomation", "textOperations", "systemOperations"]), enabled: z.boolean() }),
 };
 
+attachToolSchemas(schemas);
+
 type PermissionManager = {
   listApps: (refresh?: boolean) => Promise<InstalledApp[]>;
   readSettings: () => UserSettings;
@@ -462,6 +464,7 @@ export class ToolRegistry {
   ) {
     this.codex = new CodexAppServerHarness(audit);
     this.memory = memory ?? new MemoryStore();
+    this.bindManifestRuntime();
   }
 
   async execute(request: ToolCallRequest): Promise<ToolCallResult> {
@@ -478,7 +481,8 @@ export class ToolRegistry {
       },
     });
 
-    if (!(request.name in schemas)) {
+    const schema = toolManifest[request.name]?.schema;
+    if (!schema) {
       this.audit.write({
         action: `tool.${request.name}`,
         summary: `Unknown tool: ${request.name}`,
@@ -488,7 +492,7 @@ export class ToolRegistry {
       return { ok: false, name: request.name, error: `Unknown tool: ${request.name}`, code: "unknown_tool" };
     }
 
-    const parsed = schemas[request.name].safeParse(request.arguments);
+    const parsed = schema.safeParse(request.arguments);
     if (!parsed.success) {
       this.audit.write({
         action: `tool.${request.name}`,
@@ -542,8 +546,8 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     source: "realtime" | "local" = "local",
   ): Promise<ToolCallResult> {
-    const run = () => this.run(name, args, source);
-    let summary = this.summary(name, args);
+    const run = () => this.executeManifestHandler(name, args, source);
+    let summary = toolManifest[name].summarize?.(args) ?? this.summary(name, args);
     let preview: unknown;
 
     if (this.gate) {
@@ -682,8 +686,30 @@ export class ToolRegistry {
   }
 
   private async executeActionPlan(plan: ActionPlan): Promise<unknown> {
-    const result: unknown = await this.run(plan.toolName, plan.args, "local");
+    const result: unknown = await this.executeManifestHandler(plan.toolName, plan.args, "local");
     return this.compactResult(plan.toolName, result);
+  }
+
+  private bindManifestRuntime() {
+    const handlers: Partial<Record<ToolName, (args: Record<string, unknown>, context: { source: "realtime" | "local" }) => Promise<unknown> | unknown>> = {};
+    const summaries: Partial<Record<ToolName, (args: Record<string, unknown>) => string>> = {};
+    for (const name of Object.keys(toolManifest) as ToolName[]) {
+      handlers[name] = (args, context) => this.invokeLegacyToolImplementation(name, args, context.source);
+      summaries[name] = (args) => this.summary(name, args);
+    }
+    attachToolHandlers(handlers);
+    attachToolSummaries(summaries);
+  }
+
+  private executeManifestHandler(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local") {
+    const handler = toolManifest[name].handler;
+    if (!handler) throw new Error(`Tool handler is missing: ${name}`);
+    return handler(args, { source });
+  }
+
+  private invokeLegacyToolImplementation(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local") {
+    if (this.isTaskControlTool(name)) return this.runTaskControlTool(name, args, source);
+    return this.run(name, args, source);
   }
 
   private async run(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local" = "local"): Promise<unknown> {
@@ -960,7 +986,7 @@ export class ToolRegistry {
   }
 
   private isQueueManagedToolName(name: string): name is ToolName {
-    return Boolean(toolGroupLookup[name as ToolName]) && name in schemas;
+    return Boolean(toolGroupLookup[name as ToolName]) && Boolean(toolManifest[name as ToolName]?.schema);
   }
 
   private isToolAvailable(name: ToolName) {
@@ -1590,7 +1616,9 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       throw new Error(`Tool group is disabled: ${group}`);
     }
 
-    const parsed = schemas[toolName].safeParse(rawArguments ?? {});
+    const schema = toolManifest[toolName].schema;
+    if (!schema) throw new Error(`Unknown tool: ${toolName}`);
+    const parsed = schema.safeParse(rawArguments ?? {});
     if (!parsed.success) {
       throw new Error(parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; "));
     }

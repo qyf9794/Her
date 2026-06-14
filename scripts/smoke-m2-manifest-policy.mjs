@@ -20,6 +20,8 @@ const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
 const { AuditLog } = require("../electron/dist/main/audit.js");
 const { MemoryStore } = require("../electron/dist/main/memory-store.js");
+const { CapabilityGate } = require("../electron/dist/main/capability-gate.js");
+const { SettingsStore } = require("../electron/dist/main/settings-store.js");
 
 const failures = [];
 const fail = (message) => failures.push(message);
@@ -34,9 +36,11 @@ for (const name of definitionNames) {
     fail(`${name} is missing from toolManifest.`);
     continue;
   }
-  for (const field of ["title", "description", "bundle", "risk", "parameters"]) {
+  for (const field of ["title", "description", "bundle", "risk", "parameters", "schema", "summarize", "handler"]) {
     if (!entry[field]) fail(`${name} manifest is missing ${field}.`);
   }
+  if (typeof entry.summarize !== "function") fail(`${name} manifest summarize must be a function.`);
+  if (typeof entry.handler !== "function") fail(`${name} manifest handler must be a function.`);
   if (!toolRiskByName[name]) fail(`${name} is missing toolRiskByName.`);
 }
 
@@ -94,6 +98,55 @@ const registry = new ToolRegistry(
 const invalid = await registry.execute({ name: "file_read", arguments: {}, source: "local" });
 if (invalid.ok || invalid.code !== "invalid_arguments") fail(`Invalid schema arguments were not rejected: ${JSON.stringify(invalid)}`);
 
+const disabledSettings = new SettingsStore(path.join(tmpRoot, "disabled-capability"));
+disabledSettings.setCapabilities({ fileManagement: false, systemOperations: true });
+const disabledGate = new CapabilityGate(disabledSettings, async () => []);
+const disabledRegistry = new ToolRegistry(
+  new ConfirmationQueue(),
+  new AuditLog(),
+  disabledGate,
+  undefined,
+  new MemoryStore(path.join(tmpRoot, "disabled-memory")),
+);
+const disabledCapability = await disabledRegistry.execute({
+  name: "file_read",
+  arguments: { path: "/tmp/example.txt" },
+  source: "local",
+});
+if (disabledCapability.ok || disabledCapability.code !== "capability_denied") {
+  fail(`Disabled capability was not denied: ${JSON.stringify(disabledCapability)}`);
+}
+
+const unauthorizedSettings = new SettingsStore(path.join(tmpRoot, "unauthorized-app"));
+unauthorizedSettings.setCapabilities({ systemOperations: true });
+const unauthorizedGate = new CapabilityGate(unauthorizedSettings, async () => [{
+  name: "UntrustedApp",
+  path: "/Applications/UntrustedApp.app",
+  bundleId: "com.example.untrusted",
+  executable: "UntrustedApp",
+  iconUrl: "",
+  scriptable: false,
+  risk: "high",
+  capabilities: ["open"],
+  recommended: false,
+  authorized: false,
+}]);
+const unauthorizedRegistry = new ToolRegistry(
+  new ConfirmationQueue(),
+  new AuditLog(),
+  unauthorizedGate,
+  undefined,
+  new MemoryStore(path.join(tmpRoot, "unauthorized-memory")),
+);
+const unauthorizedApp = await unauthorizedRegistry.execute({
+  name: "app_open",
+  arguments: { appName: "UntrustedApp" },
+  source: "local",
+});
+if (unauthorizedApp.ok || unauthorizedApp.code !== "capability_denied") {
+  fail(`Unauthorized app was not denied: ${JSON.stringify(unauthorizedApp)}`);
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -108,5 +161,7 @@ console.log(JSON.stringify({
     approvalPolicy: true,
     actionPlanConfirmation: true,
     schemaValidation: true,
+    disabledCapabilityDenied: true,
+    unauthorizedAppDenied: true,
   },
 }, null, 2));
