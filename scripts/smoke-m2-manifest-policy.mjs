@@ -21,6 +21,7 @@ const { ApprovalPolicy } = require("../electron/dist/main/policy/approval-policy
 const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.js");
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
 const { domainManifests } = require("../electron/dist/main/tools/domain-manifests.js");
+const { toolHandlerNames } = require("../electron/dist/main/tools/handlers.js");
 const { toolSchemas } = require("../electron/dist/main/tools/schemas.js");
 const { summarizeToolCall } = require("../electron/dist/main/tools/summaries.js");
 const { AuditLog } = require("../electron/dist/main/audit.js");
@@ -35,6 +36,8 @@ const definitionNames = allToolDefinitions.map((definition) => definition.name);
 if (allToolDefinitions === sharedToolDefinitions) fail("M2 manifest metadata must not use shared static tool definitions as its source object.");
 const uniqueNames = new Set(definitionNames);
 if (uniqueNames.size !== definitionNames.length) fail("Tool names are not unique.");
+const handlerNames = new Set(toolHandlerNames);
+if (handlerNames.size !== toolHandlerNames.length) fail("Tool handler names are not unique.");
 
 for (const name of definitionNames) {
   const entry = toolManifest[name];
@@ -48,6 +51,7 @@ for (const name of definitionNames) {
   if (typeof entry.summarize !== "function") fail(`${name} manifest summarize must be a function.`);
   if (typeof entry.handler !== "function") fail(`${name} manifest handler must be a function.`);
   if (entry.schema !== toolSchemas[name]) fail(`${name} manifest schema does not reference toolSchemas.`);
+  if (!handlerNames.has(name)) fail(`${name} is missing from explicit toolHandlerNames.`);
   if (!toolRiskByName[name]) fail(`${name} is missing toolRiskByName.`);
 }
 
@@ -217,6 +221,7 @@ console.log(JSON.stringify({
     schemaValidation: true,
     manifestSchemaOwnership: true,
     manifestSummaryOwnership: true,
+    explicitHandlerNames: toolHandlerNames.length,
     manifestHandlerExecution: true,
     highRiskRuntimeConfirmation: true,
     disabledCapabilityDenied: true,

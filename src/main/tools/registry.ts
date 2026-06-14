@@ -7,6 +7,7 @@ import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } fr
 import { ConfirmationQueue } from "./confirmation";
 import { ApprovalPolicy, type ActionPlan } from "../policy/approval-policy";
 import { attachToolHandlers, toolManifest, toolRequiresConfirmation } from "./manifest";
+import { createToolHandlers } from "./handlers";
 import { summarizeToolCall } from "./summaries";
 import { LocalStore } from "./local-store";
 import { FileManager } from "./file-manager";
@@ -422,11 +423,9 @@ export class ToolRegistry {
   }
 
   private bindManifestRuntime() {
-    const handlers: Partial<Record<ToolName, (args: Record<string, unknown>, context: { source: "realtime" | "local" }) => Promise<unknown> | unknown>> = {};
-    for (const name of Object.keys(toolManifest) as ToolName[]) {
-      handlers[name] = (args, context) => this.invokeLegacyToolImplementation(name, args, context.source);
-    }
-    attachToolHandlers(handlers);
+    attachToolHandlers(createToolHandlers({
+      invokeToolHandler: (name, args, source) => this.invokeLegacyToolImplementation(name, args, source),
+    }));
   }
 
   private executeManifestHandler(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local") {
