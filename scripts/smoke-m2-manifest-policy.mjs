@@ -39,6 +39,16 @@ if (uniqueNames.size !== definitionNames.length) fail("Tool names are not unique
 const handlerNames = new Set(toolHandlerNames);
 if (handlerNames.size !== toolHandlerNames.length) fail("Tool handler names are not unique.");
 
+const rendererSource = fs.readFileSync(path.join(process.cwd(), "src/renderer/main.ts"), "utf8");
+for (const marker of [
+  "fallbackRealtimeToolDefinitions",
+  "realtimeToolNames",
+  "isToolName",
+  "realtimeToolDefinitions as",
+]) {
+  if (rendererSource.includes(marker)) fail(`Renderer must not keep static Realtime tool whitelist marker: ${marker}`);
+}
+
 for (const name of definitionNames) {
   const entry = toolManifest[name];
   if (!entry) {
@@ -224,6 +234,7 @@ console.log(JSON.stringify({
     schemaValidation: true,
     manifestSchemaOwnership: true,
     manifestSummaryOwnership: true,
+    rendererStaticToolWhitelistRemoved: true,
     explicitHandlerNames: toolHandlerNames.length,
     manifestHandlerExecution: true,
     highRiskRuntimeConfirmation: true,

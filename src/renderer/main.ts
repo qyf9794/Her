@@ -17,13 +17,18 @@ import {
   realtimeTurnDetectionTuning,
   type RealtimeRuntimeOptions,
 } from "../shared/realtime-config";
-import { realtimeToolDefinitions as fallbackRealtimeToolDefinitions, type ConfirmationResult, type ToolCallRequest, type ToolCallResult, type ToolName } from "../shared/tools";
+import type { ConfirmationResult, ToolCallRequest, ToolCallResult, ToolName } from "../shared/tools";
 import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
 import "./styles.css";
 
 type SessionState = "idle" | "connecting" | "connected" | "error";
 type VisualState = "idle" | "listening" | "thinking" | "speaking" | "tool" | "confirming" | "error";
-type RealtimeToolDefinition = (typeof fallbackRealtimeToolDefinitions)[number];
+type RealtimeToolDefinition = {
+  type: "function";
+  name: ToolName;
+  description: string;
+  parameters: Record<string, unknown>;
+};
 
 declare global {
   interface Window {
@@ -1283,16 +1288,11 @@ const readNumber = (value: Record<string, unknown> | undefined, key: string) => 
 };
 
 const loadRealtimeTools = async (): Promise<readonly RealtimeToolDefinition[]> => {
-  try {
-    const response = await getJson<{ tools: RealtimeToolDefinition[] }>("/api/realtime/tools");
-    if (Array.isArray(response.tools) && response.tools.length > 0) {
-      realtimeToolNames = new Set(response.tools.map((definition) => definition.name));
-      return response.tools;
-    }
-  } catch (error) {
-    writeAudit("realtime.tools", errorMessage(error), "error");
+  const response = await getJson<{ tools: RealtimeToolDefinition[] }>("/api/realtime/tools");
+  if (!Array.isArray(response.tools) || response.tools.length === 0) {
+    throw new Error("Local API returned no Realtime tools.");
   }
-  return fallbackRealtimeToolDefinitions;
+  return response.tools;
 };
 
 const createRealtimeTools = (definitions: readonly RealtimeToolDefinition[]): FunctionTool[] =>
@@ -1326,13 +1326,7 @@ const coerceToolArguments = (input: unknown): Record<string, unknown> => {
   return {};
 };
 
-const executeLocalToolForSdk = async (name: string, input: unknown, callId?: string) => {
-  if (!isToolName(name)) {
-    const result = { ok: false, name, error: `Unknown local tool: ${name}` };
-    addActivity(`Unknown tool requested: ${name}`, "error");
-    return result;
-  }
-
+const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: string) => {
   setVisualState("tool");
   const result = await postJson<ToolCallResult>("/api/tools/execute", {
     name,
@@ -1383,10 +1377,6 @@ const appendAssistantDelta = (text: string) => {
   activeAssistantLine.textContent += text;
   transcript.scrollTop = transcript.scrollHeight;
 };
-
-let realtimeToolNames = new Set<string>(fallbackRealtimeToolDefinitions.map((definition) => definition.name));
-
-const isToolName = (name: string): name is ToolName => realtimeToolNames.has(name);
 
 const sendUserText = (text: string) => {
   if (!realtimeSession || state !== "connected" || !text.trim()) return;
