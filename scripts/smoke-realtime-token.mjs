@@ -42,7 +42,7 @@ const response = await fetch("https://api.openai.com/v1/realtime/client_secrets"
           transcription: transcriptionEnabled ? { model: transcriptionModel } : null,
           turn_detection: {
             type: "server_vad",
-            create_response: true,
+            create_response: false,
             interrupt_response: true,
             threshold: vadThreshold,
             silence_duration_ms: vadSilenceDurationMs,

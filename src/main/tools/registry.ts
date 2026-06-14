@@ -27,6 +27,7 @@ import { MacMail } from "./mac-mail";
 import { CapabilityGate } from "../capability-gate";
 import { CodexAppServerHarness, type CodexProgressEvent, type CodexTaskInput } from "../codex/app-server-harness";
 import { MemoryStore, type MemoryLookupInput, type MemorySaveInput, type MemoryType } from "../memory-store";
+import { selectToolBundles } from "../agent/tool-bundle-router";
 
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
@@ -375,6 +376,8 @@ export class ToolRegistry {
         return this.listToolCatalog(args.group as ToolGroup | undefined);
       case "tool_group_set":
         return this.setToolGroup(args.group as ToolGroup, args.enabled as boolean);
+      case "her_select_bundle":
+        return selectToolBundles(String(args.transcript ?? ""));
       case "task_create":
         return this.createTask(
           args.toolName as string,
@@ -719,7 +722,7 @@ export class ToolRegistry {
   }
 
   private isTaskControlTool(name: ToolName) {
-    return name === "tool_catalog_list" || name === "tool_group_set" || name === "task_create" || name === "task_status" || name === "task_list" || name === "task_cancel" || name === "task_route" || name === "intent_route" || name === "memory_lookup" || name === "memory_save" || name === "memory_forget" || name === "memory_status";
+    return name === "tool_catalog_list" || name === "tool_group_set" || name === "her_select_bundle" || name === "task_create" || name === "task_status" || name === "task_list" || name === "task_cancel" || name === "task_route" || name === "intent_route" || name === "memory_lookup" || name === "memory_save" || name === "memory_forget" || name === "memory_status";
   }
 
   private isQueueManagedToolName(name: string): name is ToolName {

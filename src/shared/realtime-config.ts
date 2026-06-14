@@ -72,7 +72,7 @@ const createRealtimeTurnDetectionConfig = (options?: RealtimeRuntimeOptions) => 
   const turnDetection = resolvedTurnDetection(options);
   return {
     type: "server_vad",
-    createResponse: true,
+    createResponse: false,
     interruptResponse: true,
     threshold: turnDetection.threshold,
     silenceDurationMs: turnDetection.silenceDurationMs,
@@ -84,7 +84,7 @@ const createRealtimeTurnDetectionApiConfig = (options?: RealtimeRuntimeOptions) 
   const turnDetection = resolvedTurnDetection(options);
   return {
     type: "server_vad",
-    create_response: true,
+    create_response: false,
     interrupt_response: true,
     threshold: turnDetection.threshold,
     silence_duration_ms: turnDetection.silenceDurationMs,

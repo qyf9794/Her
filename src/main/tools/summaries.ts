@@ -12,6 +12,8 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return args.group ? `List dynamic tool catalog for group ${args.group}` : "List dynamic tool groups";
       case "tool_group_set":
         return `${args.enabled ? "Enable" : "Disable"} dynamic tool group ${args.group}`;
+      case "her_select_bundle":
+        return `Select Realtime bundle for: ${truncateText(String(args.transcript ?? ""), 120)}`;
       case "task_create":
         return `Queue task for ${args.toolName}`;
       case "task_status":

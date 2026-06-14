@@ -19,16 +19,11 @@ import {
 } from "../shared/realtime-config";
 import type { ConfirmationResult, ToolCallRequest, ToolCallResult, ToolName } from "../shared/tools";
 import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
+import { RealtimeSessionService, type RealtimeToolDefinition } from "./realtime/realtime-session-service";
 import "./styles.css";
 
 type SessionState = "idle" | "connecting" | "connected" | "error";
 type VisualState = "idle" | "listening" | "thinking" | "speaking" | "tool" | "confirming" | "error";
-type RealtimeToolDefinition = {
-  type: "function";
-  name: ToolName;
-  description: string;
-  parameters: Record<string, unknown>;
-};
 
 declare global {
   interface Window {
@@ -276,6 +271,7 @@ let state: SessionState = "idle";
 let visualState: VisualState = "idle";
 let realtimeSession: RealtimeSession | null = null;
 let realtimeTransport: OpenAIRealtimeWebRTC | null = null;
+let realtimeSessionService: RealtimeSessionService | null = null;
 let localStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let inputAnalyser: AnalyserNode | null = null;
@@ -1100,18 +1096,21 @@ const connect = async () => {
     });
 
     const realtimeTools = await loadRealtimeTools();
-    const agent = new RealtimeAgent({
-      name: "HER",
-      instructions: buildRealtimeAgentInstructions(),
-      voice: access.voice,
-      tools: createRealtimeTools(realtimeTools),
-    });
+    const createAgent = (tools: readonly RealtimeToolDefinition[]) =>
+      new RealtimeAgent({
+        name: "HER",
+        instructions: buildRealtimeAgentInstructions(),
+        voice: access.voice,
+        tools: createRealtimeTools(tools),
+      });
+    const agent = createAgent(realtimeTools);
 
     realtimeSession = new RealtimeSession(agent, {
       model: access.model,
       transport: realtimeTransport,
       config: createRealtimeSessionConfig(access.voice, access.runtimeOptions),
     });
+    realtimeSessionService = new RealtimeSessionService(realtimeSession, createAgent);
 
     wireRealtimeSessionEvents(realtimeSession);
     await realtimeSession.connect({ apiKey: access.clientSecret });
@@ -1138,6 +1137,7 @@ const disconnect = () => {
   }
   realtimeSession?.close();
   realtimeSession = null;
+  realtimeSessionService = null;
   realtimeTransport = null;
   localStream?.getTracks().forEach((track) => track.stop());
   localStream = null;
@@ -1179,6 +1179,7 @@ const handleTransportEvent = (event: TransportEvent) => {
   if (event.type === "conversation.item.input_audio_transcription.completed") {
     addLine("user", event.transcript);
     setVisualState("thinking");
+    void realtimeSessionService?.respondToTranscript(event.transcript);
     return;
   }
 

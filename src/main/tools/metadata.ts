@@ -115,6 +115,17 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "her_select_bundle",
+    description: "Select the best HER dynamic Realtime tool bundles for the user's transcript when deterministic routing is uncertain.",
+    parameters: objectSchema(
+      {
+        transcript: { type: "string", description: "The user's latest transcribed request." },
+      },
+      ["transcript"],
+    ),
+  },
+  {
+    type: "function",
     name: "task_create",
     description: "Create a local task queue item for any non-core tool. Realtime should use this instead of directly carrying large or side-effecting tool calls in session context.",
     parameters: objectSchema(
@@ -1214,6 +1225,7 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   }),
   tool_catalog_list: z.object({ group: z.enum(toolGroups).optional() }),
   tool_group_set: z.object({ group: z.enum(toolGroups), enabled: z.boolean() }),
+  her_select_bundle: z.object({ transcript: z.string().min(1) }),
   task_create: z.object({
     toolName: z.string().min(1),
     arguments: z.record(z.string(), z.unknown()).optional().default({}),
@@ -1471,6 +1483,11 @@ export const coreRealtimeToolNames = [
   "system_status",
   "confirmation_list",
   "confirmation_decide",
+  "app_permission_search",
+  "app_permission_set",
+  "capability_set",
+  "yolo_mode_set",
+  "her_select_bundle",
   "tool_result_read",
   "intent_route",
   "task_status",

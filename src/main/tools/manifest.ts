@@ -1,4 +1,5 @@
 import type { CapabilityKey } from "../../shared/app-settings";
+import type { ToolBundleName } from "../agent/tool-bundle-router";
 import { defineTool, type ToolBundle, type ToolDefinition, type ToolHandler, type ToolRisk } from "./define-tool";
 import { toolBundles } from "./bundles";
 import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName, toolRiskOverrides, toolSchemas, type ToolGroup, type ToolName } from "./metadata";
@@ -70,6 +71,18 @@ export const manifestRealtimeToolDefinitions = Object.values(toolManifest)
     parameters: entry.parameters,
   }));
 
+export const manifestRealtimeToolDefinitionsForBundles = (bundles: readonly ToolBundleName[]) => {
+  const selected = new Set<ToolBundleName>(["core", ...bundles]);
+  return Object.values(toolManifest)
+    .filter((entry) => entry.realtime || selected.has(realtimeBundleForEntry(entry)))
+    .map((entry) => ({
+      type: "function" as const,
+      name: entry.name,
+      description: entry.realtimeDescription ?? entry.description,
+      parameters: entry.parameters,
+    }));
+};
+
 export const manifestQueueManagedToolDefinitions = Object.values(toolManifest)
   .filter((entry) => Boolean(entry.group))
   .map((entry) => ({
@@ -100,6 +113,19 @@ function bundleForGroup(group: ToolGroup | undefined, name: ToolName): ToolBundl
   if (group === "apps" || group === "windows" || group === "system") return "desktop";
   if (group === "permissions" || group === "agents") return "core";
   return name === "advanced_shell_command" ? "shell" : "core";
+}
+
+function realtimeBundleForEntry(entry: ToolManifestEntry): ToolBundleName {
+  if (entry.realtime) return "core";
+  if (entry.group === "files") return "file";
+  if (entry.group === "documents") return "document";
+  if (entry.group === "browser") return "browser";
+  if (entry.group === "media") return "media";
+  if (entry.group === "apps" || entry.group === "windows") return "desktop";
+  if (entry.group === "system") return "system";
+  if (entry.group === "shell" || entry.group === "agents") return "coding";
+  if (entry.group === "text" || entry.group === "phone" || entry.group === "social" || entry.group === "research") return "comms";
+  return "core";
 }
 
 function capabilityForGroup(group: ToolGroup | undefined): CapabilityKey | undefined {

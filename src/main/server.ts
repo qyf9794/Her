@@ -13,7 +13,8 @@ import { SettingsStore } from "./settings-store";
 import { MemoryStore } from "./memory-store";
 import { ConfirmationQueue } from "./tools/confirmation";
 import { ToolRegistry } from "./tools/registry";
-import { manifestRealtimeToolDefinitions } from "./tools/manifest";
+import { manifestRealtimeToolDefinitions, manifestRealtimeToolDefinitionsForBundles } from "./tools/manifest";
+import { isToolBundleName, selectToolBundles } from "./agent/tool-bundle-router";
 import { SystemControl } from "./tools/system-control";
 import type { CapabilitySettings } from "../shared/app-settings";
 import type { AuditEvent } from "../shared/events";
@@ -279,9 +280,20 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     }
   });
 
-  app.get("/api/realtime/tools", requireAuth, (_req, res) => {
+  app.get("/api/realtime/tools", requireAuth, (req, res) => {
+    const bundles = parseBundleQuery(req.query.bundles);
     res.json({
-      tools: manifestRealtimeToolDefinitions,
+      bundles: bundles.length ? bundles : ["core"],
+      tools: bundles.length ? manifestRealtimeToolDefinitionsForBundles(bundles) : manifestRealtimeToolDefinitions,
+    });
+  });
+
+  app.post("/api/realtime/bundles/select", requireAuth, (req, res) => {
+    const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : "";
+    const selection = selectToolBundles(transcript);
+    res.json({
+      selection,
+      tools: manifestRealtimeToolDefinitionsForBundles(selection.bundles),
     });
   });
 
@@ -365,6 +377,14 @@ const auditStatuses = new Set<AuditEvent["status"]>([
 
 const isAuditStatus = (value: unknown): value is AuditEvent["status"] =>
   typeof value === "string" && auditStatuses.has(value as AuditEvent["status"]);
+
+const parseBundleQuery = (value: unknown) => {
+  const raw = Array.isArray(value) ? value.join(",") : typeof value === "string" ? value : "";
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(isToolBundleName);
+};
 
 const codexModelOptions = [
   { label: "App-server default", value: "" },

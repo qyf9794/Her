@@ -44,6 +44,7 @@ const samples = {
   tool_result_read: { handle: "missing-routing-smoke-handle", offset: 0, maxChars: 200 },
   tool_catalog_list: {},
   tool_group_set: { group: "files", enabled: true },
+  her_select_bundle: { transcript: "帮我打开网页并点击提交按钮" },
   task_create: { toolName: "file_list", arguments: { path: tmpRoot }, priority: "normal", runAfterMs: 0 },
   task_status: { taskId: "missing-routing-smoke-task" },
   task_list: { limit: 10 },
