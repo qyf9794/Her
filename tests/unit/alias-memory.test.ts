@@ -95,6 +95,12 @@ describe("alias target validation", () => {
     }).toThrow("Secret-like alias argument key is not allowed");
   });
 
+  it("rejects secret-like values recursively", () => {
+    expect(() => {
+      validateAliasTarget({ toolName: "app_open", arguments: { appName: "Chrome", nested: { value: "sk-123" } } });
+    }).toThrow("Secret-like alias argument value is not allowed");
+  });
+
   it("marks alias write tools as confirmation-required and list as read-only", () => {
     expect(toolRequiresConfirmation("alias_create")).toBe(true);
     expect(toolRequiresConfirmation("alias_delete")).toBe(true);

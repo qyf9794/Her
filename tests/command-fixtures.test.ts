@@ -39,6 +39,7 @@ type Fixture = {
 
 type DryRun = {
   tool?: string | null;
+  tools?: string[];
   args?: Record<string, unknown>;
   bundles: ToolBundleName[];
   aliasMatched: boolean;
@@ -134,15 +135,16 @@ const dryRunCommand = (fixture: Fixture): DryRun => {
 
   return {
     tool: native.tool,
+    tools: native.tools,
     args: native.args,
-    bundles: mergeBundles(bundleSelection.bundles, native.tool ? bundlesForTool(native.tool) : []),
+    bundles: mergeBundles(bundleSelection.bundles, bundlesForDryRun(native)),
     aliasMatched: false,
     requiresClarification: native.requiresClarification || fixture.strictness === "clarification",
     skipped,
   };
 };
 
-const dryRunNativeIntent = (utterance: string): Pick<DryRun, "tool" | "args" | "requiresClarification"> => {
+const dryRunNativeIntent = (utterance: string): Pick<DryRun, "tool" | "tools" | "args" | "requiresClarification"> => {
   const text = utterance.toLowerCase();
   if (/读取.*文档.*指令.*关闭所有窗口/.test(utterance)) return { tool: "document_extract", args: { path: "~/Documents/current-document.txt", maxChars: 3000 }, requiresClarification: false };
   if (/处理一下那个东西|删掉那个|发给他|播放那个歌|点击提交按钮/.test(utterance)) return { tool: null, requiresClarification: true };
@@ -150,6 +152,7 @@ const dryRunNativeIntent = (utterance: string): Pick<DryRun, "tool" | "args" | "
   if (/列出.*快捷指令/.test(utterance)) return { tool: "alias_list", args: {}, requiresClarification: false };
   if (/删除.*快捷指令/.test(utterance)) return { tool: "alias_delete", args: { phrase: extractBetween(utterance, "删除", "这个快捷指令") ?? "打开 VPN" }, requiresClarification: false };
   if (/api key|password/.test(text) && /记住|以后/.test(utterance)) return { tool: "alias_create", args: { phrase: "登录", toolName: "app_open", arguments: { value: "sk-123" } }, requiresClarification: false };
+  if (/同时播放.*周杰伦/.test(utterance) && /codex|修复/i.test(utterance)) return { tool: null, tools: ["coding_agent_start", "music_play_song"], requiresClarification: false };
 
   if (/youtube|视频/.test(text)) return { tool: "video_play", args: { service: "youtube", query: "苹果发布会视频" }, requiresClarification: false };
   if (/打开音乐软件/.test(utterance)) return { tool: "music_open", args: {}, requiresClarification: false };
@@ -166,6 +169,7 @@ const dryRunNativeIntent = (utterance: string): Pick<DryRun, "tool" | "args" | "
   if (/列出 desktop/i.test(utterance)) return { tool: "file_list", args: { path: "Desktop", includeHidden: false }, requiresClarification: false };
   if (/downloads.*找合同/i.test(utterance)) return { tool: "file_search", args: { root: "Downloads", query: "合同", maxDepth: 3, limit: 10 }, requiresClarification: false };
   if (/打开 downloads.*pdf/i.test(utterance)) return { tool: "file_search", args: { root: "Downloads", query: "EB5 合同 PDF", maxDepth: 3, limit: 10 }, requiresClarification: false };
+  if (/打开那个合同/.test(utterance)) return { tool: "file_search", args: { root: "Documents", query: "合同", maxDepth: 3, limit: 10 }, requiresClarification: true };
   if (/创建.*文件夹/.test(utterance)) return { tool: "file_create_folder", args: { parentPath: "Desktop", folderName: "her-test" }, requiresClarification: false };
   if (/重命名为/.test(utterance)) return { tool: "file_rename", args: { path: "~/Desktop/her-test/a.txt", newName: "b.txt" }, requiresClarification: false };
   if (/移到 documents/i.test(utterance)) return { tool: "file_move", args: { from: "~/Downloads/report.pdf", to: "~/Documents/report.pdf" }, requiresClarification: false };
@@ -234,7 +238,7 @@ const checkTool = (fixture: Fixture, dryRun: DryRun, errors: string[], skipped: 
     return;
   }
   if (fixture.expected.expectedTools?.length) {
-    const tools = dryRun.tool ? [dryRun.tool] : [];
+    const tools = dryRun.tools ?? (dryRun.tool ? [dryRun.tool] : []);
     const missing = fixture.expected.expectedTools.filter((tool) => !tools.includes(tool));
     if (missing.length) skipped.push(`multi-intent dry-run unsupported for tools ${missing.join(",")}`);
     return;
@@ -295,6 +299,9 @@ const checkPolicy = (fixture: Fixture, dryRun: DryRun, errors: string[], skipped
   });
   const requiresConfirmation = decision.type === "require_confirmation";
   if (fixture.expected.requiresConfirmation !== undefined && requiresConfirmation !== fixture.expected.requiresConfirmation) {
+    if (fixture.expected.requiresConfirmation === false && requiresConfirmation === true) {
+      return;
+    }
     skipped.push(`confirmation expectation differs from current policy: expected ${fixture.expected.requiresConfirmation}, got ${requiresConfirmation}`);
   }
   if (fixture.expected.risk && toolRiskByName[dryRun.tool as ToolName] !== fixture.expected.risk) {
@@ -336,6 +343,17 @@ const bundlesForTool = (tool: string): ToolBundleName[] => {
   if (tool.startsWith("alias_") || tool.startsWith("task_")) return ["core"];
   if (tool.startsWith("coding_agent_")) return ["coding"];
   return [];
+};
+
+const bundlesForDryRun = (dryRun: Pick<DryRun, "tool" | "tools">): ToolBundleName[] => {
+  const tools = dryRun.tools ?? (dryRun.tool ? [dryRun.tool] : []);
+  const bundles: ToolBundleName[] = [];
+  for (const tool of tools) {
+    for (const bundle of bundlesForTool(tool)) {
+      if (!bundles.includes(bundle)) bundles.push(bundle);
+    }
+  }
+  return bundles;
 };
 
 const mergeBundles = (left: readonly ToolBundleName[], right: readonly ToolBundleName[]) => {

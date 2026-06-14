@@ -434,6 +434,31 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     source: "realtime" | "local",
   ): Promise<ToolCallResult> {
+    if (toolRequiresConfirmation(name)) {
+      const summary = this.summarize(name, args);
+      const approval = approvalPolicy.decide({
+        toolName: name,
+        args,
+        summary,
+        yoloMode: this.isYoloMode(),
+      });
+      if (approval.type === "deny") {
+        this.audit.write({ action: name, summary: approval.reason, status: "error" });
+        return { ok: false, name, error: approval.reason, code: approval.code };
+      }
+      if (approval.type === "require_confirmation") {
+        const confirmation = this.confirmations.add(approval.plan);
+        this.audit.write({ action: name, summary, status: "needs_confirmation" });
+        return {
+          ok: true,
+          name,
+          requiresConfirmation: true,
+          confirmationId: confirmation.id,
+          summary,
+          expiresAt: new Date(confirmation.expiresAt).toISOString(),
+        };
+      }
+    }
     try {
       const result = await this.runTaskControlTool(name, args, source);
       this.audit.write({ action: name, summary: this.summarize(name, args), status: "ok" });

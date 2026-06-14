@@ -29,12 +29,12 @@ export const realtimeToolBundleNames = [
 ] as const satisfies readonly ToolBundleName[];
 
 const bundleRules: Array<{ bundle: Exclude<ToolBundleName, "core">; pattern: RegExp; reason: string }> = [
-  { bundle: "file", pattern: /\b(file|folder|directory|path|finder|rename|move|copy|trash|delete|open file|read file|list files?)\b|文件|文件夹|目录|路径|重命名|移动|复制|删除/u, reason: "file terms" },
-  { bundle: "document", pattern: /\b(document|docx|pdf|markdown|digest|summarize document|extract|edit document)\b|文档|论文|摘要|提取|改文档/u, reason: "document terms" },
+  { bundle: "file", pattern: /\b(file|folder|directory|path|finder|rename|move|copy|trash|delete|open file|read file|list files?|downloads?|documents?|desktop)\b|文件|文件夹|目录|路径|桌面|下载|重命名|移动|复制|删除/u, reason: "file terms" },
+  { bundle: "document", pattern: /\b(document|docx|pdf|markdown|digest|summarize document|extract|edit document|contract)\b|文档|论文|摘要|提取|改文档|合同/u, reason: "document terms" },
   { bundle: "browser", pattern: /\b(browser|web|website|url|link|form|click|page|search online|google|bing|duckduckgo)\b|网页|网站|浏览器|表单|点击|打开链接|搜索网页/u, reason: "browser terms" },
   { bundle: "comms", pattern: /\b(email|mail|calendar|meeting|draft|publish|contact|call|message|reminder|note|weather|news|stock|market)\b|邮件|日历|会议|草稿|发布|联系人|电话|提醒|备忘录|天气|新闻|股票|行情/u, reason: "communications terms" },
   { bundle: "media", pattern: /\b(music|song|spotify|netease|qq music|video|youtube|movie|tv|playback|pause|volume)\b|音乐|歌曲|播放|视频|电影|电视|油管|暂停/u, reason: "media terms" },
-  { bundle: "desktop", pattern: /\b(window|app|application|desktop|arrange|minimize|maximize|focus|quit|open app)\b|窗口|应用|桌面|排列|最小化|最大化|切换|退出应用/u, reason: "desktop terms" },
+  { bundle: "desktop", pattern: /\b(window|app|application|desktop|arrange|minimize|maximize|focus|quit|open app)\b|窗口|应用|桌面|排列|平铺|最小化|最大化|切换|退出应用/u, reason: "desktop terms" },
   { bundle: "system", pattern: /\b(system|settings|sleep|lock|brightness|clipboard|screenshot|shortcut|keyboard|notification|speak)\b|系统|设置|睡眠|锁屏|亮度|剪贴板|截图|快捷键|键盘|通知/u, reason: "system terms" },
   { bundle: "coding", pattern: /\b(code|coding|repo|repository|git|test|tests|pr|pull request|codex|build|lint|typecheck)\b|代码|仓库|测试|构建|提交|拉取请求/u, reason: "coding terms" },
 ];
@@ -59,7 +59,7 @@ export const selectToolBundles = (transcript: string): ToolBundleSelection => {
   if (bundles.includes("document") && !bundles.includes("file")) {
     bundles.push("file");
   }
-  if (bundles.includes("desktop") && !bundles.includes("system") && /\b(arrange|window|desktop|app)\b|窗口|桌面|应用/u.test(text)) {
+  if (bundles.includes("desktop") && !bundles.includes("system") && /\b(arrange|window|desktop|app)\b|窗口|桌面|应用|平铺/u.test(text)) {
     bundles.push("system");
   }
   if (bundles.includes("system") && !bundles.includes("desktop") && /\b(app|window|desktop)\b|窗口|桌面|应用/u.test(text)) {
