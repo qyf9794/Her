@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ToolName } from "../../shared/tools";
+import type { ToolName } from "../tools/metadata";
 import { toolManifest, toolRequiresConfirmation } from "../tools/manifest";
 import type { ToolRisk } from "../tools/define-tool";
 

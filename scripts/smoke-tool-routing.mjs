@@ -28,10 +28,10 @@ const {
   allToolDefinitions,
   coreRealtimeToolNames,
   queueManagedToolDefinitions,
-  realtimeToolDefinitions,
   toolGroupByName,
   toolGroups,
-} = require("../electron/dist/shared/tools.js");
+} = require("../electron/dist/main/tools/metadata.js");
+const { manifestRealtimeToolDefinitions } = require("../electron/dist/main/tools/manifest.js");
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "her-tool-routing-"));
 const sampleFile = path.join(tmpRoot, "sample.txt");
@@ -215,15 +215,15 @@ const duplicateDefinitions = definitionNames.filter((name, index) => definitionN
 for (const name of duplicateDefinitions) fail("definition", `${name} is defined more than once.`);
 
 const realtimeNames = coreRealtimeToolNames;
-const realtimeDefinitionNames = realtimeToolDefinitions.map((definition) => definition.name);
+const realtimeDefinitionNames = manifestRealtimeToolDefinitions.map((definition) => definition.name);
 for (const name of realtimeNames) {
   if (!definitionNames.includes(name)) fail("realtime-core", `${name} is not present in allToolDefinitions.`);
 }
 for (const name of realtimeNames) {
-  if (!realtimeDefinitionNames.includes(name)) fail("realtime-definitions", `${name} is missing from realtimeToolDefinitions.`);
+  if (!realtimeDefinitionNames.includes(name)) fail("realtime-definitions", `${name} is missing from manifestRealtimeToolDefinitions.`);
 }
 for (const name of realtimeDefinitionNames) {
-  if (!realtimeNames.includes(name)) fail("realtime-definitions", `${name} is exposed by realtimeToolDefinitions but not listed as a core realtime tool.`);
+  if (!realtimeNames.includes(name)) fail("realtime-definitions", `${name} is exposed by manifestRealtimeToolDefinitions but not listed as a core realtime tool.`);
 }
 
 for (const group of toolGroups) {

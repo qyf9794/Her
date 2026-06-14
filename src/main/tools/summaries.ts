@@ -1,4 +1,4 @@
-import type { ToolName } from "../../shared/tools";
+import type { ToolName } from "./metadata";
 
 export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>) => {
     switch (name) {

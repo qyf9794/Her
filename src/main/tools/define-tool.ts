@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { CapabilityKey } from "../../shared/app-settings";
-import type { ToolGroup, ToolName } from "../../shared/tools";
+import type { ToolGroup, ToolName } from "./metadata";
 
 export type ToolRisk =
   | "read"

@@ -1,4 +1,4 @@
-import type { ToolName } from "../../shared/tools";
+import type { ToolName } from "./metadata";
 import type { ToolHandler } from "./define-tool";
 import { allToolDefinitions } from "./metadata";
 

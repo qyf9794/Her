@@ -1,5 +1,3 @@
-import type { ToolName } from "../../shared/tools";
-
 type JsonSchema = Record<string, unknown>;
 
 export type ToolGroup =
@@ -1181,6 +1179,8 @@ export const allToolDefinitions = [
     ),
   },
 ] as const;
+
+export type ToolName = (typeof allToolDefinitions)[number]["name"];
 
 export const coreRealtimeToolNames = [
   "system_status",

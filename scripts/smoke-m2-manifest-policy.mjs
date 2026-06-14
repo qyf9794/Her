@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const {
   allToolDefinitions,
 } = require("../electron/dist/main/tools/metadata.js");
-const { allToolDefinitions: sharedToolDefinitions } = require("../electron/dist/shared/tools.js");
+const sharedTools = require("../electron/dist/shared/tools.js");
 const {
   toolManifest,
   toolRiskByName,
@@ -33,7 +33,8 @@ const failures = [];
 const fail = (message) => failures.push(message);
 
 const definitionNames = allToolDefinitions.map((definition) => definition.name);
-if (allToolDefinitions === sharedToolDefinitions) fail("M2 manifest metadata must not use shared static tool definitions as its source object.");
+if ("allToolDefinitions" in sharedTools) fail("Shared tools must not export duplicate allToolDefinitions.");
+if ("realtimeToolDefinitions" in sharedTools) fail("Shared tools must not export duplicate realtimeToolDefinitions.");
 const uniqueNames = new Set(definitionNames);
 if (uniqueNames.size !== definitionNames.length) fail("Tool names are not unique.");
 const handlerNames = new Set(toolHandlerNames);

@@ -1,4 +1,4 @@
-import type { ToolName } from "../../shared/tools";
+import type { ToolName } from "./metadata";
 import type { ActionPlan } from "../policy/approval-policy";
 
 export type PendingConfirmation = {

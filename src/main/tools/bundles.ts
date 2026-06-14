@@ -1,4 +1,4 @@
-import type { ToolGroup } from "../../shared/tools";
+import type { ToolGroup } from "./metadata";
 import type { ToolBundle } from "./define-tool";
 
 export type ToolBundleMetadata = {

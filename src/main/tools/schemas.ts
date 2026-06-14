@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { config } from "../config";
-import type { ToolName } from "../../shared/tools";
-import { toolGroups } from "../../shared/tools";
+import { toolGroups, type ToolName } from "./metadata";
 
 const limitSchema = z.number().int().min(1).max(10).optional().default(5);
 const folderNameSchema = z.string().min(1).refine(
@@ -274,4 +273,3 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   app_permission_set: z.object({ appName: z.string().min(1), authorized: z.boolean() }),
   capability_set: z.object({ capability: z.enum(["fileManagement", "browserAutomation", "textOperations", "systemOperations"]), enabled: z.boolean() }),
 };
-

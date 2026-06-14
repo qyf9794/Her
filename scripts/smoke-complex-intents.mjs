@@ -23,7 +23,7 @@ const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.
 const { AuditLog } = require("../electron/dist/main/audit.js");
 const { MemoryStore } = require("../electron/dist/main/memory-store.js");
 const { buildRealtimeAgentInstructions } = require("../electron/dist/shared/realtime-agent.js");
-const { realtimeToolDefinitions } = require("../electron/dist/shared/tools.js");
+const { manifestRealtimeToolDefinitions } = require("../electron/dist/main/tools/manifest.js");
 
 const apiKey = process.env.OPENAI_API_KEY;
 const model = process.env.HER_REALTIME_MODEL ?? "gpt-realtime-2";
@@ -501,7 +501,7 @@ async function parseWithRealtime(text) {
 
 async function parseWithRealtimeOnce(text) {
   const capturedCalls = [];
-  const tools = realtimeToolDefinitions.map((definition) =>
+  const tools = manifestRealtimeToolDefinitions.map((definition) =>
     tool({
       name: definition.name,
       description: definition.description,

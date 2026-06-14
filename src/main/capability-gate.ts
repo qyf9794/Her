@@ -1,4 +1,4 @@
-import type { ToolName } from "../shared/tools";
+import type { ToolName } from "./tools/metadata";
 import type { CapabilityKey, InstalledApp } from "../shared/app-settings";
 import { SettingsStore } from "./settings-store";
 

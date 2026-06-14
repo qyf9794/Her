@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { config } from "../config";
 import { AuditLog } from "../audit";
-import type { ToolCallRequest, ToolCallResult, ToolGroup, ToolName } from "../../shared/tools";
-import { toolGroups } from "../../shared/tools";
+import type { ToolCallRequest, ToolCallResult } from "../../shared/tools";
+import { toolGroups, type ToolGroup, type ToolName } from "./metadata";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../../shared/app-settings";
 import { ConfirmationQueue } from "./confirmation";
 import { ApprovalPolicy, type ActionPlan } from "../policy/approval-policy";
@@ -31,6 +31,9 @@ import { MemoryStore, type MemoryLookupInput, type MemorySaveInput, type MemoryT
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
 const TOOL_RESULT_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const isManifestToolName = (name: string): name is ToolName =>
+  Object.prototype.hasOwnProperty.call(toolManifest, name);
 
 type PermissionManager = {
   listApps: (refresh?: boolean) => Promise<InstalledApp[]>;
@@ -200,56 +203,57 @@ export class ToolRegistry {
   }
 
   async execute(request: ToolCallRequest): Promise<ToolCallResult> {
+    const name = request.name;
     const source = request.source === "realtime" ? "realtime" : "local";
     this.audit.write({
-      action: `tool.${request.name}`,
-      summary: `Received ${request.name} request from ${source}`,
+      action: `tool.${name}`,
+      summary: `Received ${name} request from ${source}`,
       status: "started",
       details: {
-        name: request.name,
+        name,
         source,
         callId: request.callId,
         arguments: request.arguments,
       },
     });
 
-    const schema = toolManifest[request.name]?.schema;
-    if (!schema) {
+    if (!isManifestToolName(name)) {
       this.audit.write({
-        action: `tool.${request.name}`,
-        summary: `Unknown tool: ${request.name}`,
+        action: `tool.${name}`,
+        summary: `Unknown tool: ${name}`,
         status: "error",
-        details: { name: request.name, source },
+        details: { name, source },
       });
-      return { ok: false, name: request.name, error: `Unknown tool: ${request.name}`, code: "unknown_tool" };
+      return { ok: false, name, error: `Unknown tool: ${name}`, code: "unknown_tool" };
     }
 
+    const schema = toolManifest[name].schema;
     const parsed = schema.safeParse(request.arguments);
     if (!parsed.success) {
       this.audit.write({
-        action: `tool.${request.name}`,
-        summary: `Invalid arguments for ${request.name}`,
+        action: `tool.${name}`,
+        summary: `Invalid arguments for ${name}`,
         status: "error",
         details: {
-          name: request.name,
+          name,
           source,
           issues: parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
         },
       });
       return {
         ok: false,
-        name: request.name,
+        name,
         error: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; "),
         code: "invalid_arguments",
       };
     }
 
     const args = parsed.data as Record<string, unknown>;
-    if (this.isTaskControlTool(request.name)) {
-      return this.executeTaskControlTool(request.name, args, source);
+    if (this.isTaskControlTool(name)) {
+      return this.executeTaskControlTool(name, args, source);
     }
 
-    return this.executeToolWithTimeout(request.name, args, source);
+    return this.executeToolWithTimeout(name, args, source);
   }
 
   private async executeToolWithTimeout(
