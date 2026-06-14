@@ -1,7 +1,8 @@
-import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName, type ToolGroup, type ToolName } from "../../shared/tools";
+import type { ToolGroup, ToolName } from "../../shared/tools";
 import type { CapabilityKey } from "../../shared/app-settings";
 import { defineTool, type ToolBundle, type ToolDefinition, type ToolHandler, type ToolRisk } from "./define-tool";
 import { toolBundles } from "./bundles";
+import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName } from "./metadata";
 import { toolSchemas } from "./schemas";
 
 export type ToolManifestEntry = ToolDefinition<Record<string, unknown>> & {
