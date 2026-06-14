@@ -27,6 +27,7 @@ import { MacMail } from "./mac-mail";
 import { CapabilityGate } from "../capability-gate";
 import { CodexAppServerHarness, type CodexProgressEvent, type CodexTaskInput } from "../codex/app-server-harness";
 import { CodingAgentRuntime } from "../agents/coding-agent/runtime";
+import { getUpdateStatus } from "../updates";
 import { MemoryStore, type MemoryLookupInput, type MemorySaveInput, type MemoryType } from "../memory-store";
 import { selectToolBundles } from "../agent/tool-bundle-router";
 import { classifyTaskExecution } from "../tasks/task-classifier";
@@ -597,6 +598,7 @@ export class ToolRegistry {
             nativeToolsFallback: config.codexNativeToolsFallback,
           },
           memory: this.memory.status(),
+          updates: getUpdateStatus(),
           toolGroups: this.listToolGroups(),
           taskQueue: this.taskQueueSummary(),
         };

@@ -3,6 +3,7 @@ node_modules/
 .npm-cache/
 dist/
 electron/dist/
+out/
 .vite/
 .env
 .env.*

@@ -2,6 +2,7 @@ import path from "node:path";
 import { app, BrowserWindow, ipcMain, shell, type Rectangle } from "electron";
 import { config } from "./config";
 import { startLocalServer, type LocalServer } from "./server";
+import { configureAutoUpdates } from "./updates";
 
 let mainWindow: BrowserWindow | null = null;
 let localServer: LocalServer | null = null;
@@ -112,6 +113,7 @@ ipcMain.handle("her-local-api:request", async (event, request: unknown) => {
 
 app.whenReady().then(async () => {
   localServer = await startLocalServer(config.serverPort, app.getPath("userData"), app.isPackaged);
+  configureAutoUpdates();
   await createWindow();
 
   app.on("activate", async () => {

@@ -52,6 +52,13 @@ const resolveRealtimeVoice = (value: string | undefined): RealtimeVoice => {
   return normalized && isRealtimeVoice(normalized) ? normalized : realtimeDefaultVoice;
 };
 
+type UpdateChannel = "stable" | "beta" | "canary";
+
+const resolveUpdateChannel = (value: string | undefined): UpdateChannel => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "beta" || normalized === "canary" ? normalized : "stable";
+};
+
 export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   realtimeMode,
@@ -77,6 +84,8 @@ export const config = {
   codexModel: process.env.HER_CODEX_MODEL ?? "",
   codexTurnTimeoutMs: boundedNumber(process.env.HER_CODEX_TURN_TIMEOUT_MS, 300000, 10000, 1800000),
   codexNativeToolsFallback: booleanEnv(process.env.HER_CODEX_NATIVE_TOOLS_FALLBACK, true),
+  updateChannel: resolveUpdateChannel(process.env.HER_UPDATE_CHANNEL),
+  updateFeedUrl: process.env.HER_UPDATE_FEED_URL ?? "",
   appleMusicCountry: process.env.HER_APPLE_MUSIC_COUNTRY ?? "us",
   appleMusicDeveloperToken: process.env.HER_APPLE_MUSIC_DEVELOPER_TOKEN ?? "",
   appleMusicTeamId: process.env.APPLE_TEAM_ID ?? process.env.HER_APPLE_MUSIC_TEAM_ID ?? "",
