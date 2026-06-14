@@ -22,6 +22,7 @@ const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
 const { domainManifests } = require("../electron/dist/main/tools/domain-manifests.js");
 const { toolSchemas } = require("../electron/dist/main/tools/schemas.js");
+const { summarizeToolCall } = require("../electron/dist/main/tools/summaries.js");
 const { AuditLog } = require("../electron/dist/main/audit.js");
 const { MemoryStore } = require("../electron/dist/main/memory-store.js");
 const { CapabilityGate } = require("../electron/dist/main/capability-gate.js");
@@ -56,6 +57,11 @@ for (const bundle of ["core", "filesystem", "documents", "comms", "media", "desk
   for (const [name, entry] of Object.entries(domainManifests[bundle] ?? {})) {
     if (toolManifest[name] !== entry) fail(`${bundle} domain manifest entry for ${name} does not reference central manifest.`);
   }
+}
+
+const sampleSummaryArgs = { path: "/tmp/example.txt", maxChars: 2000 };
+if (toolManifest.file_read.summarize(sampleSummaryArgs) !== summarizeToolCall("file_read", sampleSummaryArgs)) {
+  fail("Manifest file_read summary is not generated from tool summaries.");
 }
 
 const realtimeManifestNames = new Set(manifestRealtimeToolDefinitions.map((definition) => definition.name));
@@ -189,6 +195,7 @@ console.log(JSON.stringify({
     actionPlanConfirmation: true,
     schemaValidation: true,
     manifestSchemaOwnership: true,
+    manifestSummaryOwnership: true,
     disabledCapabilityDenied: true,
     unauthorizedAppDenied: true,
   },

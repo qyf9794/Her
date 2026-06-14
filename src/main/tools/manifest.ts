@@ -4,6 +4,7 @@ import { defineTool, type ToolBundle, type ToolDefinition, type ToolHandler, typ
 import { toolBundles } from "./bundles";
 import { allToolDefinitions, coreRealtimeToolNames, toolGroupByName } from "./metadata";
 import { toolSchemas } from "./schemas";
+import { summarizeToolCall } from "./summaries";
 
 export type ToolManifestEntry = ToolDefinition<Record<string, unknown>> & {
   parameters: Record<string, unknown>;
@@ -24,7 +25,6 @@ const highRiskTools = new Set<ToolRisk>([
 ]);
 
 const runtimeHandlers: Partial<Record<ToolName, ToolHandler<Record<string, unknown>>>> = {};
-const runtimeSummaries: Partial<Record<ToolName, (args: Record<string, unknown>) => string>> = {};
 
 const riskOverrides: Partial<Record<ToolName, ToolRisk>> = {
   codex_task_run: "coding_agent",
@@ -106,7 +106,7 @@ export const toolManifest = Object.fromEntries(
       risk: riskForTool(name),
       schema: toolSchemas[name],
       realtimeDescription: definition.description,
-      summarize: (args) => runtimeSummaries[name]?.(args) ?? `${titleForTool(name)} ${JSON.stringify(args)}`,
+      summarize: (args) => summarizeToolCall(name, args),
       handler: (args, context) => {
         const handler = runtimeHandlers[name];
         if (!handler) throw new Error(`Tool handler is not bound: ${name}`);
@@ -152,10 +152,6 @@ export const toolRequiresConfirmation = (name: ToolName) => highRiskTools.has(to
 
 export const attachToolHandlers = (handlers: Partial<Record<ToolName, ToolHandler<Record<string, unknown>>>>) => {
   Object.assign(runtimeHandlers, handlers);
-};
-
-export const attachToolSummaries = (summaries: Partial<Record<ToolName, (args: Record<string, unknown>) => string>>) => {
-  Object.assign(runtimeSummaries, summaries);
 };
 
 function bundleForGroup(group: ToolGroup | undefined, name: ToolName): ToolBundle {
