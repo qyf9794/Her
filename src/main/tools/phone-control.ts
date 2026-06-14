@@ -30,8 +30,18 @@ const run = (command: string, args: string[], timeoutMs = 8000) =>
 
 export class PhoneControl {
   async searchContacts(query: string, limit: number) {
-    const output = await run("osascript", ["-l", "JavaScript", "-e", contactsSearchJxa(query)], 10000);
-    return parseContactRows(output).slice(0, limit);
+    try {
+      const output = await run("osascript", ["-l", "JavaScript", "-e", contactsSearchJxa(query, limit)], 8000);
+      return { matches: parseContactRows(output).slice(0, limit), timedOut: false };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/timed out/i.test(message)) throw error;
+      return {
+        matches: [],
+        timedOut: true,
+        warning: "Contacts search timed out. macOS Contacts may be unavailable, waiting for privacy permission, or too large to scan through the current adapter.",
+      };
+    }
   }
 
   async call(phoneNumber: string, mode: PhoneCallMode = "phone", contactName?: string) {
@@ -59,9 +69,10 @@ export class PhoneControl {
   }
 }
 
-const contactsSearchJxa = (query: string) => `
+const contactsSearchJxa = (query: string, limit: number) => `
   const app = Application("Contacts");
   const q = ${JSON.stringify(query.toLowerCase())};
+  const limit = ${Math.max(1, Math.min(10, Math.floor(limit)))};
   const sep = String.fromCharCode(31);
   const rows = [];
   for (const person of app.people()) {
@@ -75,7 +86,9 @@ const contactsSearchJxa = (query: string) => `
     if (!matched) continue;
     for (const phone of phones) {
       rows.push([person.id(), name, phone.label() || "", phone.value() || ""].join(sep));
+      if (rows.length >= limit) break;
     }
+    if (rows.length >= limit) break;
   }
   rows.join("\\n");
 `;

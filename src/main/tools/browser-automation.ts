@@ -18,9 +18,11 @@ type RuntimeEvaluateResult = {
 
 export class BrowserAutomation {
   private isolatedChromePid?: number;
+  private lastOpenedUrl?: string;
 
   async openIsolatedUrl(rawUrl: string) {
     const url = this.assertAllowedUrl(rawUrl);
+    this.lastOpenedUrl = url.toString();
     await fs.mkdir(config.isolatedBrowserProfile, { recursive: true });
     const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     const args = [
@@ -188,24 +190,92 @@ export class BrowserAutomation {
     }
   }
 
+  async readPage(maxChars: number) {
+    const client = await this.connect();
+    try {
+      const expression = `(() => {
+        const visibleText = (document.body?.innerText || "")
+          .replace(/\\s+/g, " ")
+          .trim();
+        const links = Array.from(document.querySelectorAll("a[href]"))
+          .slice(0, 20)
+          .map((link) => ({
+            text: (link.innerText || link.getAttribute("aria-label") || "").replace(/\\s+/g, " ").trim().slice(0, 120),
+            href: link.href,
+          }))
+          .filter((link) => link.text || link.href);
+        const forms = Array.from(document.querySelectorAll("input, textarea, select"))
+          .slice(0, 30)
+          .map((field) => ({
+            tag: field.tagName.toLowerCase(),
+            type: field.getAttribute("type") || "",
+            name: field.getAttribute("name") || "",
+            id: field.id || "",
+            placeholder: field.getAttribute("placeholder") || "",
+            ariaLabel: field.getAttribute("aria-label") || "",
+          }));
+        return {
+          url: location.href,
+          title: document.title,
+          textLength: visibleText.length,
+          text: visibleText.slice(0, ${Math.max(200, Math.min(10000, maxChars))}),
+          links,
+          forms,
+        };
+      })()`;
+      return unwrapEvaluateResult(await client.call("Runtime.evaluate", { expression, returnByValue: true }));
+    } finally {
+      client.close();
+    }
+  }
+
   async playVideo() {
+    return this.controlVideo("play");
+  }
+
+  async controlVideo(action: "play" | "pause" | "toggle" | "state") {
     const client = await this.connect();
     try {
       const expression = `(() => {
         const video = document.querySelector("video");
         if (!video) return { ok: false, error: "video_not_found", url: location.href, title: document.title };
+        const snapshot = () => ({
+          ok: true,
+          action: ${JSON.stringify(action)},
+          url: location.href,
+          title: document.title,
+          paused: video.paused,
+          currentTime: Math.round(video.currentTime * 10) / 10,
+          duration: Number.isFinite(video.duration) ? Math.round(video.duration * 10) / 10 : null,
+          readyState: video.readyState,
+          muted: video.muted,
+          volume: Math.round(video.volume * 100) / 100,
+        });
+        if (${JSON.stringify(action)} === "state") return snapshot();
+        if (${JSON.stringify(action)} === "pause") {
+          video.pause();
+          return snapshot();
+        }
+        if (${JSON.stringify(action)} === "toggle" && !video.paused) {
+          video.pause();
+          return snapshot();
+        }
         return Promise.resolve(video.play())
           .then(() => ({
             ok: true,
+            action: ${JSON.stringify(action)},
             url: location.href,
             title: document.title,
             paused: video.paused,
             currentTime: Math.round(video.currentTime * 10) / 10,
             duration: Number.isFinite(video.duration) ? Math.round(video.duration * 10) / 10 : null,
             readyState: video.readyState,
+            muted: video.muted,
+            volume: Math.round(video.volume * 100) / 100,
           }))
           .catch((error) => ({
             ok: false,
+            action: ${JSON.stringify(action)},
             error: error && error.name ? error.name : "play_failed",
             message: error && error.message ? error.message : String(error),
             url: location.href,
@@ -214,6 +284,8 @@ export class BrowserAutomation {
             currentTime: Math.round(video.currentTime * 10) / 10,
             duration: Number.isFinite(video.duration) ? Math.round(video.duration * 10) / 10 : null,
             readyState: video.readyState,
+            muted: video.muted,
+            volume: Math.round(video.volume * 100) / 100,
           }));
       })()`;
       return unwrapEvaluateResult(await client.call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }));
@@ -233,9 +305,14 @@ export class BrowserAutomation {
       signal: AbortSignal.timeout(3000),
     }).then((res) => res.json())) as Array<{
       type: string;
+      url?: string;
       webSocketDebuggerUrl?: string;
     }>;
-    const page = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
+    const controllablePages = pages.filter((item) => item.type === "page" && item.webSocketDebuggerUrl);
+    const expectedUrl = this.lastOpenedUrl;
+    const page = expectedUrl
+      ? controllablePages.find((item) => sameBrowserTarget(item.url, expectedUrl)) ?? controllablePages[0]
+      : controllablePages[0];
     if (!page?.webSocketDebuggerUrl) {
       throw new Error("No isolated Chrome page found. Open one with browser_isolated_open_url first.");
     }
@@ -320,6 +397,27 @@ const processExists = (processId: number) => {
     return true;
   } catch {
     return false;
+  }
+};
+
+const sameBrowserTarget = (candidate: string | undefined, expected: string) => {
+  if (!candidate) return false;
+  const normalizedCandidate = normalizeTargetUrl(candidate);
+  const normalizedExpected = normalizeTargetUrl(expected);
+  return (
+    normalizedCandidate === normalizedExpected ||
+    normalizedCandidate.startsWith(normalizedExpected) ||
+    normalizedExpected.startsWith(normalizedCandidate)
+  );
+};
+
+const normalizeTargetUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return value.replace(/\/$/, "");
   }
 };
 

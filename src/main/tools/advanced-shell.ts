@@ -31,7 +31,7 @@ export class AdvancedShell {
     for (const dir of config.allowedDirectories) {
       if (command.includes(dir)) return;
     }
-    if (!/\b(ls|find|pwd|date|whoami|du|df|cat|head|tail|wc)\b/.test(command)) {
+    if (!/\b(ls|find|pwd|date|whoami|du|df|cat|head|tail|wc)\b/.test(command) && !/\bgit\s+(status|log|show|branch|diff)\b/.test(command)) {
       throw new Error("Shell command must reference an allowlisted directory unless it is clearly read-only.");
     }
   }

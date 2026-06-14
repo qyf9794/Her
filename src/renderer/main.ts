@@ -167,7 +167,10 @@ app.innerHTML = `
           <div id="runtimeCapabilities" class="toggleGrid compact"></div>
         </section>
         <section>
-          <h2>Authorized Apps</h2>
+          <div class="sectionHeader">
+            <h2>Authorized Apps</h2>
+            <button id="manageAppsBtn" type="button">Manage Apps</button>
+          </div>
           <div id="authorizedApps" class="authorizedApps"></div>
         </section>
         <section>
@@ -185,6 +188,16 @@ app.innerHTML = `
       </aside>
     </section>
   </main>
+  <div id="resultWindow" class="resultWindow hidden" role="dialog" aria-modal="false" aria-label="Tool result">
+    <div class="resultWindowChrome">
+      <div>
+        <h2 id="resultWindowTitle">Result</h2>
+        <p id="resultWindowSubtitle"></p>
+      </div>
+      <button id="resultWindowCloseBtn" type="button" aria-label="Close result">Close</button>
+    </div>
+    <div id="resultWindowBody" class="resultWindowBody"></div>
+  </div>
 `;
 
 const onboarding = document.querySelector<HTMLDivElement>("#onboarding")!;
@@ -204,6 +217,11 @@ const textInput = document.querySelector<HTMLInputElement>("#textInput")!;
 const transcript = document.querySelector<HTMLDivElement>("#transcript")!;
 const confirmations = document.querySelector<HTMLDivElement>("#confirmations")!;
 const activity = document.querySelector<HTMLDivElement>("#activity")!;
+const resultWindow = document.querySelector<HTMLDivElement>("#resultWindow")!;
+const resultWindowTitle = document.querySelector<HTMLHeadingElement>("#resultWindowTitle")!;
+const resultWindowSubtitle = document.querySelector<HTMLParagraphElement>("#resultWindowSubtitle")!;
+const resultWindowBody = document.querySelector<HTMLDivElement>("#resultWindowBody")!;
+const resultWindowCloseBtn = document.querySelector<HTMLButtonElement>("#resultWindowCloseBtn")!;
 const orbMount = document.querySelector<HTMLDivElement>("#orbMount")!;
 const userMeter = document.querySelector<HTMLSpanElement>("#userMeter")!;
 const aiMeter = document.querySelector<HTMLSpanElement>("#aiMeter")!;
@@ -211,6 +229,7 @@ const finishOnboardingBtn = document.querySelector<HTMLButtonElement>("#finishOn
 const onboardingYoloBtn = document.querySelector<HTMLButtonElement>("#onboardingYoloBtn")!;
 const refreshAppsBtn = document.querySelector<HTMLButtonElement>("#refreshAppsBtn")!;
 const openPermissionsBtn = document.querySelector<HTMLButtonElement>("#openPermissionsBtn")!;
+const manageAppsBtn = document.querySelector<HTMLButtonElement>("#manageAppsBtn")!;
 const yoloModeBtn = document.querySelector<HTMLButtonElement>("#yoloModeBtn")!;
 const yoloModeStatus = document.querySelector<HTMLParagraphElement>("#yoloModeStatus")!;
 const openaiKeyInput = document.querySelector<HTMLInputElement>("#openaiKeyInput")!;
@@ -845,6 +864,91 @@ const addActivity = (text: string, status: "ok" | "pending" | "error" = "ok") =>
   activity.prepend(item);
 };
 
+type ToolDisplay = {
+  title?: string;
+  subtitle?: string;
+  kind?: string;
+  generatedAt?: string;
+  source?: string;
+  metrics?: Array<{ label?: string; value?: string; detail?: string }>;
+  items?: Array<{
+    title?: string;
+    subtitle?: string;
+    body?: string;
+    url?: string;
+    meta?: Record<string, unknown>;
+  }>;
+  note?: string;
+};
+
+const isToolDisplay = (value: unknown): value is ToolDisplay => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as ToolDisplay;
+  return typeof candidate.title === "string" && Array.isArray(candidate.items);
+};
+
+const findToolDisplay = (value: unknown, depth = 0): ToolDisplay | undefined => {
+  if (depth > 5 || !value || typeof value !== "object") return undefined;
+  const objectValue = value as Record<string, unknown>;
+  if (isToolDisplay(objectValue.display)) return objectValue.display;
+  for (const nested of Object.values(objectValue)) {
+    const found = findToolDisplay(nested, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const renderToolDisplay = (display: ToolDisplay) => {
+  resultWindowTitle.textContent = display.title ?? "Result";
+  resultWindowSubtitle.textContent = [display.subtitle, display.source, display.generatedAt ? new Date(display.generatedAt).toLocaleString() : ""]
+    .filter(Boolean)
+    .join(" · ");
+
+  const metrics = (display.metrics ?? [])
+    .map((metric) => `
+      <div class="resultMetric">
+        <span>${escapeHtml(metric.label ?? "")}</span>
+        <strong>${escapeHtml(metric.value ?? "")}</strong>
+        ${metric.detail ? `<small>${escapeHtml(metric.detail)}</small>` : ""}
+      </div>
+    `)
+    .join("");
+
+  const items = (display.items ?? [])
+    .map((item) => {
+      const meta = item.meta
+        ? Object.entries(item.meta)
+            .filter(([, value]) => value !== undefined && value !== "")
+            .map(([key, value]) => `<span>${escapeHtml(key)}: ${escapeHtml(String(value))}</span>`)
+            .join("")
+        : "";
+      const title = item.url
+        ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title ?? item.url)}</a>`
+        : escapeHtml(item.title ?? "Untitled");
+      return `
+        <article class="resultItem">
+          <h3>${title}</h3>
+          ${item.subtitle ? `<p class="resultSubtitle">${escapeHtml(item.subtitle)}</p>` : ""}
+          ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
+          ${meta ? `<div class="resultMeta">${meta}</div>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+
+  resultWindowBody.innerHTML = `
+    ${metrics ? `<section class="resultMetrics">${metrics}</section>` : ""}
+    <section class="resultItems">${items || `<p class="resultEmpty">No displayable rows returned.</p>`}</section>
+    ${display.note ? `<p class="resultNote">${escapeHtml(display.note)}</p>` : ""}
+  `;
+  resultWindow.classList.remove("hidden");
+};
+
+const maybeShowToolDisplay = (result: unknown) => {
+  const display = findToolDisplay(result);
+  if (display) renderToolDisplay(display);
+};
+
 const renderRealtimeUsage = () => {
   const cacheRatio =
     realtimeUsageStats.inputTokens > 0
@@ -1261,6 +1365,7 @@ const executeLocalToolForSdk = async (name: string, input: unknown, callId?: str
     renderConfirmation(result);
   } else if (result.ok) {
     setVisualState("listening");
+    maybeShowToolDisplay(result);
     if (name === "app_permission_set" || name === "capability_set" || name === "yolo_mode_set") {
       await reloadSettingsAndApps();
     }
@@ -1582,9 +1687,11 @@ onboardingYoloBtn.addEventListener("click", async () => {
 });
 refreshAppsBtn.addEventListener("click", () => void refreshApps());
 openPermissionsBtn.addEventListener("click", () => showOnboarding(true));
+manageAppsBtn.addEventListener("click", () => showOnboarding(true));
 yoloModeBtn.addEventListener("click", () => void saveYoloMode(!settings?.yoloMode));
 orbOnlyBtn.addEventListener("click", () => setOrbOnlyMode(!isOrbOnly));
 restorePanelBtn.addEventListener("click", () => setOrbOnlyMode(false));
+resultWindowCloseBtn.addEventListener("click", () => resultWindow.classList.add("hidden"));
 saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
 refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus());
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());

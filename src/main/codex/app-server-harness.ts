@@ -55,6 +55,7 @@ export type CodexTaskResult = {
   status: "completed" | "failed";
   finalText: string;
   eventCounts: Record<string, number>;
+  diagnostics?: string[];
   cwd: string;
   sandbox: CodexTaskSandbox;
 };
@@ -63,9 +64,12 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 60000;
 
 const codexDeveloperInstructions = () => [
   "You are running as HER's background Codex runtime. Report progress and results as HER, not as Codex.",
-  "Do not attempt to call HER desktop/media/browser/phone tools directly; this task has no HER tool bridge.",
+  "Do not attempt to control macOS, desktop apps, media, browser, phone, calendar, reminders, or notes directly with shell, AppleScript, MCP, plugins, or computer-use when HER exposes a matching local tool.",
+  "For HER local actions, request execution only through HER Tool Gateway by including exactly one final <her_tool_gateway> JSON block. HER will validate tool names, arguments, permissions, confirmations, and enabled groups before anything executes.",
+  "HER Tool Gateway block format: <her_tool_gateway>{\"requests\":[{\"toolName\":\"tool_name\",\"arguments\":{},\"priority\":\"normal\",\"reason\":\"why this HER tool is needed\"}]}</her_tool_gateway>.",
+  "Do not claim HER tool requests executed. Say they are being requested through HER Gateway; HER will queue or confirm them after your turn.",
   config.codexNativeToolsFallback
-    ? "If HER's exposed tool namespace lacks a provider for a required step, you may use Codex-native tools, MCP servers, or plugins already available inside this Codex runtime, including Computer Use when configured. Treat these as Codex-native fallback tools, not HER tools. If a needed native tool is unavailable or blocked, report that explicitly instead of pretending the action completed."
+    ? "If HER's exposed tool namespace lacks a provider for a non-side-effecting research or code step, you may use Codex-native tools, MCP servers, or plugins already available inside this Codex runtime. Treat these as Codex-native fallback tools, not HER tool execution. If a needed native tool is unavailable or blocked, report that explicitly instead of pretending the action completed."
     : "Do not use Codex-native tools, MCP servers, plugins, or Computer Use as a fallback. If HER's exposed tool namespace lacks a provider, report the missing provider explicitly.",
   "Do not perform purchases, bookings, publishing, sending, deleting, calling, or other irreversible actions through fallback tools. Return a plan or ask HER/user for confirmation instead.",
 ].join(" ");
@@ -86,6 +90,7 @@ export class CodexAppServerHarness {
     const eventCounts: Record<string, number> = {};
     const deltaTextParts: string[] = [];
     const completedTextParts: string[] = [];
+    const diagnostics: string[] = [];
     let threadId: string | undefined;
     let turnId: string | undefined;
     let completedStatus: "completed" | "failed" = "completed";
@@ -115,6 +120,8 @@ export class CodexAppServerHarness {
         const text = extractNotificationText(method, params);
         if (text && method === "item/agentMessage/delta") deltaTextParts.push(text);
         else if (text) completedTextParts.push(text);
+        const diagnostic = extractDiagnosticText(method, params);
+        if (diagnostic) diagnostics.push(diagnostic);
         if (method === "turn/completed") {
           const status = readNestedString(params, ["turn", "status"]) ?? readStringProp(params, "status");
           if (status && !/completed|succeeded|success/i.test(status)) completedStatus = "failed";
@@ -165,7 +172,7 @@ export class CodexAppServerHarness {
         action: "codex.task",
         summary: `Codex task ${completedStatus}`,
         status: completedStatus === "completed" ? "ok" : "error",
-        details: { threadId, turnId, eventCounts, finalText },
+        details: { threadId, turnId, eventCounts, finalText, diagnostics },
       });
       return {
         provider: "codex",
@@ -174,6 +181,7 @@ export class CodexAppServerHarness {
         status: completedStatus,
         finalText,
         eventCounts,
+        ...(diagnostics.length ? { diagnostics } : {}),
         cwd,
         sandbox,
       };
@@ -412,6 +420,18 @@ const extractNotificationText = (method: string, params: JsonValue | undefined) 
   return nested ?? "";
 };
 
+const extractDiagnosticText = (method: string, params: JsonValue | undefined) => {
+  if (!/warning|error|failed/i.test(method)) return "";
+  return (
+    readStringProp(params, "message") ??
+    readNestedString(params, ["error", "message"]) ??
+    readNestedString(params, ["error", "data", "message"]) ??
+    readNestedString(params, ["item", "message"]) ??
+    readNestedString(params, ["item", "error", "message"]) ??
+    ""
+  ).slice(0, 1000);
+};
+
 const normalizeFinalText = (deltaParts: string[], completedParts: string[]) => {
   const text = (deltaParts.length ? deltaParts.join("") : completedParts.join("\n")).trim();
   return text || "Codex completed without a final text message.";
@@ -419,9 +439,12 @@ const normalizeFinalText = (deltaParts: string[], completedParts: string[]) => {
 
 const compactCodexEvent = (method: string, params: JsonValue | undefined) => {
   const text = extractNotificationText(method, params);
+  const diagnostic = extractDiagnosticText(method, params);
   return {
     method,
     text: text ? text.slice(0, 500) : undefined,
+    diagnostic: diagnostic || undefined,
+    itemType: readNestedString(params, ["item", "type"]) ?? readStringProp(params, "type"),
     threadId: readNestedString(params, ["turn", "threadId"]) ?? readStringProp(params, "threadId"),
     turnId: readNestedString(params, ["turn", "id"]) ?? readStringProp(params, "turnId"),
   };
