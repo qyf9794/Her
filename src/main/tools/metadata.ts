@@ -141,7 +141,7 @@ export const allToolDefinitions = [
   {
     type: "function",
     name: "task_status",
-    description: "Read one task queue item by id, including status, confirmation id when waiting for approval, and compact result when complete.",
+    description: "Read one task by id, including status, confirmation id when waiting for approval, and compact result when complete.",
     parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
   },
   {
@@ -149,7 +149,7 @@ export const allToolDefinitions = [
     name: "task_list",
     description: "List recent task queue items with compact status. Use this to monitor queued or running work without loading large outputs.",
     parameters: objectSchema({
-      status: { type: "string", enum: ["queued", "running", "completed", "failed", "cancelled", "needs_confirmation"] },
+      status: { type: "string", enum: ["queued", "running", "awaiting_confirmation", "blocked", "completed", "failed", "cancelled", "needs_confirmation"] },
       limit: { type: "integer", minimum: 1, maximum: 30, default: 10 },
     }),
   },
@@ -158,6 +158,18 @@ export const allToolDefinitions = [
     name: "task_cancel",
     description: "Cancel a queued task. Running tasks cannot be force-killed, but queued work is skipped.",
     parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
+  },
+  {
+    type: "function",
+    name: "task_events",
+    description: "Read recent HER Task Runtime events for one task.",
+    parameters: objectSchema(
+      {
+        taskId: { type: "string" },
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+      },
+      ["taskId"],
+    ),
   },
   {
     type: "function",
@@ -293,6 +305,51 @@ export const allToolDefinitions = [
       },
       ["prompt"],
     ),
+  },
+  {
+    type: "function",
+    name: "coding_agent_start",
+    description: "Start an asynchronous Codex coding-agent task in an isolated git worktree. This requires user confirmation by default.",
+    parameters: objectSchema(
+      {
+        prompt: { type: "string", description: "The coding task to run." },
+        repoPath: { type: "string", description: "Git repository path. Defaults to HER's current project directory." },
+        mode: { type: "string", enum: ["plan", "review", "patch", "test_fix"], default: "plan" },
+        timeoutMs: { type: "integer", minimum: 10000, maximum: 1800000, default: 300000 },
+      },
+      ["prompt"],
+    ),
+  },
+  {
+    type: "function",
+    name: "coding_agent_status",
+    description: "Read one Codex coding-agent task status and recent events.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
+  },
+  {
+    type: "function",
+    name: "coding_agent_continue",
+    description: "Continue a completed or failed Codex coding-agent task in the same isolated worktree. This requires confirmation by default.",
+    parameters: objectSchema(
+      {
+        taskId: { type: "string" },
+        prompt: { type: "string", description: "Follow-up instructions for Codex." },
+        timeoutMs: { type: "integer", minimum: 10000, maximum: 1800000, default: 300000 },
+      },
+      ["taskId", "prompt"],
+    ),
+  },
+  {
+    type: "function",
+    name: "coding_agent_cancel",
+    description: "Cancel a queued or running Codex coding-agent task.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
+  },
+  {
+    type: "function",
+    name: "coding_agent_get_result",
+    description: "Read the final result, worktree path, and branch for a Codex coding-agent task.",
+    parameters: objectSchema({ taskId: { type: "string" } }, ["taskId"]),
   },
   {
     type: "function",
@@ -1234,10 +1291,11 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   }),
   task_status: z.object({ taskId: z.string().min(1) }),
   task_list: z.object({
-    status: z.enum(["queued", "running", "completed", "failed", "cancelled", "needs_confirmation"]).optional(),
+    status: z.enum(["queued", "running", "awaiting_confirmation", "blocked", "completed", "failed", "cancelled", "needs_confirmation"]).optional(),
     limit: z.number().int().min(1).max(30).optional().default(10),
   }),
   task_cancel: z.object({ taskId: z.string().min(1) }),
+  task_events: z.object({ taskId: z.string().min(1), limit: z.number().int().min(1).max(100).optional().default(50) }),
   task_route: z.object({
     userRequest: z.string().min(1),
     preference: z.enum(["auto", "native", "search", "codex"]).optional().default("auto"),
@@ -1310,6 +1368,20 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
     timeoutMs: z.number().int().min(10000).max(1800000).optional().default(config.codexTurnTimeoutMs),
     memoryIds: z.array(z.string()).optional().default([]),
   }),
+  coding_agent_start: z.object({
+    prompt: z.string().min(1),
+    repoPath: z.string().min(1).optional(),
+    mode: z.enum(["plan", "review", "patch", "test_fix"]).optional().default("plan"),
+    timeoutMs: z.number().int().min(10000).max(1800000).optional().default(config.codexTurnTimeoutMs),
+  }),
+  coding_agent_status: z.object({ taskId: z.string().min(1) }),
+  coding_agent_continue: z.object({
+    taskId: z.string().min(1),
+    prompt: z.string().min(1),
+    timeoutMs: z.number().int().min(10000).max(1800000).optional().default(config.codexTurnTimeoutMs),
+  }),
+  coding_agent_cancel: z.object({ taskId: z.string().min(1) }),
+  coding_agent_get_result: z.object({ taskId: z.string().min(1) }),
   yolo_mode_set: z.object({ enabled: z.boolean() }),
   file_list: z.object({ path: z.string().min(1), includeHidden: z.boolean().optional().default(false) }),
   file_search: z.object({ root: z.string().min(1), query: z.string(), maxDepth: z.number().int().min(1).max(8).optional().default(4), limit: z.number().int().min(1).max(50).optional().default(20) }),
@@ -1493,6 +1565,7 @@ export const coreRealtimeToolNames = [
   "task_status",
   "task_list",
   "task_cancel",
+  "task_events",
   "memory_save",
   "memory_forget",
   "memory_status",
@@ -1500,6 +1573,11 @@ export const coreRealtimeToolNames = [
 
 export const toolGroupByName = {
   codex_task_run: "agents",
+  coding_agent_start: "agents",
+  coding_agent_status: "agents",
+  coding_agent_continue: "agents",
+  coding_agent_cancel: "agents",
+  coding_agent_get_result: "agents",
   yolo_mode_set: "permissions",
   app_permission_search: "permissions",
   app_permission_set: "permissions",
@@ -1597,6 +1675,8 @@ export const toolGroupByName = {
 
 export const toolRiskOverrides: Partial<Record<ToolName, ToolRisk>> = {
   codex_task_run: "coding_agent",
+  coding_agent_start: "coding_agent",
+  coding_agent_continue: "coding_agent",
   phone_call: "external_send",
   file_open: "local_open",
   file_create_folder: "local_write",

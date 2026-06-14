@@ -8,6 +8,8 @@ import {
   type TransportEvent,
 } from "@openai/agents/realtime";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../shared/app-settings";
+import type { CodingAgentTaskView } from "../shared/agents/coding-agent";
+import type { HerTaskView } from "../shared/tasks";
 import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
 import {
   createRealtimeSessionConfig,
@@ -154,6 +156,20 @@ app.innerHTML = `
           </div>
           <pre id="codexLoginOutput" class="codexLoginOutput hidden"></pre>
         </section>
+        <section class="agentRunsPanel">
+          <div class="sectionHeader">
+            <h2>Tasks</h2>
+            <button id="refreshTasksBtn" type="button">Refresh</button>
+          </div>
+          <div id="taskRuns" class="agentRuns empty">No active tasks</div>
+        </section>
+        <section class="agentRunsPanel">
+          <div class="sectionHeader">
+            <h2>Codex Runs</h2>
+            <button id="refreshAgentRunsBtn" type="button">Refresh</button>
+          </div>
+          <div id="agentRuns" class="agentRuns empty">No coding agent runs</div>
+        </section>
         <section class="devicePanel">
           <div class="sectionHeader">
             <h2>Microphone</h2>
@@ -274,6 +290,10 @@ const startCodexLoginBtn = document.querySelector<HTMLButtonElement>("#startCode
 const codexLoginOutput = document.querySelector<HTMLPreElement>("#codexLoginOutput")!;
 const codexModelSelect = document.querySelector<HTMLSelectElement>("#codexModelSelect")!;
 const codexModelStatus = document.querySelector<HTMLParagraphElement>("#codexModelStatus")!;
+const refreshTasksBtn = document.querySelector<HTMLButtonElement>("#refreshTasksBtn")!;
+const taskRuns = document.querySelector<HTMLDivElement>("#taskRuns")!;
+const refreshAgentRunsBtn = document.querySelector<HTMLButtonElement>("#refreshAgentRunsBtn")!;
+const agentRuns = document.querySelector<HTMLDivElement>("#agentRuns")!;
 const microphoneSelect = document.querySelector<HTMLSelectElement>("#microphoneSelect")!;
 const refreshMicrophonesBtn = document.querySelector<HTMLButtonElement>("#refreshMicrophonesBtn")!;
 const microphoneStatus = document.querySelector<HTMLParagraphElement>("#microphoneStatus")!;
@@ -312,6 +332,8 @@ let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId
 let isOrbOnly = window.localStorage.getItem("her:orbOnly") === "true";
 let musicPlaybackPoll: number | undefined;
 let currentMiniPlayerTrack: MiniPlayerTrack | undefined;
+let taskRunsPoll: number | undefined;
+let agentRunsPoll: number | undefined;
 
 type MiniPlayerTrack = {
   id: string;
@@ -375,6 +397,10 @@ const initialize = async () => {
     await loadMusicKitStatus();
     await loadCodexLoginStatus();
     await loadCodexModel();
+    await loadTaskRuns();
+    startTaskRunsPolling();
+    await loadAgentRuns();
+    startAgentRunsPolling();
     await refreshMicrophoneDevices();
     startMusicPlaybackRequestPolling();
     installedApps = await getJson<InstalledApp[]>("/api/apps");
@@ -789,6 +815,122 @@ const startCodexLogin = async () => {
     renderCodexLoginStatus({ configured: false, label: "Error", detail: message });
     startCodexLoginBtn.disabled = false;
     addActivity(`Codex login failed: ${message}`, "error");
+  }
+};
+
+const startTaskRunsPolling = () => {
+  if (taskRunsPoll) return;
+  taskRunsPoll = window.setInterval(() => void loadTaskRuns(), 2000);
+};
+
+const loadTaskRuns = async () => {
+  try {
+    const response = await getJson<{ tasks: HerTaskView[] }>("/api/tasks?limit=10");
+    renderTaskRuns(response.tasks);
+  } catch (error) {
+    taskRuns.textContent = `Tasks unavailable: ${errorMessage(error)}`;
+    taskRuns.classList.add("empty");
+  }
+};
+
+const renderTaskRuns = (tasks: HerTaskView[]) => {
+  taskRuns.textContent = "";
+  taskRuns.classList.toggle("empty", tasks.length === 0);
+  if (!tasks.length) {
+    taskRuns.textContent = "No active tasks";
+    return;
+  }
+
+  for (const task of tasks) {
+    const item = document.createElement("article");
+    item.className = `agentRun ${task.status}`;
+    const latest = task.events.at(-1);
+    const canCancel = task.status === "queued" || task.status === "blocked" || task.status === "awaiting_confirmation" || task.status === "running";
+    item.innerHTML = `
+      <div class="agentRunHeader">
+        <strong>${escapeHtml(task.kind)} · ${escapeHtml(task.status)}</strong>
+        ${canCancel ? `<button type="button" data-task-cancel="${escapeHtml(task.id)}">Cancel</button>` : ""}
+      </div>
+      <p>${escapeHtml(truncateText(task.summary, 180))}</p>
+      <div class="agentRunMeta">
+        <span>${escapeHtml(task.id.slice(0, 8))}</span>
+        ${task.toolName ? `<span>${escapeHtml(task.toolName)}</span>` : ""}
+        ${task.confirmationId ? `<span>confirm ${escapeHtml(task.confirmationId.slice(0, 8))}</span>` : ""}
+      </div>
+      ${task.progress?.message ? `<p class="agentRunEvent">${escapeHtml(task.progress.message)}</p>` : ""}
+      ${latest && "message" in latest ? `<p class="agentRunEvent">${escapeHtml(String(latest.message))}</p>` : ""}
+      ${task.error?.message ? `<p class="agentRunError">${escapeHtml(task.error.message)}</p>` : ""}
+    `;
+    taskRuns.append(item);
+  }
+};
+
+const cancelTaskRun = async (taskId: string) => {
+  try {
+    await postJson(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, {});
+    await loadTaskRuns();
+  } catch (error) {
+    addActivity(`Task cancel failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const startAgentRunsPolling = () => {
+  if (agentRunsPoll) return;
+  agentRunsPoll = window.setInterval(() => void loadAgentRuns(), 2500);
+};
+
+const loadAgentRuns = async () => {
+  try {
+    const response = await getJson<{ tasks: CodingAgentTaskView[] }>("/api/agents/coding/tasks?limit=8");
+    renderAgentRuns(response.tasks);
+  } catch (error) {
+    agentRuns.textContent = `Agent runs unavailable: ${errorMessage(error)}`;
+    agentRuns.classList.add("empty");
+  }
+};
+
+const renderAgentRuns = (tasks: CodingAgentTaskView[]) => {
+  agentRuns.textContent = "";
+  agentRuns.classList.toggle("empty", tasks.length === 0);
+  if (!tasks.length) {
+    agentRuns.textContent = "No coding agent runs";
+    return;
+  }
+
+  for (const task of tasks) {
+    const item = document.createElement("article");
+    item.className = `agentRun ${task.status}`;
+    const latest = task.events.at(-1);
+    const branch = task.branch ? `<span>${escapeHtml(task.branch)}</span>` : "";
+    const result = task.resultText ? `<p>${escapeHtml(truncateText(task.resultText, 220))}</p>` : "";
+    const cancel = task.status === "queued" || task.status === "running"
+      ? `<button type="button" data-agent-cancel="${escapeHtml(task.id)}">Cancel</button>`
+      : "";
+    item.innerHTML = `
+      <div class="agentRunHeader">
+        <strong>${escapeHtml(task.mode)} · ${escapeHtml(task.status)}</strong>
+        ${cancel}
+      </div>
+      <p>${escapeHtml(truncateText(task.prompt, 180))}</p>
+      <div class="agentRunMeta">
+        <span>${escapeHtml(task.id.slice(0, 8))}</span>
+        ${branch}
+        ${task.worktreePath ? `<span>${escapeHtml(task.worktreePath)}</span>` : ""}
+      </div>
+      ${latest ? `<p class="agentRunEvent">${escapeHtml(latest.message)}</p>` : ""}
+      ${task.error ? `<p class="agentRunError">${escapeHtml(task.error)}</p>` : ""}
+      ${result}
+    `;
+    agentRuns.append(item);
+  }
+};
+
+const cancelAgentRun = async (taskId: string) => {
+  try {
+    await postJson(`/api/agents/coding/tasks/${encodeURIComponent(taskId)}/cancel`, {});
+    await loadAgentRuns();
+  } catch (error) {
+    addActivity(`Agent cancel failed: ${errorMessage(error)}`, "error");
   }
 };
 
@@ -1599,6 +1741,9 @@ const errorMessage = (error: unknown) => {
   }
 };
 
+const truncateText = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
+
 let activeAssistantLine: HTMLDivElement | null = null;
 const appendAssistantDelta = (text: string) => {
   if (!text) return;
@@ -1904,6 +2049,8 @@ miniPlayerPauseBtn.addEventListener("click", () => void pauseMiniPlayer());
 refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus());
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
 codexModelSelect.addEventListener("change", () => void saveCodexModel());
+refreshTasksBtn.addEventListener("click", () => void loadTaskRuns());
+refreshAgentRunsBtn.addEventListener("click", () => void loadAgentRuns());
 realtimeVoiceSelect.addEventListener("change", () => void saveRealtimeVoice());
 openaiKeyInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") void saveOpenaiKey();
@@ -1946,6 +2093,16 @@ confirmations.addEventListener("click", (event) => {
   const item = target.closest<HTMLElement>(".confirmation");
   if (!button || !item?.dataset.id) return;
   void decideConfirmation(item.dataset.id, button.dataset.decision === "approve");
+});
+taskRuns.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-task-cancel]");
+  if (!button?.dataset.taskCancel) return;
+  void cancelTaskRun(button.dataset.taskCancel);
+});
+agentRuns.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-agent-cancel]");
+  if (!button?.dataset.agentCancel) return;
+  void cancelAgentRun(button.dataset.agentCancel);
 });
 
 setState("idle", "Idle");

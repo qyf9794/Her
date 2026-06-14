@@ -49,6 +49,7 @@ const samples = {
   task_status: { taskId: "missing-routing-smoke-task" },
   task_list: { limit: 10 },
   task_cancel: { taskId: "missing-routing-smoke-task" },
+  task_events: { taskId: "missing-routing-smoke-task", limit: 10 },
   task_route: { userRequest: "Open Google Chrome and search for HER local routing.", preference: "auto" },
   intent_route: {
     intent: {
@@ -76,6 +77,11 @@ const samples = {
   memory_forget: { idOrKey: "routing-smoke" },
   memory_status: {},
   codex_task_run: { prompt: "List the current directory.", cwd: tmpRoot, sandbox: "read_only", timeoutMs: 10000 },
+  coding_agent_start: { prompt: "Inspect this repository without editing files.", repoPath: root, mode: "plan", timeoutMs: 10000 },
+  coding_agent_status: { taskId: "missing-routing-smoke-coding-task" },
+  coding_agent_continue: { taskId: "missing-routing-smoke-coding-task", prompt: "Continue the smoke task.", timeoutMs: 10000 },
+  coding_agent_cancel: { taskId: "missing-routing-smoke-coding-task" },
+  coding_agent_get_result: { taskId: "missing-routing-smoke-coding-task" },
   yolo_mode_set: { enabled: false },
   app_permission_search: { query: "", limit: 8 },
   app_permission_set: { appName: "Google Chrome", authorized: true },

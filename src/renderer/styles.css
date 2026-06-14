@@ -625,6 +625,13 @@ body.orbOnlyActive .productShell {
   background: #686c70;
 }
 
+.agentRunsPanel {
+  border: 1px solid #7b8586;
+  border-radius: 8px;
+  padding: 12px;
+  background: #666b70;
+}
+
 .devicePanel {
   border: 1px solid #7b8586;
   border-radius: 8px;
@@ -703,6 +710,81 @@ body.orbOnlyActive .productShell {
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.agentRuns {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.agentRun {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #7b8085;
+  border-radius: 8px;
+  padding: 10px;
+  background: #60666a;
+  color: #eef2f1;
+}
+
+.agentRun.running {
+  border-color: #6fceb8;
+}
+
+.agentRun.failed,
+.agentRun.cancelled {
+  border-color: #9d5058;
+}
+
+.agentRunHeader {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.agentRunHeader strong {
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.agentRunHeader button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.agentRun p {
+  color: #e8eeee;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.agentRunMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.agentRunMeta span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid #778086;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #d5dbda;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentRunEvent {
+  color: #d6fff4 !important;
+}
+
+.agentRunError {
+  color: #ffb4a8 !important;
 }
 
 .keyBadge {

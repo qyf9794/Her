@@ -26,8 +26,13 @@ import { MacProductivity, type MacCalendarCreateInput, type MacNoteCreateInput, 
 import { MacMail } from "./mac-mail";
 import { CapabilityGate } from "../capability-gate";
 import { CodexAppServerHarness, type CodexProgressEvent, type CodexTaskInput } from "../codex/app-server-harness";
+import { CodingAgentRuntime } from "../agents/coding-agent/runtime";
 import { MemoryStore, type MemoryLookupInput, type MemorySaveInput, type MemoryType } from "../memory-store";
 import { selectToolBundles } from "../agent/tool-bundle-router";
+import { classifyTaskExecution } from "../tasks/task-classifier";
+import { TaskQueue } from "../tasks/task-queue";
+import { TaskStore } from "../tasks/task-store";
+import type { HerTaskStatus, HerTaskView } from "../../shared/tasks";
 
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
@@ -178,7 +183,11 @@ export class ToolRegistry {
   private macProductivity = new MacProductivity();
   private macMail = new MacMail();
   private codex: CodexAppServerHarness;
+  private codingAgent: CodingAgentRuntime;
+  private herTasks: TaskStore;
+  private herTaskQueue: TaskQueue;
   private memory: MemoryStore;
+  private confirmationTaskIds = new Map<string, string>();
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
   private tasks = new Map<string, QueuedTask>();
   private taskOrder: string[] = [];
@@ -197,8 +206,14 @@ export class ToolRegistry {
     private gate?: CapabilityGate,
     private permissions?: PermissionManager,
     memory?: MemoryStore,
+    codingAgent?: CodingAgentRuntime,
+    taskStore?: TaskStore,
+    taskQueue?: TaskQueue,
   ) {
     this.codex = new CodexAppServerHarness(audit);
+    this.codingAgent = codingAgent ?? new CodingAgentRuntime();
+    this.herTasks = taskStore ?? new TaskStore();
+    this.herTaskQueue = taskQueue ?? new TaskQueue(this.herTasks);
     this.memory = memory ?? new MemoryStore();
     this.bindManifestRuntime();
   }
@@ -253,8 +268,52 @@ export class ToolRegistry {
     if (this.isTaskControlTool(name)) {
       return this.executeTaskControlTool(name, args, source);
     }
+    const taskExecution = classifyTaskExecution(name, args);
+    if (taskExecution.managed) {
+      return this.enqueueManagedToolTask(name, args, source, taskExecution.resourceLocks);
+    }
 
     return this.executeToolWithTimeout(name, args, source);
+  }
+
+  private enqueueManagedToolTask(
+    name: ToolName,
+    args: Record<string, unknown>,
+    source: "realtime" | "local",
+    resourceLocks: string[],
+  ): ToolCallResult {
+    const summary = this.summarize(name, args);
+    const task = this.herTaskQueue.enqueue({
+      title: titleForTask(name),
+      summary,
+      toolName: name,
+      arguments: args,
+      priority: toolRequiresConfirmation(name) ? "high" : "normal",
+      resourceLocks,
+      execute: async (taskId) => {
+        const result = await this.executeToolWithTimeout(name, args, source);
+        if (result.ok && result.requiresConfirmation) {
+          this.confirmationTaskIds.set(result.confirmationId, taskId);
+          return {
+            awaitingConfirmation: true,
+            confirmationId: result.confirmationId,
+            summary: result.summary,
+          };
+        }
+        if (!result.ok) throw new Error(result.error);
+        return result.result;
+      },
+    });
+    return {
+      ok: true,
+      name,
+      result: {
+        task,
+        mode: "task_runtime",
+        locks: resourceLocks,
+        nextAction: "Use task_status, task_list, or the Task Panel to monitor this task.",
+      },
+    };
   }
 
   private async executeToolWithTimeout(
@@ -387,15 +446,23 @@ export class ToolRegistry {
           source,
         );
       case "task_status":
-        return this.getTaskStatus(args.taskId as string, source);
+        return this.getUnifiedTaskStatus(args.taskId as string, source);
       case "task_list":
-        return this.listTasks(args.status as TaskStatus | undefined, args.limit as number, source);
+        return this.listUnifiedTasks(args.status as TaskStatus | HerTaskStatus | undefined, args.limit as number, source);
       case "task_cancel":
-        return this.cancelTask(args.taskId as string);
+        return this.cancelUnifiedTask(args.taskId as string);
       case "task_route":
         return this.routeTask(args as TaskRouteInput);
       case "intent_route":
         return source === "realtime" ? this.routeIntentForRealtime(args as IntentRouteInput) : this.routeIntent(args as IntentRouteInput);
+      case "coding_agent_status":
+        return this.codingAgent.status(args.taskId as string);
+      case "coding_agent_cancel":
+        return this.codingAgent.cancel(args.taskId as string);
+      case "coding_agent_get_result":
+        return this.codingAgent.result(args.taskId as string);
+      case "task_events":
+        return { taskId: args.taskId, events: this.herTasks.listEvents(args.taskId as string, args.limit as number) };
       case "memory_lookup":
         return this.memory.lookup(args as MemoryLookupInput);
       case "memory_save":
@@ -411,7 +478,27 @@ export class ToolRegistry {
 
   async confirm(confirmationId: string, approved: boolean) {
     const decision = await this.confirmations.decide(confirmationId, approved);
-    const execution = decision.rejected ? undefined : await this.executeActionPlan(decision.plan);
+    const herTaskId = this.confirmationTaskIds.get(confirmationId);
+    let execution: unknown;
+    if (!decision.rejected) {
+      try {
+        execution = await this.executeActionPlan(decision.plan);
+        if (herTaskId) {
+          const codingTaskId = decision.plan.toolName === "coding_agent_start" ? extractCodingAgentTaskId(execution) : undefined;
+          if (codingTaskId) {
+            void this.completeHerTaskAfterCodingAgent(herTaskId, codingTaskId);
+          } else {
+            this.herTaskQueue.completeAwaitingConfirmation(herTaskId, execution);
+          }
+        }
+      } catch (error) {
+        if (herTaskId) this.herTaskQueue.failAwaitingConfirmation(herTaskId, error instanceof Error ? error : String(error));
+        throw error;
+      }
+    } else if (herTaskId) {
+      this.herTaskQueue.cancel(herTaskId, "Confirmation rejected.");
+    }
+    this.confirmationTaskIds.delete(confirmationId);
     const result = decision.rejected ? decision : { ...decision, result: execution };
     this.updateTaskForConfirmation(confirmationId, approved, result);
     const summary = decision.rejected ? (decision.summary ?? `Rejected ${confirmationId}`) : `Approved ${confirmationId}`;
@@ -427,6 +514,21 @@ export class ToolRegistry {
   private async executeActionPlan(plan: ActionPlan): Promise<unknown> {
     const result: unknown = await this.executeManifestHandler(plan.toolName, plan.args, "local");
     return this.compactResult(plan.toolName, result);
+  }
+
+  private async completeHerTaskAfterCodingAgent(herTaskId: string, codingTaskId: string) {
+    try {
+      const task = await this.codingAgent.waitForTerminal(codingTaskId);
+      if (task.status === "completed") {
+        this.herTaskQueue.completeAwaitingConfirmation(herTaskId, { task });
+      } else if (task.status === "cancelled") {
+        this.herTaskQueue.cancel(herTaskId, "Coding agent task was cancelled.");
+      } else {
+        this.herTaskQueue.failAwaitingConfirmation(herTaskId, task.error || "Coding agent task failed.");
+      }
+    } catch (error) {
+      this.herTaskQueue.failAwaitingConfirmation(herTaskId, error instanceof Error ? error : String(error));
+    }
   }
 
   private bindManifestRuntime() {
@@ -716,13 +818,17 @@ export class ToolRegistry {
         return this.browser.click(args.selector as string, args.purpose as string);
       case "advanced_shell_command":
         return this.shell.run(args.command as string, args.timeoutMs as number);
+      case "coding_agent_start":
+        return this.codingAgent.start(args as never);
+      case "coding_agent_continue":
+        return this.codingAgent.continue(args as never);
       default:
         throw new Error(`Tool handler is not implemented: ${name}`);
     }
   }
 
   private isTaskControlTool(name: ToolName) {
-    return name === "tool_catalog_list" || name === "tool_group_set" || name === "her_select_bundle" || name === "task_create" || name === "task_status" || name === "task_list" || name === "task_cancel" || name === "task_route" || name === "intent_route" || name === "memory_lookup" || name === "memory_save" || name === "memory_forget" || name === "memory_status";
+    return name === "tool_catalog_list" || name === "tool_group_set" || name === "her_select_bundle" || name === "task_create" || name === "task_status" || name === "task_list" || name === "task_cancel" || name === "task_events" || name === "task_route" || name === "intent_route" || name === "coding_agent_status" || name === "coding_agent_cancel" || name === "coding_agent_get_result" || name === "memory_lookup" || name === "memory_save" || name === "memory_forget" || name === "memory_status";
   }
 
   private isQueueManagedToolName(name: string): name is ToolName {
@@ -1421,6 +1527,53 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       .map((task) => this.toTaskView(task, false, source === "realtime"));
 
     return { tasks, queue: this.taskQueueSummary(source === "realtime") };
+  }
+
+  private getUnifiedTaskStatus(taskId: string, source: "realtime" | "local") {
+    const herTask = this.herTasks.get(taskId);
+    if (herTask) return { task: this.toHerTaskToolView(herTask, source), runtime: "her_task_runtime" };
+    return this.getTaskStatus(taskId, source);
+  }
+
+  private listUnifiedTasks(status: TaskStatus | HerTaskStatus | undefined, limit: number, source: "realtime" | "local") {
+    const herStatus = isHerTaskStatus(status) ? status : undefined;
+    const legacyStatus = isLegacyTaskStatus(status) ? status : undefined;
+    return {
+      tasks: this.herTasks.list({ status: herStatus, limit }).map((task) => this.toHerTaskToolView(task, source)),
+      legacyQueue: this.listTasks(legacyStatus, limit, source),
+      runtime: "her_task_runtime",
+    };
+  }
+
+  private toHerTaskToolView(task: HerTaskView, source: "realtime" | "local") {
+    const eventLimit = source === "realtime" ? 3 : 6;
+    return {
+      ...task,
+      events: task.events.slice(-eventLimit).map((event) => {
+        if (event.type === "task_created") {
+          return {
+            type: event.type,
+            taskId: event.taskId,
+            timestamp: event.timestamp,
+            title: event.task.title,
+            status: event.task.status,
+          };
+        }
+        if (event.type === "task_completed" && source === "realtime") {
+          return {
+            type: event.type,
+            taskId: event.taskId,
+            timestamp: event.timestamp,
+          };
+        }
+        return event;
+      }),
+    };
+  }
+
+  private cancelUnifiedTask(taskId: string) {
+    if (this.herTasks.get(taskId)) return this.herTaskQueue.cancel(taskId);
+    return this.cancelTask(taskId);
   }
 
   private cancelTask(taskId: string) {
@@ -2952,16 +3105,14 @@ const buildCodexRouteStep = (
     ? `Use the HER-provided search summary when available, then complete this task:\n\n${request}`
     : request;
   const pathAlias = memoryMatches.find((item) => item.type === "path_alias" && item.value);
-  const memoryIds = memoryMatches.map((item) => item.id);
   return readyRouteStep(
     "codex",
     "Run Codex background task",
-    "codex_task_run",
+    "coding_agent_start",
     {
       prompt,
-      ...(input.cwd || pathAlias?.value ? { cwd: input.cwd ?? pathAlias?.value } : {}),
-      sandbox: "workspace_write",
-      ...(memoryIds.length ? { memoryIds } : {}),
+      ...(input.cwd || pathAlias?.value ? { repoPath: input.cwd ?? pathAlias?.value } : {}),
+      mode: "patch",
     },
     "Complex project, code, test, or multi-step analysis should run through HER's Codex runtime.",
     "high",
@@ -2984,7 +3135,6 @@ const buildCodexIntentRouteStep = (
   }
   const request = intent.originalText.trim();
   const pathAlias = memoryMatches.find((item) => item.type === "path_alias" && item.value);
-  const memoryIds = memoryMatches.map((item) => item.id);
   const now = new Date();
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const prompt = `HER Realtime parsed this user request into StandardIntent JSON.
@@ -3014,12 +3164,11 @@ ${request}`;
   return readyRouteStep(
     "codex",
     "Run Codex for complex intent",
-    "codex_task_run",
+    "coding_agent_start",
     {
       prompt,
-      ...(input.cwd || pathAlias?.value ? { cwd: input.cwd ?? pathAlias?.value } : {}),
-      sandbox: "workspace_write",
-      ...(memoryIds.length ? { memoryIds } : {}),
+      ...(input.cwd || pathAlias?.value ? { repoPath: input.cwd ?? pathAlias?.value } : {}),
+      mode: "patch",
     },
     "Complex Realtime intent should run through HER's Codex runtime, with any side effects requested through HER Tool Gateway.",
     "high",
@@ -3247,3 +3396,26 @@ const toPermissionResult = (app: InstalledApp) => ({
   risk: app.risk,
   capabilities: app.capabilities,
 });
+
+const titleForTask = (name: ToolName) =>
+  name
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const extractCodingAgentTaskId = (result: unknown) => {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
+  const task = (result as { task?: unknown }).task;
+  if (!task || typeof task !== "object" || Array.isArray(task)) return undefined;
+  const id = (task as { id?: unknown }).id;
+  return typeof id === "string" ? id : undefined;
+};
+
+const herTaskStatuses = new Set(["queued", "running", "awaiting_confirmation", "completed", "failed", "cancelled", "blocked"]);
+const legacyTaskStatuses = new Set(["queued", "running", "completed", "failed", "cancelled", "needs_confirmation"]);
+
+const isHerTaskStatus = (status: unknown): status is HerTaskStatus =>
+  typeof status === "string" && herTaskStatuses.has(status);
+
+const isLegacyTaskStatus = (status: unknown): status is TaskStatus =>
+  typeof status === "string" && legacyTaskStatuses.has(status);

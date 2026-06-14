@@ -22,10 +22,22 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return `List recent tasks${args.status ? ` with status ${args.status}` : ""}`;
       case "task_cancel":
         return `Cancel task ${args.taskId}`;
+      case "task_events":
+        return `Read task events for ${args.taskId}`;
       case "task_route":
         return `Route user request: ${truncateText(String(args.userRequest ?? ""), 120)}`;
       case "codex_task_run":
         return `Run Codex background task: ${truncateText(String(args.prompt ?? ""), 120)}`;
+      case "coding_agent_start":
+        return `Start Codex coding agent (${args.mode ?? "plan"}): ${truncateText(String(args.prompt ?? ""), 120)}`;
+      case "coding_agent_status":
+        return `Read coding agent task ${args.taskId}`;
+      case "coding_agent_continue":
+        return `Continue coding agent task ${args.taskId}: ${truncateText(String(args.prompt ?? ""), 120)}`;
+      case "coding_agent_cancel":
+        return `Cancel coding agent task ${args.taskId}`;
+      case "coding_agent_get_result":
+        return `Read coding agent result ${args.taskId}`;
       case "contacts_search":
         return `Search contacts for ${args.query}`;
       case "phone_call":

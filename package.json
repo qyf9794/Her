@@ -22,6 +22,8 @@
     "smoke:ux": "tsc -p electron/tsconfig.json && node scripts/smoke-ux-flows.mjs",
     "smoke:m2": "tsc -p electron/tsconfig.json && node scripts/smoke-m2-manifest-policy.mjs",
     "smoke:m3": "tsc -p electron/tsconfig.json && node scripts/smoke-m3-realtime-bundles.mjs",
+    "smoke:m4": "tsc -p electron/tsconfig.json && node scripts/smoke-m4-coding-agent.mjs",
+    "smoke:m4-5": "tsc -p electron/tsconfig.json && node scripts/smoke-m4-5-task-runtime.mjs",
     "smoke:realtime": "node scripts/smoke-realtime-token.mjs"
   },
   "dependencies": {

@@ -8,6 +8,9 @@ import { localApiCors, requireTrustedLocalApiRequest } from "./api/cors";
 import { createRealtimeClientSecret } from "./realtime";
 import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
 import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
+import { CodingAgentRuntime } from "./agents/coding-agent/runtime";
+import { TaskQueue } from "./tasks/task-queue";
+import { TaskStore } from "./tasks/task-store";
 import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
@@ -38,6 +41,9 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   const confirmations = new ConfirmationQueue();
   const settings = new SettingsStore(userDataDir);
   const memory = new MemoryStore(userDataDir);
+  const codingAgent = new CodingAgentRuntime();
+  const taskStore = new TaskStore(userDataDir);
+  const taskQueue = new TaskQueue(taskStore);
   const inventory = new AppInventoryService(settings);
   const gate = new CapabilityGate(settings, () => inventory.listApps());
   const system = new SystemControl();
@@ -47,7 +53,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     setAppPermissions: (appPermissions) => settings.setAppPermissions(appPermissions),
     setCapabilities: (capabilities) => settings.setCapabilities(capabilities),
     setYoloMode: (enabled, appPermissions) => settings.setYoloMode(enabled, appPermissions),
-  }, memory);
+  }, memory, codingAgent, taskStore, taskQueue);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
 
@@ -205,6 +211,62 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       res.status(400).json({ error: message });
+    }
+  });
+
+  app.get("/api/tasks", requireAuth, (req, res) => {
+    const status = typeof req.query.status === "string" && isHerTaskStatus(req.query.status) ? req.query.status : undefined;
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 20;
+    res.json({ tasks: taskStore.list({ status, limit: Number.isFinite(limit) ? limit : 20 }) });
+  });
+
+  app.get("/api/tasks/:taskId", requireAuth, (req, res) => {
+    const task = taskStore.get(String(req.params.taskId));
+    if (!task) {
+      res.status(404).json({ error: "Task not found." });
+      return;
+    }
+    res.json({ task });
+  });
+
+  app.get("/api/tasks/:taskId/events", requireAuth, (req, res) => {
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
+    res.json({ taskId: req.params.taskId, events: taskStore.listEvents(String(req.params.taskId), Number.isFinite(limit) ? limit : 50) });
+  });
+
+  app.post("/api/tasks/:taskId/cancel", requireAuth, (req, res) => {
+    try {
+      const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+      res.json(taskQueue.cancel(String(req.params.taskId), reason));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(404).json({ error: message });
+    }
+  });
+
+  app.get("/api/agents/coding/tasks", requireAuth, (req, res) => {
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 10;
+    res.json(codingAgent.list(isCodingAgentStatus(status) ? status : undefined, Number.isFinite(limit) ? limit : 10));
+  });
+
+  app.get("/api/agents/coding/tasks/:taskId", requireAuth, (req, res) => {
+    try {
+      const taskId = String(req.params.taskId);
+      res.json(codingAgent.status(taskId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(404).json({ error: message });
+    }
+  });
+
+  app.post("/api/agents/coding/tasks/:taskId/cancel", requireAuth, (req, res) => {
+    try {
+      const taskId = String(req.params.taskId);
+      res.json(codingAgent.cancel(taskId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(404).json({ error: message });
     }
   });
 
@@ -401,6 +463,15 @@ const auditStatuses = new Set<AuditEvent["status"]>([
 
 const isAuditStatus = (value: unknown): value is AuditEvent["status"] =>
   typeof value === "string" && auditStatuses.has(value as AuditEvent["status"]);
+
+const codingAgentStatuses = new Set(["queued", "running", "completed", "failed", "cancelled"]);
+const herTaskStatuses = new Set(["queued", "running", "awaiting_confirmation", "completed", "failed", "cancelled", "blocked"]);
+
+const isCodingAgentStatus = (value: unknown): value is "queued" | "running" | "completed" | "failed" | "cancelled" =>
+  typeof value === "string" && codingAgentStatuses.has(value);
+
+const isHerTaskStatus = (value: unknown): value is "queued" | "running" | "awaiting_confirmation" | "completed" | "failed" | "cancelled" | "blocked" =>
+  typeof value === "string" && herTaskStatuses.has(value);
 
 const parseBundleQuery = (value: unknown) => {
   const raw = Array.isArray(value) ? value.join(",") : typeof value === "string" ? value : "";
