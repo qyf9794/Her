@@ -20,6 +20,7 @@
     "smoke:voice": "HER_COMPLEX_SMOKE_PROFILE=voice tsc -p electron/tsconfig.json && HER_COMPLEX_SMOKE_PROFILE=voice node scripts/smoke-complex-intents.mjs",
     "smoke:semantic": "HER_COMPLEX_SMOKE_PROFILE=semantic tsc -p electron/tsconfig.json && HER_COMPLEX_SMOKE_PROFILE=semantic node scripts/smoke-complex-intents.mjs",
     "smoke:ux": "tsc -p electron/tsconfig.json && node scripts/smoke-ux-flows.mjs",
+    "smoke:m2": "tsc -p electron/tsconfig.json && node scripts/smoke-m2-manifest-policy.mjs",
     "smoke:realtime": "node scripts/smoke-realtime-token.mjs"
   },
   "dependencies": {

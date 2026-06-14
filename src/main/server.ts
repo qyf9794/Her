@@ -302,7 +302,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
       res.json({
         ok: true,
         confirmationId: body.confirmationId,
-        result: decision.rejected ? { rejected: true } : decision.result,
+        result: decision.rejected ? { rejected: true } : ("result" in decision ? decision.result : undefined),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

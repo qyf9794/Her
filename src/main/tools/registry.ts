@@ -3,9 +3,11 @@ import { z } from "zod";
 import { config } from "../config";
 import { AuditLog } from "../audit";
 import type { ToolCallRequest, ToolCallResult, ToolGroup, ToolName } from "../../shared/tools";
-import { allToolDefinitions, toolGroupByName, toolGroups, toolsRequiringConfirmation } from "../../shared/tools";
+import { allToolDefinitions, toolGroupByName, toolGroups } from "../../shared/tools";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../../shared/app-settings";
 import { ConfirmationQueue } from "./confirmation";
+import { ApprovalPolicy, type ActionPlan } from "../policy/approval-policy";
+import { toolRequiresConfirmation } from "./manifest";
 import { LocalStore } from "./local-store";
 import { FileManager } from "./file-manager";
 import { DocumentAssistant } from "./document-assistant";
@@ -398,6 +400,7 @@ type QueuedTask = {
 };
 
 const toolGroupLookup: Partial<Record<ToolName, ToolGroup>> = toolGroupByName;
+const approvalPolicy = new ApprovalPolicy();
 
 const runCommand = (command: string, args: string[]) =>
   new Promise<void>((resolve, reject) => {
@@ -541,6 +544,7 @@ export class ToolRegistry {
   ): Promise<ToolCallResult> {
     const run = () => this.run(name, args, source);
     let summary = this.summary(name, args);
+    let preview: unknown;
 
     if (this.gate) {
       try {
@@ -554,8 +558,9 @@ export class ToolRegistry {
 
     if (name === "document_prepare_edit") {
       try {
-        const preview = await this.documents.prepareEdit(args.path as string, args.newContent as string);
-        summary = `Edit document ${preview.path}\nDiff preview:\n${preview.diffPreview}`;
+        const editPreview = await this.documents.prepareEdit(args.path as string, args.newContent as string);
+        summary = `Edit document ${editPreview.path}\nDiff preview:\n${editPreview.diffPreview}`;
+        preview = { path: editPreview.path, diffPreview: editPreview.diffPreview };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.audit.write({ action: name, summary: message, status: "error" });
@@ -573,8 +578,19 @@ export class ToolRegistry {
       }
     }
 
-    if (toolsRequiringConfirmation.has(name) && !this.isYoloMode()) {
-      const confirmation = this.confirmations.add({ name, summary, run });
+    const approval = approvalPolicy.decide({
+      toolName: name,
+      args,
+      summary,
+      preview,
+      yoloMode: this.isYoloMode(),
+    });
+    if (approval.type === "deny") {
+      this.audit.write({ action: name, summary: approval.reason, status: "error" });
+      return { ok: false, name, error: approval.reason, code: approval.code };
+    }
+    if (approval.type === "require_confirmation") {
+      const confirmation = this.confirmations.add(approval.plan);
       this.audit.write({ action: name, summary, status: "needs_confirmation" });
       return {
         ok: true,
@@ -651,19 +667,26 @@ export class ToolRegistry {
   }
 
   async confirm(confirmationId: string, approved: boolean) {
-    const result = await this.confirmations.decide(confirmationId, approved);
+    const decision = await this.confirmations.decide(confirmationId, approved);
+    const execution = decision.rejected ? undefined : await this.executeActionPlan(decision.plan);
+    const result = decision.rejected ? decision : { ...decision, result: execution };
     this.updateTaskForConfirmation(confirmationId, approved, result);
-    const summary = result.rejected ? (result.summary ?? `Rejected ${confirmationId}`) : `Approved ${confirmationId}`;
+    const summary = decision.rejected ? (decision.summary ?? `Rejected ${confirmationId}`) : `Approved ${confirmationId}`;
     this.audit.write({
       action: "confirmation",
       summary,
-      status: result.rejected ? "rejected" : "ok",
+      status: decision.rejected ? "rejected" : "ok",
     });
-    if (result.rejected) return result;
-    return { ...result, result: this.compactResult("confirmation_decide", result.result) };
+    if (decision.rejected) return decision;
+    return { ...decision, result: this.compactResult("confirmation_decide", execution) };
   }
 
-  private async run(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local" = "local") {
+  private async executeActionPlan(plan: ActionPlan): Promise<unknown> {
+    const result: unknown = await this.run(plan.toolName, plan.args, "local");
+    return this.compactResult(plan.toolName, result);
+  }
+
+  private async run(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local" = "local"): Promise<unknown> {
     switch (name) {
       case "system_status":
         return {
@@ -960,7 +983,7 @@ export class ToolRegistry {
         name: definition.name,
         group,
         description: truncateText(definition.description, 220),
-        requiresConfirmation: toolsRequiringConfirmation.has(definition.name),
+        requiresConfirmation: toolRequiresConfirmation(definition.name),
         arguments: compactJsonSchema(definition.parameters),
       }));
 
@@ -1032,7 +1055,7 @@ export class ToolRegistry {
           toolName: step.toolName,
           status: queued.task.status,
           summary: queued.task.summary,
-          requiresConfirmation: toolsRequiringConfirmation.has(step.toolName as ToolName),
+          requiresConfirmation: toolRequiresConfirmation(step.toolName as ToolName),
         });
       } catch (error) {
         queueErrors.push({
@@ -1084,7 +1107,7 @@ export class ToolRegistry {
       if (!step.toolName || step.status !== "ready") return step;
       return {
         ...step,
-        requiresConfirmation: toolsRequiringConfirmation.has(step.toolName),
+        requiresConfirmation: toolRequiresConfirmation(step.toolName),
         taskCreate: {
           toolName: step.toolName,
           arguments: step.arguments ?? {},
@@ -1515,7 +1538,7 @@ export class ToolRegistry {
           name: definition.name,
           group,
           capability: truncateText(definition.description, 140),
-          requiresConfirmation: toolsRequiringConfirmation.has(definition.name),
+          requiresConfirmation: toolRequiresConfirmation(definition.name),
           args,
         };
       });
@@ -1820,19 +1843,18 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       }
     }
 
-    if (toolsRequiringConfirmation.has(task.toolName) && !this.isYoloMode()) {
-      const summary = this.summary(task.toolName, task.arguments);
-      const confirmation = this.confirmations.add({
-        name: task.toolName,
-        summary,
-        run: async () => {
-          const result = await this.runCodexTaskThroughGateway({
-            ...this.enrichCodexTaskWithMemory(task.arguments as CodexTaskInput & { memoryIds?: string[] }),
-            onProgress: (event) => this.addTaskProgress(task, event.status, event.summary, event.method),
-          }, task.source);
-          return this.compactResult(task.toolName, result, task.source);
-        },
-      });
+    const summary = this.summary(task.toolName, task.arguments);
+    const approval = approvalPolicy.decide({
+      toolName: task.toolName,
+      args: task.arguments,
+      summary,
+      yoloMode: this.isYoloMode(),
+    });
+    if (approval.type === "deny") {
+      return { ok: false, name: task.toolName, error: approval.reason, code: approval.code };
+    }
+    if (approval.type === "require_confirmation") {
+      const confirmation = this.confirmations.add(approval.plan);
       return {
         ok: true,
         name: task.toolName,
@@ -1905,7 +1927,11 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
     setTimeout(() => void this.processTasks(), delayMs);
   }
 
-  private updateTaskForConfirmation(confirmationId: string, approved: boolean, confirmationResult: Awaited<ReturnType<ConfirmationQueue["decide"]>>) {
+  private updateTaskForConfirmation(
+    confirmationId: string,
+    approved: boolean,
+    confirmationResult: Awaited<ReturnType<ConfirmationQueue["decide"]>> & { result?: unknown },
+  ) {
     const task = [...this.tasks.values()].find((item) => item.confirmationId === confirmationId);
     if (!task) return;
 
@@ -1921,7 +1947,8 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
 
     task.status = "completed";
     task.error = undefined;
-    task.result = { ok: true, name: task.toolName, result: this.compactResult(task.toolName, confirmationResult.result, task.source) };
+    const result = "result" in confirmationResult ? confirmationResult.result : undefined;
+    task.result = { ok: true, name: task.toolName, result: this.compactResult(task.toolName, result, task.source) };
     this.addTaskProgress(task, "ok", "HER 已完成确认后的任务");
   }
 
@@ -2359,29 +2386,34 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       confirmationId: item.id,
       name: item.name,
       summary: item.summary,
+      risk: item.plan.risk,
+      reversible: item.plan.reversible,
+      preview: item.plan.preview,
       expiresAt: new Date(item.expiresAt).toISOString(),
     }));
   }
 
-  private async decideConfirmation(confirmationId: string | undefined, approved: boolean) {
+  private async decideConfirmation(confirmationId: string | undefined, approved: boolean): Promise<unknown> {
     const pending = this.confirmations.list();
     const id = confirmationId ?? (pending.length === 1 ? pending[0].id : undefined);
     if (!id) {
       throw new Error(`There are ${pending.length} pending confirmations. Use confirmation_list and specify confirmationId.`);
     }
 
-    const result = await this.confirmations.decide(id, approved);
+    const decision = await this.confirmations.decide(id, approved);
+    const execution: unknown = decision.rejected ? undefined : await this.executeActionPlan(decision.plan);
+    const result = decision.rejected ? decision : { ...decision, result: execution };
     this.updateTaskForConfirmation(id, approved, result);
-    const summary = result.rejected ? (result.summary ?? `Rejected ${id}`) : `Approved ${id}`;
+    const summary = decision.rejected ? (decision.summary ?? `Rejected ${id}`) : `Approved ${id}`;
     this.audit.write({
       action: "confirmation",
       summary,
-      status: result.rejected ? "rejected" : "ok",
+      status: decision.rejected ? "rejected" : "ok",
     });
     return {
       confirmationId: id,
       approved,
-      result: result.rejected ? { rejected: true, summary: result.summary } : result.result,
+      result: result.rejected ? { rejected: true, summary: result.summary } : ("result" in result ? result.result : undefined),
     };
   }
 

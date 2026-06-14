@@ -1,4 +1,5 @@
 import type { ToolName } from "../../shared/tools";
+import type { ActionPlan } from "../policy/approval-policy";
 
 export type PendingConfirmation = {
   id: string;
@@ -6,19 +7,22 @@ export type PendingConfirmation = {
   summary: string;
   createdAt: number;
   expiresAt: number;
-  run: () => Promise<unknown>;
+  plan: ActionPlan;
 };
 
 export class ConfirmationQueue {
   private pending = new Map<string, PendingConfirmation>();
 
-  add(input: Omit<PendingConfirmation, "id" | "createdAt" | "expiresAt">) {
-    const now = Date.now();
+  add(plan: ActionPlan) {
+    const now = Date.parse(plan.createdAt);
+    const expiresAt = Date.parse(plan.expiresAt);
     const confirmation: PendingConfirmation = {
-      id: crypto.randomUUID(),
+      id: plan.id,
+      name: plan.toolName,
+      summary: plan.summary,
       createdAt: now,
-      expiresAt: now + 5 * 60 * 1000,
-      ...input,
+      expiresAt,
+      plan,
     };
     this.pending.set(confirmation.id, confirmation);
     return confirmation;
@@ -35,10 +39,9 @@ export class ConfirmationQueue {
     if (!confirmation) throw new Error("Confirmation request not found or expired.");
     this.pending.delete(id);
     if (!approved) {
-      return { rejected: true, summary: confirmation.summary };
+      return { rejected: true, summary: confirmation.summary, plan: confirmation.plan };
     }
-    const result = await confirmation.run();
-    return { rejected: false, result };
+    return { rejected: false, plan: confirmation.plan };
   }
 
   private prune() {
