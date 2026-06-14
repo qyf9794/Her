@@ -709,6 +709,8 @@ export class ToolRegistry {
         return this.browser.click(args.selector as string, args.purpose as string);
       case "advanced_shell_command":
         return this.shell.run(args.command as string, args.timeoutMs as number);
+      default:
+        throw new Error(`Tool handler is not implemented: ${name}`);
     }
   }
 

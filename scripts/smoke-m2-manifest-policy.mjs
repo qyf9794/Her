@@ -137,6 +137,9 @@ const systemStatus = await registry.execute({ name: "system_status", arguments: 
 if (!systemStatus.ok || systemStatus.requiresConfirmation || !systemStatus.result) {
   fail(`Read-only manifest-bound handler did not execute directly: ${JSON.stringify(systemStatus)}`);
 }
+if (systemStatus.ok && (!systemStatus.result || typeof systemStatus.result !== "object" || !("adapters" in systemStatus.result))) {
+  fail(`Manifest-bound system_status handler returned an unexpected result: ${JSON.stringify(systemStatus)}`);
+}
 
 const highRiskRegistry = new ToolRegistry(
   new ConfirmationQueue(),
