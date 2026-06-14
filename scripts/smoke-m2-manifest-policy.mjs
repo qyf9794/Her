@@ -19,6 +19,7 @@ const {
 const { ApprovalPolicy } = require("../electron/dist/main/policy/approval-policy.js");
 const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.js");
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
+const { domainManifests } = require("../electron/dist/main/tools/domain-manifests.js");
 const { AuditLog } = require("../electron/dist/main/audit.js");
 const { MemoryStore } = require("../electron/dist/main/memory-store.js");
 const { CapabilityGate } = require("../electron/dist/main/capability-gate.js");
@@ -47,6 +48,10 @@ for (const name of definitionNames) {
 
 for (const bundle of ["core", "filesystem", "documents", "comms", "media", "desktop", "browser", "shell"]) {
   if (!toolBundles[bundle]) fail(`Missing tool bundle metadata: ${bundle}`);
+  if (!domainManifests[bundle]) fail(`Missing domain manifest: ${bundle}`);
+  for (const [name, entry] of Object.entries(domainManifests[bundle] ?? {})) {
+    if (toolManifest[name] !== entry) fail(`${bundle} domain manifest entry for ${name} does not reference central manifest.`);
+  }
 }
 
 const realtimeManifestNames = new Set(manifestRealtimeToolDefinitions.map((definition) => definition.name));
@@ -174,6 +179,7 @@ console.log(JSON.stringify({
     toolDefinitions: definitionNames.length,
     manifestEntries: Object.keys(toolManifest).length,
     bundles: Object.keys(toolBundles).length,
+    domainManifests: Object.keys(domainManifests).length,
     realtimeToolDefinitions: manifestRealtimeToolDefinitions.length,
     approvalPolicy: true,
     actionPlanConfirmation: true,
