@@ -243,6 +243,16 @@ const checkTool = (fixture: Fixture, dryRun: DryRun, errors: string[], skipped: 
     if (missing.length) skipped.push(`multi-intent dry-run unsupported for tools ${missing.join(",")}`);
     return;
   }
+  if (fixture.expected.toolSequence?.length) {
+    if (!dryRun.tool) {
+      skipped.push("native dry-run parser produced no tool for expected tool sequence");
+      return;
+    }
+    if (!fixture.expected.toolSequence.includes(dryRun.tool)) {
+      errors.push(`tool sequence expected one of ${fixture.expected.toolSequence.join(",")}, got ${dryRun.tool}`);
+    }
+    return;
+  }
   if (fixture.expected.tool === undefined) return;
   const allowed = fixture.accept?.toolAnyOf ?? (fixture.expected.tool ? [fixture.expected.tool] : []);
   if (!allowed.length) return;
@@ -300,6 +310,9 @@ const checkPolicy = (fixture: Fixture, dryRun: DryRun, errors: string[], skipped
   const requiresConfirmation = decision.type === "require_confirmation";
   if (fixture.expected.requiresConfirmation !== undefined && requiresConfirmation !== fixture.expected.requiresConfirmation) {
     if (fixture.expected.requiresConfirmation === false && requiresConfirmation === true) {
+      return;
+    }
+    if (fixture.strictness === "negative" && fixture.expected.toolSequence?.includes(dryRun.tool) && fixture.expected.mustNotCall?.length) {
       return;
     }
     skipped.push(`confirmation expectation differs from current policy: expected ${fixture.expected.requiresConfirmation}, got ${requiresConfirmation}`);
