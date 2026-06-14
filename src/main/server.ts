@@ -1,10 +1,13 @@
 import express from "express";
 import type { Server } from "node:http";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { createLocalApiAuth, requireLocalApiAuth } from "./api/auth";
 import { localApiCors, requireTrustedLocalApiRequest } from "./api/cors";
 import { createRealtimeClientSecret } from "./realtime";
 import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
+import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
 import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
@@ -288,6 +291,27 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     });
   });
 
+  app.get("/api/music/developer-token", requireAuth, (_req, res) => {
+    const developerToken = getAppleMusicDeveloperToken();
+    if (!developerToken) {
+      res.status(400).json({
+        error: "Apple Music developer token is not configured. Set APPLE_TEAM_ID, APPLE_MUSICKIT_KEY_ID, and HER_APPLE_MUSIC_PRIVATE_KEY_PATH.",
+      });
+      return;
+    }
+    res.json({ developerToken });
+  });
+
+  app.get("/api/music/playback-requests/next", requireAuth, (_req, res) => {
+    const request = readQueuedMusicKitPlaybackRequest();
+    res.json({ request });
+  });
+
+  app.post("/api/music/playback-status", requireAuth, (req, res) => {
+    writeMusicKitPlaybackStatus(req.body);
+    res.json({ ok: true });
+  });
+
   app.post("/api/realtime/bundles/select", requireAuth, (req, res) => {
     const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : "";
     const selection = selectToolBundles(transcript);
@@ -392,3 +416,58 @@ const codexModelOptions = [
   { label: "GPT-5", value: "gpt-5" },
   { label: "GPT-5 Mini", value: "gpt-5-mini" },
 ];
+
+const queuedMusicRequestPath = () => path.join(process.cwd(), ".her-music-playback-request.json");
+const musicPlaybackStatusPath = () => path.join(process.cwd(), ".her-music-playback-status.json");
+
+const readQueuedMusicKitPlaybackRequest = () => {
+  const filePath = queuedMusicRequestPath();
+  if (!fs.existsSync(filePath)) return undefined;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      action?: unknown;
+      id?: unknown;
+      title?: unknown;
+      artist?: unknown;
+      album?: unknown;
+      artworkUrl?: unknown;
+    };
+    fs.rmSync(filePath, { force: true });
+    const action = parsed.action === "pause" || parsed.action === "stop" ? parsed.action : "play";
+    if (action === "play" && (typeof parsed.id !== "string" || !parsed.id.trim())) return undefined;
+    return {
+      action,
+      id: typeof parsed.id === "string" ? parsed.id.trim() : "",
+      title: typeof parsed.title === "string" ? parsed.title : undefined,
+      artist: typeof parsed.artist === "string" ? parsed.artist : undefined,
+      album: typeof parsed.album === "string" ? parsed.album : undefined,
+      artworkUrl: typeof parsed.artworkUrl === "string" ? parsed.artworkUrl : undefined,
+    };
+  } catch {
+    fs.rmSync(filePath, { force: true });
+    return undefined;
+  }
+};
+
+const writeMusicKitPlaybackStatus = (value: unknown) => {
+  const payload = value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+  fs.writeFileSync(
+    musicPlaybackStatusPath(),
+    JSON.stringify(
+      {
+        status: typeof payload.status === "string" ? payload.status : "unknown",
+        songId: typeof payload.songId === "string" ? payload.songId : undefined,
+        title: typeof payload.title === "string" ? payload.title : undefined,
+        artist: typeof payload.artist === "string" ? payload.artist : undefined,
+        album: typeof payload.album === "string" ? payload.album : undefined,
+        artworkUrl: typeof payload.artworkUrl === "string" ? payload.artworkUrl : undefined,
+        error: typeof payload.error === "string" ? payload.error : undefined,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
+};

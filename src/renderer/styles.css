@@ -336,10 +336,72 @@ body.orbOnlyActive .productShell {
 }
 
 .topbar .controls,
+.topbar .miniPlayer,
 .topbar button,
 .topbar input,
 .topbar select {
   -webkit-app-region: no-drag;
+}
+
+.miniPlayer {
+  display: grid;
+  grid-template-columns: 52px minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(430px, 48vw);
+  min-width: 280px;
+  border: 1px solid #777d82;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #686d71;
+  color: #f4f6f4;
+}
+
+.miniPlayer.hidden {
+  display: none;
+}
+
+.miniPlayer img {
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #555a5f;
+}
+
+.miniPlayerMeta {
+  min-width: 0;
+}
+
+.miniPlayerMeta strong,
+.miniPlayerMeta span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.miniPlayerMeta strong {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.miniPlayerMeta span {
+  margin-top: 3px;
+  color: #d5dbda;
+  font-size: 12px;
+}
+
+.miniPlayerActions {
+  display: flex;
+  gap: 6px;
+}
+
+.miniPlayerActions button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 #statusText,
@@ -549,6 +611,13 @@ body.orbOnlyActive .productShell {
   background: #686c70;
 }
 
+.musicKitPanel {
+  border: 1px solid #7b8586;
+  border-radius: 8px;
+  padding: 12px;
+  background: #666d6d;
+}
+
 .codexLoginPanel {
   border: 1px solid #7b8586;
   border-radius: 8px;
@@ -569,9 +638,15 @@ body.orbOnlyActive .productShell {
 }
 
 .voiceSettingsPanel .muted,
+.musicKitPanel .muted,
 .devicePanel .muted {
   margin-top: 8px;
   line-height: 1.35;
+}
+
+.musicKitPanel button {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .apiKeyForm {

@@ -6,6 +6,7 @@ export type AppleMusicCatalogSong = {
   title?: string;
   artist?: string;
   album?: string;
+  artworkUrl?: string;
   url?: string;
   source: "apple_music_api" | "itunes_search_fallback";
 };
@@ -19,6 +20,11 @@ type AppleMusicSearchResponse = {
           name?: string;
           artistName?: string;
           albumName?: string;
+          artwork?: {
+            url?: string;
+            width?: number;
+            height?: number;
+          };
           url?: string;
         };
       }>;
@@ -30,6 +36,7 @@ type ItunesSearchResult = {
   trackName?: string;
   artistName?: string;
   collectionName?: string;
+  artworkUrl100?: string;
   trackViewUrl?: string;
 };
 
@@ -76,6 +83,7 @@ export class AppleMusicCatalogClient {
         title: song.attributes.name,
         artist: song.attributes.artistName,
         album: song.attributes.albumName,
+        artworkUrl: formatAppleMusicArtworkUrl(song.attributes.artwork?.url),
         url: song.attributes.url,
         source: "apple_music_api",
       };
@@ -102,6 +110,7 @@ export class AppleMusicCatalogClient {
         title: song.trackName,
         artist: song.artistName,
         album: song.collectionName,
+        artworkUrl: formatItunesArtworkUrl(song.artworkUrl100),
         url: song.trackViewUrl,
         source: "itunes_search_fallback",
       };
@@ -110,3 +119,9 @@ export class AppleMusicCatalogClient {
     }
   }
 }
+
+const formatAppleMusicArtworkUrl = (url: string | undefined) =>
+  url?.replace("{w}", "600").replace("{h}", "600").replace("{f}", "jpg");
+
+const formatItunesArtworkUrl = (url: string | undefined) =>
+  url?.replace(/100x100bb\.(jpg|png|webp)$/i, "600x600bb.$1");

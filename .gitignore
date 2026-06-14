@@ -11,3 +11,5 @@ data/*.jsonl
 data/*.json
 data/*.sqlite
 data/*.db
+.her-music-playback-request.json
+.her-music-playback-status.json

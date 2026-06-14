@@ -64,6 +64,24 @@ const createWindow = async () => {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isTrustedMusicKitPopupUrl(url)) {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 520,
+          height: 720,
+          title: "Apple Music Authorization",
+          parent: mainWindow ?? undefined,
+          modal: false,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
+        },
+      };
+    }
+
     shell.openExternal(url);
     return { action: "deny" };
   });
@@ -117,6 +135,22 @@ const isTrustedRendererUrl = (rawUrl: string) => {
     return false;
   }
 };
+
+const isTrustedMusicKitPopupUrl = (rawUrl: string) => {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "https:" && musicKitPopupHosts.has(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const musicKitPopupHosts = new Set([
+  "authorize.music.apple.com",
+  "music.apple.com",
+  "idmsa.apple.com",
+  "appleid.apple.com",
+]);
 
 type LocalApiBridgeRequest = {
   method?: unknown;

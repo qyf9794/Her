@@ -19,6 +19,7 @@ import {
 } from "../shared/realtime-config";
 import type { ConfirmationResult, ToolCallRequest, ToolCallResult, ToolName } from "../shared/tools";
 import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
+import { authorizeMusicKit, getMusicKitStatus, pauseAppleMusic, playAppleMusicSong, resumeAppleMusic } from "./music/musickit-player";
 import { RealtimeSessionService, type RealtimeToolDefinition } from "./realtime/realtime-session-service";
 import "./styles.css";
 
@@ -68,6 +69,17 @@ app.innerHTML = `
             <h1>HER</h1>
             <p id="statusText">Idle</p>
           </div>
+          <div id="miniPlayer" class="miniPlayer hidden" aria-label="Apple Music playback">
+            <img id="miniPlayerArtwork" alt="" />
+            <div class="miniPlayerMeta">
+              <strong id="miniPlayerTitle"></strong>
+              <span id="miniPlayerArtist"></span>
+            </div>
+            <div class="miniPlayerActions">
+              <button id="miniPlayerPlayBtn" type="button" aria-label="Play">Play</button>
+              <button id="miniPlayerPauseBtn" type="button" aria-label="Pause">Pause</button>
+            </div>
+          </div>
           <div class="controls">
             <button id="connectBtn" type="button">Start voice</button>
             <button id="disconnectBtn" type="button" disabled>Stop</button>
@@ -114,6 +126,14 @@ app.innerHTML = `
             <option value="marin">Marin</option>
           </select>
           <p id="realtimeVoiceStatus" class="muted">Voice changes apply to the next session.</p>
+        </section>
+        <section class="musicKitPanel">
+          <div class="sectionHeader">
+            <h2>Apple Music</h2>
+            <span id="musicKitBadge" class="keyBadge">Checking</span>
+          </div>
+          <p id="musicKitStatus" class="muted">Authorize Apple Music to stream subscription catalog songs.</p>
+          <button id="authorizeMusicKitBtn" type="button">Authorize</button>
         </section>
         <section class="codexLoginPanel">
           <div class="sectionHeader">
@@ -214,6 +234,12 @@ const restorePanelBtn = document.querySelector<HTMLButtonElement>("#restorePanel
 const sendTextBtn = document.querySelector<HTMLButtonElement>("#sendTextBtn")!;
 const textInput = document.querySelector<HTMLInputElement>("#textInput")!;
 const transcript = document.querySelector<HTMLDivElement>("#transcript")!;
+const miniPlayer = document.querySelector<HTMLDivElement>("#miniPlayer")!;
+const miniPlayerArtwork = document.querySelector<HTMLImageElement>("#miniPlayerArtwork")!;
+const miniPlayerTitle = document.querySelector<HTMLElement>("#miniPlayerTitle")!;
+const miniPlayerArtist = document.querySelector<HTMLSpanElement>("#miniPlayerArtist")!;
+const miniPlayerPlayBtn = document.querySelector<HTMLButtonElement>("#miniPlayerPlayBtn")!;
+const miniPlayerPauseBtn = document.querySelector<HTMLButtonElement>("#miniPlayerPauseBtn")!;
 const confirmations = document.querySelector<HTMLDivElement>("#confirmations")!;
 const activity = document.querySelector<HTMLDivElement>("#activity")!;
 const resultWindow = document.querySelector<HTMLDivElement>("#resultWindow")!;
@@ -238,6 +264,9 @@ const openaiKeyBadge = document.querySelector<HTMLSpanElement>("#openaiKeyBadge"
 const realtimeVoiceSelect = document.querySelector<HTMLSelectElement>("#realtimeVoiceSelect")!;
 const realtimeVoiceStatus = document.querySelector<HTMLParagraphElement>("#realtimeVoiceStatus")!;
 const realtimeVoiceBadge = document.querySelector<HTMLSpanElement>("#realtimeVoiceBadge")!;
+const musicKitBadge = document.querySelector<HTMLSpanElement>("#musicKitBadge")!;
+const musicKitStatus = document.querySelector<HTMLParagraphElement>("#musicKitStatus")!;
+const authorizeMusicKitBtn = document.querySelector<HTMLButtonElement>("#authorizeMusicKitBtn")!;
 const codexLoginBadge = document.querySelector<HTMLSpanElement>("#codexLoginBadge")!;
 const codexLoginStatus = document.querySelector<HTMLParagraphElement>("#codexLoginStatus")!;
 const refreshCodexLoginBtn = document.querySelector<HTMLButtonElement>("#refreshCodexLoginBtn")!;
@@ -281,6 +310,17 @@ let aiLevel = 0;
 let hasOpenaiApiKey = false;
 let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
 let isOrbOnly = window.localStorage.getItem("her:orbOnly") === "true";
+let musicPlaybackPoll: number | undefined;
+let currentMiniPlayerTrack: MiniPlayerTrack | undefined;
+
+type MiniPlayerTrack = {
+  id: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  artworkUrl?: string;
+  state: "playing" | "paused" | "requested";
+};
 
 type OrbPosition = { left: number; top: number };
 
@@ -332,9 +372,11 @@ const initialize = async () => {
     settings = await getJson<UserSettings>("/api/settings");
     await loadOpenaiKeyStatus();
     await loadRealtimeVoice();
+    await loadMusicKitStatus();
     await loadCodexLoginStatus();
     await loadCodexModel();
     await refreshMicrophoneDevices();
+    startMusicPlaybackRequestPolling();
     installedApps = await getJson<InstalledApp[]>("/api/apps");
     appPermissions = Object.fromEntries(installedApps.map((item) => [item.bundleId, item.authorized]));
     renderSettings();
@@ -779,6 +821,87 @@ const saveOpenaiKey = async () => {
     renderOpenaiKeyStatus(false, message);
   } finally {
     saveOpenaiKeyBtn.disabled = false;
+  }
+};
+
+const loadMusicKitStatus = async () => {
+  authorizeMusicKitBtn.disabled = true;
+  musicKitBadge.textContent = "Checking";
+  musicKitBadge.classList.remove("configured", "error");
+  musicKitStatus.textContent = "Checking Apple Music playback support...";
+  try {
+    const status = await getMusicKitStatus();
+    renderMusicKitStatus(status.authorized, status.configured ? undefined : "MusicKit is not configured.");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    renderMusicKitStatus(false, message);
+  } finally {
+    authorizeMusicKitBtn.disabled = false;
+  }
+};
+
+const authorizeAppleMusic = async () => {
+  authorizeMusicKitBtn.disabled = true;
+  musicKitStatus.textContent = "Opening Apple Music authorization...";
+  try {
+    const status = await authorizeMusicKit();
+    renderMusicKitStatus(status.authorized, status.authorized ? "Authorized. Catalog songs can stream through MusicKit." : "Authorization did not complete.");
+    addActivity(status.authorized ? "Apple Music authorized" : "Apple Music authorization incomplete", status.authorized ? "ok" : "pending");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    renderMusicKitStatus(false, message);
+    addActivity(`Apple Music authorization failed: ${message}`, "error");
+  } finally {
+    authorizeMusicKitBtn.disabled = false;
+  }
+};
+
+const renderMusicKitStatus = (authorized: boolean, detail?: string) => {
+  musicKitBadge.textContent = authorized ? "Authorized" : "Required";
+  musicKitBadge.classList.toggle("configured", authorized);
+  musicKitBadge.classList.toggle("error", Boolean(detail) && !authorized);
+  musicKitStatus.textContent = detail ?? (authorized ? "Apple Music catalog streaming is enabled." : "Authorize Apple Music to stream subscription catalog songs.");
+  authorizeMusicKitBtn.textContent = authorized ? "Reauthorize" : "Authorize";
+};
+
+const renderMiniPlayer = (track: MiniPlayerTrack) => {
+  currentMiniPlayerTrack = track;
+  miniPlayer.classList.remove("hidden");
+  miniPlayer.dataset.state = track.state;
+  miniPlayerTitle.textContent = track.title || "Apple Music";
+  miniPlayerArtist.textContent = [track.artist, track.album].filter(Boolean).join(" - ");
+  if (track.artworkUrl) {
+    miniPlayerArtwork.src = track.artworkUrl;
+    miniPlayerArtwork.hidden = false;
+  } else {
+    miniPlayerArtwork.removeAttribute("src");
+    miniPlayerArtwork.hidden = true;
+  }
+  miniPlayerPlayBtn.disabled = track.state === "playing" || track.state === "requested";
+  miniPlayerPauseBtn.disabled = track.state === "paused";
+};
+
+const pauseMiniPlayer = async () => {
+  if (!currentMiniPlayerTrack) return;
+  miniPlayerPauseBtn.disabled = true;
+  try {
+    await pauseAppleMusic();
+    renderMiniPlayer({ ...currentMiniPlayerTrack, state: "paused" });
+    await postJson("/api/music/playback-status", { status: "paused", songId: currentMiniPlayerTrack.id });
+  } catch (error) {
+    addActivity(`Apple Music pause failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const resumeMiniPlayer = async () => {
+  if (!currentMiniPlayerTrack) return;
+  miniPlayerPlayBtn.disabled = true;
+  try {
+    await resumeAppleMusic();
+    renderMiniPlayer({ ...currentMiniPlayerTrack, state: "playing" });
+    await postJson("/api/music/playback-status", { status: "playing_requested", songId: currentMiniPlayerTrack.id });
+  } catch (error) {
+    addActivity(`Apple Music resume failed: ${errorMessage(error)}`, "error");
   }
 };
 
@@ -1327,6 +1450,16 @@ const coerceToolArguments = (input: unknown): Record<string, unknown> => {
   return {};
 };
 
+type AppleMusicToolPayload = {
+  status?: string;
+  source?: string;
+  id?: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  artworkUrl?: string;
+};
+
 const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: string) => {
   setVisualState("tool");
   const result = await postJson<ToolCallResult>("/api/tools/execute", {
@@ -1343,6 +1476,9 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
   } else if (result.ok) {
     setVisualState("listening");
     maybeShowToolDisplay(result);
+    if (name === "music_play_song") {
+      await maybePlayAppleMusicCatalogResult(result.result);
+    }
     if (name === "app_permission_set" || name === "capability_set" || name === "yolo_mode_set") {
       await reloadSettingsAndApps();
     }
@@ -1355,6 +1491,102 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
   }
 
   return result;
+};
+
+const maybePlayAppleMusicCatalogResult = async (payload: unknown) => {
+  if (!isAppleMusicCatalogPayload(payload)) return;
+  if (payload.status === "playing" || payload.source !== "apple_music_api" || !payload.id) return;
+
+  try {
+    const playback = await playAppleMusicSong(payload.id);
+    if (playback.status === "needs_authorization") {
+      renderMusicKitStatus(false, "Click Authorize to stream Apple Music catalog songs.");
+      renderMiniPlayer({ ...payload, id: payload.id, state: "paused" });
+      addActivity("Apple Music authorization required", "pending");
+      return;
+    }
+    renderMiniPlayer({
+      id: payload.id,
+      title: payload.title,
+      artist: payload.artist,
+      album: payload.album,
+      artworkUrl: payload.artworkUrl,
+      state: "playing",
+    });
+    renderMusicKitStatus(true, `Requested Apple Music playback: ${[payload.title, payload.artist].filter(Boolean).join(" - ") || payload.id}`);
+    addActivity(`Apple Music playback requested: ${payload.title ?? payload.id}`, "ok");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    renderMusicKitStatus(false, message);
+    addActivity(`MusicKit playback failed: ${message}`, "error");
+  }
+};
+
+const isAppleMusicCatalogPayload = (payload: unknown): payload is AppleMusicToolPayload =>
+  Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
+
+type QueuedMusicPlaybackRequest = {
+  action?: "play" | "pause" | "stop";
+  id: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  artworkUrl?: string;
+};
+
+const startMusicPlaybackRequestPolling = () => {
+  if (musicPlaybackPoll) return;
+  musicPlaybackPoll = window.setInterval(() => void pollMusicPlaybackRequest(), 1000);
+  void pollMusicPlaybackRequest();
+};
+
+const pollMusicPlaybackRequest = async () => {
+  try {
+    const response = await getJson<{ request?: QueuedMusicPlaybackRequest }>("/api/music/playback-requests/next");
+    if (!response.request) return;
+    const request = response.request;
+    if (request.action === "pause" || request.action === "stop") {
+      await pauseAppleMusic();
+      if (currentMiniPlayerTrack) renderMiniPlayer({ ...currentMiniPlayerTrack, state: "paused" });
+      addActivity("Apple Music playback paused", "ok");
+      await postJson("/api/music/playback-status", { status: "paused" });
+      return;
+    }
+
+    const playback = await playAppleMusicSong(request.id);
+    if (playback.status === "needs_authorization") {
+      renderMusicKitStatus(false, "Click Authorize to stream Apple Music catalog songs.");
+      renderMiniPlayer({ ...request, id: request.id, state: "paused" });
+      addActivity("Apple Music authorization required", "pending");
+      await postJson("/api/music/playback-status", {
+        status: "needs_authorization",
+        songId: request.id,
+        title: request.title,
+        artist: request.artist,
+      });
+      return;
+    }
+    renderMiniPlayer({
+      id: request.id,
+      title: request.title,
+      artist: request.artist,
+      album: request.album,
+      artworkUrl: request.artworkUrl,
+      state: "playing",
+    });
+    renderMusicKitStatus(true, `Requested Apple Music playback: ${[request.title, request.artist].filter(Boolean).join(" - ") || request.id}`);
+    addActivity(`Apple Music playback requested: ${request.title ?? request.id}`, "ok");
+    await postJson("/api/music/playback-status", {
+      status: "playing_requested",
+      songId: request.id,
+      title: request.title,
+      artist: request.artist,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    addActivity(`MusicKit playback request failed: ${message}`, "error");
+    await postJson("/api/music/playback-status", { status: "error", error: message });
+  }
 };
 
 const errorMessage = (error: unknown) => {
@@ -1666,6 +1898,9 @@ orbOnlyBtn.addEventListener("click", () => setOrbOnlyMode(!isOrbOnly));
 restorePanelBtn.addEventListener("click", () => setOrbOnlyMode(false));
 resultWindowCloseBtn.addEventListener("click", () => resultWindow.classList.add("hidden"));
 saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
+authorizeMusicKitBtn.addEventListener("click", () => void authorizeAppleMusic());
+miniPlayerPlayBtn.addEventListener("click", () => void resumeMiniPlayer());
+miniPlayerPauseBtn.addEventListener("click", () => void pauseMiniPlayer());
 refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus());
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
 codexModelSelect.addEventListener("change", () => void saveCodexModel());
