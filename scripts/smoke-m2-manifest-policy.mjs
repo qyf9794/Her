@@ -129,6 +129,27 @@ const registry = new ToolRegistry(
 const invalid = await registry.execute({ name: "file_read", arguments: {}, source: "local" });
 if (invalid.ok || invalid.code !== "invalid_arguments") fail(`Invalid schema arguments were not rejected: ${JSON.stringify(invalid)}`);
 
+const systemStatus = await registry.execute({ name: "system_status", arguments: {}, source: "local" });
+if (!systemStatus.ok || systemStatus.requiresConfirmation || !systemStatus.result) {
+  fail(`Read-only manifest-bound handler did not execute directly: ${JSON.stringify(systemStatus)}`);
+}
+
+const highRiskRegistry = new ToolRegistry(
+  new ConfirmationQueue(),
+  new AuditLog(),
+  { assertToolAllowed: async () => {}, authorizedAppNames: async () => new Set() },
+  undefined,
+  new MemoryStore(path.join(tmpRoot, "high-risk-memory")),
+);
+const highRiskConfirmation = await highRiskRegistry.execute({
+  name: "file_trash",
+  arguments: { path: "/tmp/example.txt" },
+  source: "local",
+});
+if (!highRiskConfirmation.ok || !highRiskConfirmation.requiresConfirmation || !highRiskConfirmation.confirmationId) {
+  fail(`High-risk manifest-bound handler did not require confirmation: ${JSON.stringify(highRiskConfirmation)}`);
+}
+
 const disabledSettings = new SettingsStore(path.join(tmpRoot, "disabled-capability"));
 disabledSettings.setCapabilities({ fileManagement: false, systemOperations: true });
 const disabledGate = new CapabilityGate(disabledSettings, async () => []);
@@ -196,6 +217,8 @@ console.log(JSON.stringify({
     schemaValidation: true,
     manifestSchemaOwnership: true,
     manifestSummaryOwnership: true,
+    manifestHandlerExecution: true,
+    highRiskRuntimeConfirmation: true,
     disabledCapabilityDenied: true,
     unauthorizedAppDenied: true,
   },
