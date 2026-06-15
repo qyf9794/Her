@@ -1,0 +1,196 @@
+{
+  "milestone": "S3",
+  "title": "Browser and Page Commands",
+  "generatedAt": "2026-06-15T16:37:24.461Z",
+  "realtime2Connected": false,
+  "fixtureOrigin": "http://127.0.0.1:51522",
+  "isolatedProfile": "/var/folders/q0/pcvl84ds1xn2t_x6n97ys25h0000gn/T/her-s3-chrome-profile-nUJCuP",
+  "debugPort": 51521,
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "S3.browser.open-local",
+      "title": "Open a local static test page",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:21.222Z",
+      "completedAt": "2026-06-15T16:37:21.283Z",
+      "payload": {
+        "actionSummary": "Opened local fixture page in the default browser in the background.",
+        "url": "http://127.0.0.1:51522/",
+        "title": "Her S3 Browser Fixture"
+      }
+    },
+    {
+      "id": "S3.browser.isolated-open-example",
+      "title": "Open example.com in isolated Chrome",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:21.283Z",
+      "completedAt": "2026-06-15T16:37:21.796Z",
+      "payload": {
+        "opened": "https://example.com/",
+        "profile": "/var/folders/q0/pcvl84ds1xn2t_x6n97ys25h0000gn/T/her-s3-chrome-profile-nUJCuP",
+        "processId": 52930,
+        "note": "Opened in isolated Chrome profile.",
+        "url": "https://example.com/",
+        "title": "Example Domain",
+        "actionSummary": "Opened example.com in isolated Chrome profile.",
+        "expectedUrl": "https://example.com/"
+      }
+    },
+    {
+      "id": "S3.browser.search-open",
+      "title": "Open search URL for Her local agent runtime",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:21.796Z",
+      "completedAt": "2026-06-15T16:37:22.581Z",
+      "payload": {
+        "opened": "https://duckduckgo.com/?q=Her%20local%20agent%20runtime",
+        "profile": "/var/folders/q0/pcvl84ds1xn2t_x6n97ys25h0000gn/T/her-s3-chrome-profile-nUJCuP",
+        "processId": 52930,
+        "note": "Opened in isolated Chrome profile.",
+        "url": "https://duckduckgo.com/?q=Her%20local%20agent%20runtime",
+        "title": "DuckDuckGo Search",
+        "engine": "duckduckgo",
+        "query": "Her local agent runtime",
+        "actionSummary": "Opened search results URL without reading search result content."
+      }
+    },
+    {
+      "id": "S3.browser.read-page",
+      "title": "Read page title and visible text",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:22.581Z",
+      "completedAt": "2026-06-15T16:37:22.644Z",
+      "payload": {
+        "url": "http://127.0.0.1:51522/",
+        "title": "Her S3 Browser Fixture",
+        "textLength": 134,
+        "textPreview": "Local agent runtime fixture This page exists for Her S3 browser command testing. Name Email Comment Local action Waiting Video fixture",
+        "actionSummary": "Read compact page title, visible text, links, and form field metadata."
+      }
+    },
+    {
+      "id": "S3.browser.fill-form",
+      "title": "Fill local fixture form fields",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:22.644Z",
+      "completedAt": "2026-06-15T16:37:22.688Z",
+      "payload": {
+        "url": "http://127.0.0.1:51522/",
+        "title": "Her S3 Browser Fixture",
+        "actionSummary": "Filled local-only form fields and verified DOM values.",
+        "fields": {
+          "name": "Qian Yifeng",
+          "email": "qian@example.test",
+          "comment": "S3 local fixture comment"
+        },
+        "results": [
+          {
+            "selector": "#name",
+            "ok": true
+          },
+          {
+            "selector": "#email",
+            "ok": true
+          },
+          {
+            "selector": "#comment",
+            "ok": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "S3.browser.click-local",
+      "title": "Click local fixture button and verify visible DOM change",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:22.688Z",
+      "completedAt": "2026-06-15T16:37:22.726Z",
+      "payload": {
+        "url": "http://127.0.0.1:51522/",
+        "title": "Her S3 Browser Fixture",
+        "actionSummary": "Clicked a local fixture button and verified visible page state.",
+        "clickResult": {
+          "ok": true,
+          "purpose": "Toggle the local fixture status text."
+        },
+        "status": "Button clicked"
+      }
+    },
+    {
+      "id": "S3.browser.external-submit-confirmation",
+      "title": "Require confirmation for external login submit",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:22.726Z",
+      "completedAt": "2026-06-15T16:37:22.759Z",
+      "payload": {
+        "url": "http://127.0.0.1:51522/external-login",
+        "title": "Her S3 External Submit Fixture",
+        "actionSummary": "Stopped external submit at confirmation card; no browser click executed.",
+        "policyDecision": "require_confirmation",
+        "risk": "browser_submit",
+        "currentUrl": "http://127.0.0.1:51522/external-login"
+      }
+    },
+    {
+      "id": "S3.browser.video-state",
+      "title": "Read video state from controlled fixture page",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:22.759Z",
+      "completedAt": "2026-06-15T16:37:22.789Z",
+      "payload": {
+        "url": "http://127.0.0.1:51522/video",
+        "title": "Her S3 Video Fixture",
+        "hasVideo": true,
+        "paused": true,
+        "currentTime": 0,
+        "duration": null,
+        "readyState": 0,
+        "muted": true,
+        "volume": 1,
+        "actionSummary": "Read compact state from a controlled video element."
+      }
+    },
+    {
+      "id": "S3.browser.move-resize",
+      "title": "Move isolated browser window to known bounds",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:22.789Z",
+      "completedAt": "2026-06-15T16:37:23.099Z",
+      "payload": {
+        "moved": true,
+        "processId": 52930,
+        "x": 120,
+        "y": 120,
+        "width": 900,
+        "height": 700,
+        "url": "http://127.0.0.1:51522/",
+        "title": "Her S3 Browser Fixture",
+        "actionSummary": "Moved and resized the isolated Chrome window."
+      }
+    },
+    {
+      "id": "S3.local-api-origin-protection",
+      "title": "Verify arbitrary webpages cannot call local tool APIs",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:37:23.099Z",
+      "completedAt": "2026-06-15T16:37:23.099Z",
+      "payload": {
+        "actionSummary": "Checked local API origin policy against arbitrary web origins.",
+        "arbitraryOriginAllowed": false,
+        "devOriginAllowedInDev": true,
+        "devOriginAllowedInPackaged": false
+      }
+    }
+  ],
+  "acceptance": {
+    "formFillAndClickUseLocalFixtures": true,
+    "externalSubmitRequiresConfirmationAndNotExecuted": true,
+    "browserCardsIncludeUrlTitleActionSummary": true,
+    "localApiOriginProtectionsEnabled": true
+  }
+}

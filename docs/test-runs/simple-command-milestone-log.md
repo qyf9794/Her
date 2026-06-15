@@ -284,3 +284,69 @@ Report: `docs/test-runs/simple-command-files/S2-files-documents-report.json`
 - Sandbox root: `/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807` (removed after run)
 - Real execution: file list/search/read/open/create/rename/copy/move/trash plus document extract/folder digest/prepare edit.
 - Safety checks: write operations stayed under the disposable Desktop sandbox; `file_trash` required confirmation before the script executed the sandbox trash; fake `.p8`, API key, bearer token, and private key contents were denied or redacted.
+
+## S3 Browser and Page Commands - Failed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 5
+- Failed: 5
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S3 Browser and Page Commands - Failed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 4
+- Failed: 6
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S3 Browser and Page Commands - Passed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 10
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S3 Browser and Page Commands - Passed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 10
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S3 Browser and Page Commands - Passed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 10
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S3 Browser and Page Commands - Passed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 10
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.

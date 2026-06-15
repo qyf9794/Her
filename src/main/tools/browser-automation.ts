@@ -22,15 +22,28 @@ export class BrowserAutomation {
 
   async openIsolatedUrl(rawUrl: string) {
     const url = this.assertAllowedUrl(rawUrl);
-    this.lastOpenedUrl = url.toString();
+    const targetUrl = url.toString();
     await fs.mkdir(config.isolatedBrowserProfile, { recursive: true });
+    const existingProcessId = await this.findIsolatedChromePid().catch(() => undefined);
+    if (existingProcessId) {
+      await this.navigateFirstPage(targetUrl);
+      this.lastOpenedUrl = targetUrl;
+      return {
+        opened: targetUrl,
+        profile: config.isolatedBrowserProfile,
+        processId: existingProcessId,
+        note: "Opened in isolated Chrome profile.",
+      };
+    }
+
+    this.lastOpenedUrl = targetUrl;
     const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     const args = [
       `--user-data-dir=${config.isolatedBrowserProfile}`,
       `--remote-debugging-port=${config.browserDebugPort}`,
       "--no-first-run",
       "--no-default-browser-check",
-      url.toString(),
+      targetUrl,
     ];
     try {
       await fs.access(chromePath);
@@ -51,7 +64,7 @@ export class BrowserAutomation {
       this.isolatedChromePid = undefined;
     }
     return {
-      opened: url.toString(),
+      opened: targetUrl,
       profile: config.isolatedBrowserProfile,
       processId: this.isolatedChromePid,
       note: "Opened in isolated Chrome profile.",
@@ -317,6 +330,23 @@ export class BrowserAutomation {
       throw new Error("No isolated Chrome page found. Open one with browser_isolated_open_url first.");
     }
     return new CdpClient(page.webSocketDebuggerUrl);
+  }
+
+  private async navigateFirstPage(url: string) {
+    const pages = (await fetch(`http://127.0.0.1:${config.browserDebugPort}/json/list`, {
+      signal: AbortSignal.timeout(3000),
+    }).then((res) => res.json())) as Array<{
+      type: string;
+      webSocketDebuggerUrl?: string;
+    }>;
+    const page = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
+    if (!page?.webSocketDebuggerUrl) throw new Error("No isolated Chrome page found for navigation.");
+    const client = new CdpClient(page.webSocketDebuggerUrl);
+    try {
+      await client.call("Page.navigate", { url });
+    } finally {
+      client.close();
+    }
   }
 }
 
