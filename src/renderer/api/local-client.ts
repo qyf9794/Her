@@ -39,7 +39,7 @@ export const writeAudit = (
 
 const requestJson = async <T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> => {
   if (!window.herLocalApi) {
-    throw new Error("Local API bridge is unavailable.");
+    throw new Error("Local API bridge is unavailable. Open Her in the Electron desktop app window, not a plain browser tab.");
   }
 
   const response = await window.herLocalApi.request<T & { error?: string }>({ method, path, body });

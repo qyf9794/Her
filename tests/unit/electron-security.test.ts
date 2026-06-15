@@ -96,6 +96,7 @@ describe("Electron production security", () => {
   });
 
   it("allows MusicKit popups and denies sensitive permissions from untrusted origins", () => {
+    expect(isTrustedMusicKitPopupUrl("about:blank")).toBe(true);
     expect(isTrustedMusicKitPopupUrl("https://authorize.music.apple.com/auth")).toBe(true);
     expect(isTrustedMusicKitPopupUrl("https://evil.example/auth")).toBe(false);
 

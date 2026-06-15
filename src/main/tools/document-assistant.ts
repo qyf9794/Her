@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { FileManager } from "./file-manager";
+import { isCredentialLikePath, redactSensitiveText } from "./secret-redaction";
 
 const supported = new Set([".txt", ".md", ".markdown", ".pdf", ".docx"]);
 
@@ -10,6 +11,9 @@ export class DocumentAssistant {
 
   async extract(inputPath: string, maxChars: number) {
     const filePath = this.files.resolveAllowed(inputPath);
+    if (isCredentialLikePath(filePath)) {
+      throw new Error("Refusing to extract credential-like document contents. Her will not expose secrets.");
+    }
     const ext = path.extname(filePath).toLowerCase();
     if (!supported.has(ext)) throw new Error(`Unsupported document type: ${ext || "unknown"}`);
 
@@ -18,11 +22,13 @@ export class DocumentAssistant {
     else if (ext === ".docx") content = await extractDocx(filePath);
     else content = await fs.readFile(filePath, "utf8");
 
+    const redacted = redactSensitiveText(content.slice(0, maxChars));
     return {
       path: filePath,
-      chars: content.length,
+      chars: redacted.content.length,
       truncated: content.length > maxChars,
-      content: content.slice(0, maxChars),
+      content: redacted.content,
+      redacted: redacted.redacted,
     };
   }
 

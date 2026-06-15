@@ -50,7 +50,16 @@ export class SystemControl {
   }
 
   async focusApp(appName: string) {
-    await run("osascript", ["-e", `tell application ${JSON.stringify(appName)} to activate`]);
+    const script = `
+      tell application ${JSON.stringify(appName)} to activate
+      delay 0.2
+      tell application "System Events"
+        try
+          set frontmost of process ${JSON.stringify(appName)} to true
+        end try
+      end tell
+    `;
+    await run("osascript", ["-e", script], undefined, 10000);
     return { focused: appName };
   }
 
@@ -64,32 +73,41 @@ export class SystemControl {
     return { quit: appName };
   }
 
-  async listWindows() {
+  async listWindows(appNames?: Iterable<string>) {
+    const allowedApps = [...(appNames ?? [])].filter(Boolean);
     const script = `
       tell application "System Events"
         set sep to character id 31
+        set allowedApps to ${appleScriptList(allowedApps)}
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "Codex", "System Settings"}
         set output to ""
         repeat with proc in (application processes whose visible is true)
           set appName to name of proc
-          try
-            repeat with targetWindow in windows of proc
-              set winName to ""
-              set winX to 0
-              set winY to 0
-              set winWidth to 0
-              set winHeight to 0
+          if appName is not in skippedApps then
+            if (count of allowedApps) is 0 or appName is in allowedApps then
               try
-                set winName to name of targetWindow as text
-                set winPosition to position of targetWindow
-                set winSize to size of targetWindow
-                set winX to item 1 of winPosition
-                set winY to item 2 of winPosition
-                set winWidth to item 1 of winSize
-                set winHeight to item 2 of winSize
-                set output to output & appName & sep & winName & sep & (winX as text) & sep & (winY as text) & sep & (winWidth as text) & sep & (winHeight as text) & linefeed
+                with timeout of 2 seconds
+                  repeat with targetWindow in windows of proc
+                    set winName to ""
+                    set winX to 0
+                    set winY to 0
+                    set winWidth to 0
+                    set winHeight to 0
+                    try
+                      set winName to name of targetWindow as text
+                      set winPosition to position of targetWindow
+                      set winSize to size of targetWindow
+                      set winX to item 1 of winPosition
+                      set winY to item 2 of winPosition
+                      set winWidth to item 1 of winSize
+                      set winHeight to item 2 of winSize
+                      set output to output & appName & sep & winName & sep & (winX as text) & sep & (winY as text) & sep & (winWidth as text) & sep & (winHeight as text) & linefeed
+                    end try
+                  end repeat
+                end timeout
               end try
-            end repeat
-          end try
+            end if
+          end if
         end repeat
         return output
       end tell
@@ -131,7 +149,7 @@ export class SystemControl {
     const script = `
       tell application "System Events"
         set allowedApps to ${appleScriptList(allowedApps)}
-        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Settings"}
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "Codex", "System Settings"}
         set closedCount to 0
         set appCount to 0
 
@@ -197,7 +215,7 @@ export class SystemControl {
     const preserveFinder = options.preserveFinder ?? true;
     const script = `
       tell application "System Events"
-        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Events"}
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "Codex", "System Events"}
         set frontAppName to ""
         if ${preserveFrontmost ? "true" : "false"} then
           repeat with proc in application processes
@@ -252,7 +270,7 @@ export class SystemControl {
   async minimizeAllWindows() {
     const script = `
       tell application "System Events"
-        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Settings"}
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "Codex", "System Settings"}
         set minimizedCount to 0
         set appCount to 0
 
@@ -290,22 +308,25 @@ export class SystemControl {
     const script = `
       tell application "System Events"
         set allowedApps to ${appleScriptList(allowedApps)}
-        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Settings"}
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "Codex", "System Settings"}
         set targetCount to 0
 
         if (count of allowedApps) is greater than 0 then
           repeat with requestedApp in allowedApps
             set appName to requestedApp as text
             if appName is not in skippedApps then
-              if exists process appName then
-                tell process appName
-                  repeat with targetWindow in windows
-                    try
-                      if subrole of targetWindow is "AXStandardWindow" then set targetCount to targetCount + 1
-                    end try
-                  end repeat
-                end tell
-              end if
+              repeat with proc in (application processes whose visible is true)
+                set currentAppName to name of proc as text
+                if currentAppName is appName then
+                  tell proc
+                    repeat with targetWindow in windows
+                      try
+                        if subrole of targetWindow is "AXStandardWindow" then set targetCount to targetCount + 1
+                      end try
+                    end repeat
+                  end tell
+                end if
+              end repeat
             end if
           end repeat
         else
@@ -354,9 +375,11 @@ export class SystemControl {
           repeat with requestedApp in allowedApps
             set appName to requestedApp as text
             if appName is not in skippedApps then
-              if exists process appName then
-                set appArrangedCount to 0
-                tell process appName
+              set appArrangedCount to 0
+              repeat with proc in (application processes whose visible is true)
+                set currentAppName to name of proc as text
+                if currentAppName is appName then
+                  tell proc
                   repeat with targetWindow in windows
                     try
                       if subrole of targetWindow is "AXStandardWindow" then
@@ -372,8 +395,9 @@ export class SystemControl {
                     end try
                   end repeat
                 end tell
-                if appArrangedCount is greater than 0 then set appCount to appCount + 1
-              end if
+                end if
+              end repeat
+              if appArrangedCount is greater than 0 then set appCount to appCount + 1
             end if
           end repeat
         else
@@ -406,7 +430,7 @@ export class SystemControl {
       end tell
     `;
     await writeDebugScript("auto-arrange.applescript", script);
-    const output = await run("osascript", ["-e", script], undefined, 20000);
+    const output = await run("osascript", ["-e", script], undefined, 60000);
     const [windowsArranged, appsAffected, layout, targetWindows] = output.split("|");
     const arranged = Number(windowsArranged) || 0;
     const target = Number(targetWindows) || 0;
@@ -435,7 +459,7 @@ export class SystemControl {
         set allowedApps to ${appleScriptList(allowedApps)}
         set keepApps to ${appleScriptList(keepAppNames)}
         set keepKeywords to ${appleScriptList(keepTitleKeywords)}
-        set skippedApps to {"Electron", "HER", "Her Voice Agent", "System Settings"}
+        set skippedApps to {"Electron", "HER", "Her Voice Agent", "Codex", "System Settings"}
         set frontAppName to ""
         set frontWindowName to ""
         set minimizedCount to 0
@@ -458,41 +482,44 @@ export class SystemControl {
           repeat with requestedApp in allowedApps
             set appName to requestedApp as text
             if appName is not in skippedApps then
-              if exists process appName then
-                set appMinimizedCount to 0
-                tell process appName
-                  repeat with targetWindow in windows
-                    try
-                      if subrole of targetWindow is "AXStandardWindow" then
-                        set winName to name of targetWindow as text
-                        set shouldKeep to false
-                        if appName is in keepApps then set shouldKeep to true
-                        if ${preserveFrontmost ? "true" : "false"} then
-                          if appName is frontAppName then
-                            if winName is frontWindowName then set shouldKeep to true
+              set appMinimizedCount to 0
+              repeat with proc in (application processes whose visible is true)
+                set currentAppName to name of proc as text
+                if currentAppName is appName then
+                  tell proc
+                    repeat with targetWindow in windows
+                      try
+                        if subrole of targetWindow is "AXStandardWindow" then
+                          set winName to name of targetWindow as text
+                          set shouldKeep to false
+                          if appName is in keepApps then set shouldKeep to true
+                          if ${preserveFrontmost ? "true" : "false"} then
+                            if appName is frontAppName then
+                              if winName is frontWindowName then set shouldKeep to true
+                            end if
+                          end if
+                          repeat with keyword in keepKeywords
+                            set keywordText to keyword as text
+                            ignoring case
+                              if winName contains keywordText then set shouldKeep to true
+                            end ignoring
+                          end repeat
+
+                          if shouldKeep is true then
+                            set preservedCount to preservedCount + 1
+                          else
+                            set value of attribute "AXMinimized" of targetWindow to true
+                            set minimizedCount to minimizedCount + 1
+                            set appMinimizedCount to appMinimizedCount + 1
+                            delay 0.03
                           end if
                         end if
-                        repeat with keyword in keepKeywords
-                          set keywordText to keyword as text
-                          ignoring case
-                            if winName contains keywordText then set shouldKeep to true
-                          end ignoring
-                        end repeat
-
-                        if shouldKeep is true then
-                          set preservedCount to preservedCount + 1
-                        else
-                          set value of attribute "AXMinimized" of targetWindow to true
-                          set minimizedCount to minimizedCount + 1
-                          set appMinimizedCount to appMinimizedCount + 1
-                          delay 0.03
-                        end if
-                      end if
-                    end try
-                  end repeat
-                end tell
-                if appMinimizedCount is greater than 0 then set appCount to appCount + 1
-              end if
+                      end try
+                    end repeat
+                  end tell
+                end if
+              end repeat
+              if appMinimizedCount is greater than 0 then set appCount to appCount + 1
             end if
           end repeat
         else
@@ -540,7 +567,7 @@ export class SystemControl {
       end tell
     `;
     await writeDebugScript("minimize-unrelated.applescript", script);
-    const output = await run("osascript", ["-e", script], undefined, 20000);
+    const output = await run("osascript", ["-e", script], undefined, 60000);
     const [windowsMinimized, windowsPreserved, appsAffected, frontmostApp, frontmostWindow] = output.split("|");
     return {
       windowsMinimized: Number(windowsMinimized) || 0,
@@ -581,7 +608,6 @@ export class SystemControl {
     await run("osascript", ["-e", `set volume output volume ${Math.round(level)}`]);
     return { volume: Math.round(level) };
   }
-
   async getVolume() {
     const output = await run("osascript", [
       "-e",

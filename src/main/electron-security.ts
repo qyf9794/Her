@@ -86,6 +86,7 @@ export const isRendererCspTargetUrl = (rawUrl: string, options: RendererSecurity
   isTrustedRendererUrl(rawUrl, options);
 
 export const isTrustedMusicKitPopupUrl = (rawUrl: string) => {
+  if (rawUrl === "about:blank") return true;
   try {
     const url = new URL(rawUrl);
     return url.protocol === "https:" && musicKitPopupHosts.has(url.hostname);

@@ -4,6 +4,10 @@ import { config } from "../config";
 
 let cachedToken: { token: string; expiresAt: number } | undefined;
 
+export const clearAppleMusicDeveloperTokenCache = () => {
+  cachedToken = undefined;
+};
+
 export const getAppleMusicDeveloperToken = () => {
   if (config.appleMusicDeveloperToken) return config.appleMusicDeveloperToken;
   if (!config.appleMusicTeamId || !config.appleMusicKeyId || !config.appleMusicPrivateKeyPath) return "";

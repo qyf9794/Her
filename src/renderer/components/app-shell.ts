@@ -135,6 +135,13 @@ export const renderAppShell = () => {
             <h2>Apple Music</h2>
             <span id="musicKitBadge" class="keyBadge">Checking</span>
           </div>
+          <div class="musicKitConfigForm">
+            <input id="appleMusicKeyNameInput" type="text" placeholder="Key name" autocomplete="off" spellcheck="false" />
+            <input id="appleMusicTeamIdInput" type="text" placeholder="Apple Team ID" autocomplete="off" spellcheck="false" />
+            <input id="appleMusicKeyIdInput" type="text" placeholder="MusicKit Key ID" autocomplete="off" spellcheck="false" />
+            <input id="appleMusicPrivateKeyPathInput" type="text" placeholder="Absolute path to .p8 file" autocomplete="off" spellcheck="false" />
+            <button id="saveAppleMusicConfigBtn" type="button">Save MusicKit Key</button>
+          </div>
           <p id="musicKitStatus" class="muted">Authorize Apple Music to stream subscription catalog songs.</p>
           <button id="authorizeMusicKitBtn" type="button">Authorize</button>
         </section>

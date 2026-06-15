@@ -35,6 +35,12 @@ Task runtime and audit payloads redact common secret-like fields. Codex receives
 
 Explicit memory and Her Skills reject secret-like keys and values before persistence. Do not save API keys, OAuth tokens, cookies, passwords, bearer tokens, or local API tokens as aliases, memories, skill parameters, or skill step arguments.
 
+## Apple Music MusicKit Keys
+
+- The renderer can save MusicKit key metadata and an absolute `.p8` file path through the local API.
+- Her stores only the key name, Team ID, Key ID, and private-key file path in `.env.local`; it does not copy or upload the `.p8` private key contents.
+- Developer tokens are generated in the main process when needed and must not be exposed in logs, diagnostics, feedback exports, or task artifacts.
+
 ## Diagnostics And Beta Feedback
 
 - Diagnostics and beta feedback exports are local-only JSON files written under the app userData export directory.

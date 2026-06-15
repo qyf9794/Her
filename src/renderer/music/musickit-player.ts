@@ -26,11 +26,13 @@ declare global {
 
 let loadPromise: Promise<void> | undefined;
 let instancePromise: Promise<MusicKitInstance> | undefined;
+let authorizedInSession = false;
 
 export type MusicKitStatus = {
   configured: boolean;
   authorized: boolean;
   playbackSupported: boolean;
+  detail?: string;
 };
 
 export const getMusicKitStatus = async (): Promise<MusicKitStatus> => {
@@ -39,23 +41,32 @@ export const getMusicKitStatus = async (): Promise<MusicKitStatus> => {
     return {
       configured: true,
       authorized: isAuthorized(instance),
-      playbackSupported: true,
+      playbackSupported: canPlayProtectedAppleMusic(),
     };
-  } catch {
+  } catch (error) {
     return {
       configured: false,
       authorized: false,
       playbackSupported: false,
+      detail: error instanceof Error ? error.message : String(error),
     };
   }
 };
 
 export const authorizeMusicKit = async () => {
   const instance = await getMusicKitInstance();
-  const token = await instance.authorize();
+  let token = "";
+  try {
+    token = await instance.authorize();
+  } catch (error) {
+    authorizedInSession = readInstanceAuthorized(instance);
+    if (!authorizedInSession) throw error;
+  }
+  authorizedInSession = authorizedInSession || Boolean(token) || readInstanceAuthorized(instance);
   return {
     configured: true,
-    authorized: Boolean(token || instance.musicUserToken || instance.isAuthorized),
+    authorized: isAuthorized(instance),
+    playbackSupported: canPlayProtectedAppleMusic(),
   };
 };
 
@@ -65,6 +76,13 @@ export const playAppleMusicSong = async (songId: string) => {
     return {
       status: "needs_authorization",
       note: "Authorize Apple Music before streaming catalog songs.",
+    };
+  }
+  if (!canPlayProtectedAppleMusic()) {
+    return {
+      status: "electron_playback_unsupported",
+      songId,
+      note: "Apple Music authorization is available, but this Electron runtime does not expose protected media playback. Use the native Music app fallback.",
     };
   }
 
@@ -130,4 +148,26 @@ const loadMusicKitScript = async () => {
 };
 
 const isAuthorized = (instance: MusicKitInstance) =>
-  instance.isAuthorized === true || Boolean(instance.musicUserToken);
+  authorizedInSession || readInstanceAuthorized(instance);
+
+const readInstanceAuthorized = (instance: MusicKitInstance) =>
+  instance.isAuthorized === true || Boolean(instance.musicUserToken) || hasStoredMusicUserToken();
+
+const hasStoredMusicUserToken = () => {
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index) ?? "";
+      if (!/(music|musickit|amp)/i.test(key) || !/(user|media-user|music-user)/i.test(key) || !/token/i.test(key)) {
+        continue;
+      }
+      const value = window.localStorage.getItem(key);
+      if (value && value.length > 20) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
+
+const canPlayProtectedAppleMusic = () =>
+  typeof navigator.requestMediaKeySystemAccess === "function";

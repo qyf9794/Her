@@ -47,6 +47,45 @@ const expandHome = (value: string) => {
   return value;
 };
 
+const commonExecutableDirectories = [
+  "/Applications/Codex.app/Contents/Resources",
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  path.join(home, ".local/bin"),
+  path.join(home, ".npm-global/bin"),
+  "/usr/bin",
+  "/bin",
+];
+
+const isExecutableFile = (filePath: string) => {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+};
+
+export const resolveCommandPath = (command: string, extraDirectories: string[] = []) => {
+  const trimmed = command.trim();
+  if (!trimmed) return trimmed;
+  const expanded = expandHome(trimmed);
+  if (expanded.includes(path.sep)) return expanded;
+
+  const pathDirectories = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  for (const directory of [...pathDirectories, ...extraDirectories]) {
+    const candidate = path.join(expandHome(directory), expanded);
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  return expanded;
+};
+
+export const resolveCodexCommand = (command = process.env.HER_CODEX_COMMAND ?? "codex") =>
+  resolveCommandPath(command, commonExecutableDirectories);
+
 const resolveRealtimeVoice = (value: string | undefined): RealtimeVoice => {
   const normalized = value?.trim().toLowerCase();
   return normalized && isRealtimeVoice(normalized) ? normalized : realtimeDefaultVoice;
@@ -79,7 +118,7 @@ export const config = {
   toolQueueBackoffMaxMs: boundedNumber(process.env.HER_TOOL_QUEUE_BACKOFF_MAX_MS, 30000, 1000, 300000),
   toolQueueTaskTimeoutMs: boundedNumber(process.env.HER_TOOL_QUEUE_TASK_TIMEOUT_MS, 30000, 1000, 300000),
   codexEnabled: booleanEnv(process.env.HER_CODEX_ENABLED, true),
-  codexCommand: process.env.HER_CODEX_COMMAND ?? "codex",
+  codexCommand: resolveCodexCommand(),
   codexArgs: splitArgs(process.env.HER_CODEX_ARGS, ["app-server", "--listen", "stdio://"]),
   codexModel: process.env.HER_CODEX_MODEL ?? "",
   codexTurnTimeoutMs: boundedNumber(process.env.HER_CODEX_TURN_TIMEOUT_MS, 300000, 10000, 1800000),
@@ -137,6 +176,27 @@ export const readCodexModel = () =>
 export const readRealtimeVoice = () =>
   resolveRealtimeVoice(process.env.HER_REALTIME_VOICE || readEnvValue(envLocalPath, "HER_REALTIME_VOICE") || readEnvValue(envPath, "HER_REALTIME_VOICE"));
 
+export type AppleMusicConfigInput = {
+  keyName?: string;
+  teamId?: string;
+  keyId?: string;
+  privateKeyPath?: string;
+};
+
+export const readAppleMusicConfig = () => {
+  const keyName = process.env.HER_APPLE_MUSIC_KEY_NAME || readEnvValue(envLocalPath, "HER_APPLE_MUSIC_KEY_NAME") || readEnvValue(envPath, "HER_APPLE_MUSIC_KEY_NAME");
+  const teamId = process.env.APPLE_TEAM_ID || process.env.HER_APPLE_MUSIC_TEAM_ID || readEnvValue(envLocalPath, "HER_APPLE_MUSIC_TEAM_ID") || readEnvValue(envPath, "HER_APPLE_MUSIC_TEAM_ID");
+  const keyId = process.env.APPLE_MUSICKIT_KEY_ID || process.env.HER_APPLE_MUSIC_KEY_ID || readEnvValue(envLocalPath, "HER_APPLE_MUSIC_KEY_ID") || readEnvValue(envPath, "HER_APPLE_MUSIC_KEY_ID");
+  const privateKeyPath = process.env.HER_APPLE_MUSIC_PRIVATE_KEY_PATH || readEnvValue(envLocalPath, "HER_APPLE_MUSIC_PRIVATE_KEY_PATH") || readEnvValue(envPath, "HER_APPLE_MUSIC_PRIVATE_KEY_PATH");
+  return {
+    keyName,
+    teamId,
+    keyId,
+    privateKeyPath,
+    configured: Boolean(teamId && keyId && privateKeyPath),
+  };
+};
+
 export const saveOpenaiApiKey = (apiKey: string) => {
   const trimmed = apiKey.trim();
   if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(trimmed)) {
@@ -171,6 +231,36 @@ export const saveRealtimeVoice = (voice: string) => {
   process.env.HER_REALTIME_VOICE = normalized;
   config.realtimeVoice = normalized;
   return normalized;
+};
+
+export const saveAppleMusicConfig = (input: AppleMusicConfigInput) => {
+  const keyName = input.keyName?.trim() ?? "";
+  const teamId = input.teamId?.trim() ?? "";
+  const keyId = input.keyId?.trim() ?? "";
+  const privateKeyPath = input.privateKeyPath?.trim() ?? "";
+
+  if (keyName && keyName.length > 120) throw new Error("Apple Music key name is too long.");
+  if (!/^[A-Z0-9]{10}$/.test(teamId)) throw new Error("Enter a valid 10-character Apple Team ID.");
+  if (!/^[A-Z0-9]{10}$/.test(keyId)) throw new Error("Enter a valid 10-character Apple Music Key ID.");
+  if (!privateKeyPath || !path.isAbsolute(privateKeyPath)) throw new Error("Enter an absolute path to the Apple .p8 private key file.");
+  if (path.extname(privateKeyPath).toLowerCase() !== ".p8") throw new Error("Apple Music private key path must point to a .p8 file.");
+  if (!fs.existsSync(privateKeyPath) || !fs.statSync(privateKeyPath).isFile()) throw new Error("Apple Music .p8 private key file was not found.");
+
+  writeEnvValue(envLocalPath, "HER_APPLE_MUSIC_KEY_NAME", keyName || undefined);
+  writeEnvValue(envLocalPath, "HER_APPLE_MUSIC_TEAM_ID", teamId);
+  writeEnvValue(envLocalPath, "HER_APPLE_MUSIC_KEY_ID", keyId);
+  writeEnvValue(envLocalPath, "HER_APPLE_MUSIC_PRIVATE_KEY_PATH", privateKeyPath);
+
+  if (keyName) process.env.HER_APPLE_MUSIC_KEY_NAME = keyName;
+  else delete process.env.HER_APPLE_MUSIC_KEY_NAME;
+  process.env.HER_APPLE_MUSIC_TEAM_ID = teamId;
+  process.env.HER_APPLE_MUSIC_KEY_ID = keyId;
+  process.env.HER_APPLE_MUSIC_PRIVATE_KEY_PATH = privateKeyPath;
+  config.appleMusicTeamId = teamId;
+  config.appleMusicKeyId = keyId;
+  config.appleMusicPrivateKeyPath = privateKeyPath;
+
+  return readAppleMusicConfig();
 };
 
 const writeEnvValue = (filePath: string, envName: string, value: string | undefined) => {

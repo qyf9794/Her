@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { config } from "../config";
+import { isCredentialLikePath, redactSensitiveText } from "./secret-redaction";
 
 const textExtensions = new Set([".txt", ".md", ".markdown", ".json", ".csv", ".log", ".yaml", ".yml"]);
 const directoryReadTimeoutMs = 2000;
@@ -94,6 +95,9 @@ export class FileManager {
 
   async readText(inputPath: string, maxChars: number) {
     const filePath = this.resolveAllowed(inputPath);
+    if (isCredentialLikePath(filePath)) {
+      throw new Error("Refusing to read credential-like file contents. Use the file path only; Her will not expose secrets.");
+    }
     const ext = path.extname(filePath).toLowerCase();
     if (!textExtensions.has(ext)) {
       throw new Error(`Use document_extract for ${ext || "this file type"}.`);
@@ -109,12 +113,14 @@ export class FileManager {
     } finally {
       await handle.close();
     }
+    const redacted = redactSensitiveText(content.slice(0, maxChars));
     return {
       path: filePath,
-      chars: Math.min(stat.size, content.length),
+      chars: Math.min(stat.size, redacted.content.length),
       fileBytes: stat.size,
       truncated: content.length > maxChars || stat.size > Buffer.byteLength(content),
-      content: content.slice(0, maxChars),
+      content: redacted.content,
+      redacted: redacted.redacted,
     };
   }
 

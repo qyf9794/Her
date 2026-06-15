@@ -819,6 +819,16 @@ body.orbOnlyActive .productShell {
   background: #666d6d;
 }
 
+.musicKitConfigForm {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.musicKitConfigForm input {
+  min-width: 0;
+}
+
 .codexLoginPanel {
   border: 1px solid #7b8586;
   border-radius: 8px;
@@ -906,6 +916,10 @@ body.orbOnlyActive .productShell {
 .musicKitPanel button {
   width: 100%;
   margin-top: 12px;
+}
+
+.musicKitConfigForm button {
+  margin-top: 0;
 }
 
 .apiKeyForm {

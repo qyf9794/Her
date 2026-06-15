@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "milestone": "S1",
+  "title": "Desktop App and Window Real Simulation",
+  "generatedAt": "2026-06-15T16:18:54.498Z",
+  "realtime2Connected": false,
+  "testApp": "TextEdit",
+  "protectedApps": [
+    "Electron",
+    "HER",
+    "Her Voice Agent",
+    "Codex",
+    "System Settings"
+  ],
+  "summary": {
+    "total": 9,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 1,
+    "blocked": 0
+  },
+  "scenarios": [
+    {
+      "id": "S1.preflight.accessibility",
+      "name": "Verify System Events can inspect windows",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:18:54.499Z",
+      "finishedAt": "2026-06-15T16:18:56.323Z",
+      "passed": true,
+      "expected": "System Events returns frontmost and visible application process data.",
+      "actual": {
+        "frontmostApp": "Electron",
+        "visibleAppCount": 6,
+        "visibleApps": [
+          "Preview",
+          "Finder",
+          "Shadowrocket",
+          "Codex",
+          "Safari",
+          "Electron"
+        ]
+      }
+    },
+    {
+      "id": "S1.protection.codex-skipped",
+      "name": "Verify Codex is in protected window script list",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:18:56.323Z",
+      "finishedAt": "2026-06-15T16:18:56.324Z",
+      "passed": true,
+      "expected": "All batch window scripts skip Codex.",
+      "actual": {
+        "protectedEverywhere": true
+      }
+    },
+    {
+      "id": "S1.app.open-focus",
+      "name": "Open and focus TextEdit",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:18:57.973Z",
+      "finishedAt": "2026-06-15T16:19:00.693Z",
+      "passed": true,
+      "expected": "TextEdit becomes the frontmost app.",
+      "actual": {
+        "frontmostApp": "TextEdit"
+      }
+    },
+    {
+      "id": "S1.window.list",
+      "name": "List visible TextEdit test windows",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:19:02.853Z",
+      "finishedAt": "2026-06-15T16:19:04.966Z",
+      "passed": true,
+      "expected": "At least 10 disposable TextEdit windows are visible and listed.",
+      "actual": {
+        "listedTextEditWindows": 10,
+        "listedTestWindows": 10,
+        "sampleTitles": [
+          "Her S1 Other 09.rtf",
+          "Her S1 Other 08.rtf",
+          "Her S1 Other 07.rtf",
+          "Her S1 Other 06.rtf",
+          "Her S1 Other 05.rtf"
+        ]
+      }
+    },
+    {
+      "id": "S1.window.move-resize",
+      "name": "Move and resize the front TextEdit window",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:19:04.966Z",
+      "finishedAt": "2026-06-15T16:19:07.831Z",
+      "passed": true,
+      "expected": "A TextEdit window is moved near 80,80 and resized near 800x600 within 36px.",
+      "actual": {
+        "matched": true,
+        "windows": [
+          {
+            "title": "Her S1 Other 09.rtf",
+            "x": 80,
+            "y": 80,
+            "width": 800,
+            "height": 600
+          },
+          {
+            "title": "Her S1 Other 08.rtf",
+            "x": 541,
+            "y": 335,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 07.rtf",
+            "x": 512,
+            "y": 306,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 06.rtf",
+            "x": 483,
+            "y": 277,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 05.rtf",
+            "x": 454,
+            "y": 248,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 04.rtf",
+            "x": 425,
+            "y": 219,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 03.rtf",
+            "x": 396,
+            "y": 190,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 02.rtf",
+            "x": 367,
+            "y": 161,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Other 01.rtf",
+            "x": 338,
+            "y": 132,
+            "width": 603,
+            "height": 505
+          },
+          {
+            "title": "Her S1 Keep.rtf",
+            "x": 309,
+            "y": 103,
+            "width": 603,
+            "height": 505
+          }
+        ]
+      }
+    },
+    {
+      "id": "S1.window.auto-arrange-10",
+      "name": "Arrange 10 disposable TextEdit windows into a grid",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:19:07.831Z",
+      "finishedAt": "2026-06-15T16:19:11.187Z",
+      "passed": true,
+      "expected": "All disposable TextEdit windows are arranged, with target and arranged counts equal.",
+      "actual": {
+        "windowsArranged": 10,
+        "targetWindows": 10,
+        "appsAffected": 1,
+        "layout": "4x3",
+        "verified": true,
+        "scope": "authorized_apps"
+      }
+    },
+    {
+      "id": "S1.window.minimize-unrelated",
+      "name": "Keep one named test window and minimize unrelated TextEdit windows",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:19:11.187Z",
+      "finishedAt": "2026-06-15T16:19:13.496Z",
+      "passed": true,
+      "expected": "The keep window is preserved and at least one unrelated TextEdit test window is minimized.",
+      "actual": {
+        "windowsMinimized": 9,
+        "windowsPreserved": 1,
+        "appsAffected": 1,
+        "frontmostApp": "",
+        "frontmostWindow": "",
+        "scope": "authorized_apps"
+      }
+    },
+    {
+      "id": "S1.desktop.show",
+      "name": "Trigger Show Desktop without closing apps",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:19:13.496Z",
+      "finishedAt": "2026-06-15T16:19:13.645Z",
+      "passed": true,
+      "expected": "macOS Show Desktop shortcut is sent; no app is quit or closed.",
+      "actual": {
+        "action": "show_desktop",
+        "attempted": true,
+        "note": "Triggered macOS Show Desktop with System Events key code 103."
+      }
+    },
+    {
+      "id": "S1.excluded.close-all",
+      "name": "Do not execute close-all windows in unattended S1",
+      "status": "skipped",
+      "startedAt": "2026-06-15T16:19:13.645Z",
+      "finishedAt": "2026-06-15T16:19:13.645Z",
+      "expected": "window_close_all is represented only as a high-risk confirmation/denial in unattended S1.",
+      "actual": {
+        "reason": "Closing all windows can affect user context. It requires explicit user confirmation in an interactive run."
+      }
+    }
+  ]
+}

@@ -8,9 +8,18 @@ import { createLocalApiAuth, requireLocalApiAuth } from "./api/auth";
 import { localApiCors, requireTrustedLocalApiRequest } from "./api/cors";
 import { createRealtimeClientSecret } from "./realtime";
 import { DesktopContextService } from "./context/desktop-snapshot";
-import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
+import {
+  readAppleMusicConfig,
+  readCodexModel,
+  readOpenaiApiKey,
+  readRealtimeVoice,
+  saveAppleMusicConfig,
+  saveCodexModel,
+  saveOpenaiApiKey,
+  saveRealtimeVoice,
+} from "./config";
 import { buildBetaFeedbackExport, buildDiagnosticsExport, writeLocalExport } from "./diagnostics";
-import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
+import { clearAppleMusicDeveloperTokenCache, getAppleMusicDeveloperToken } from "./music/apple-music-token";
 import { CodingAgentRuntime } from "./agents/coding-agent/runtime";
 import { ArtifactStore } from "./tasks/artifact-store";
 import { TaskQueue } from "./tasks/task-queue";
@@ -427,11 +436,49 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     const developerToken = getAppleMusicDeveloperToken();
     if (!developerToken) {
       res.status(400).json({
-        error: "Apple Music developer token is not configured. Set APPLE_TEAM_ID, APPLE_MUSICKIT_KEY_ID, and HER_APPLE_MUSIC_PRIVATE_KEY_PATH.",
+        error: "Apple Music developer token is not configured. Save Team ID, Key ID, and .p8 file path in the Apple Music panel.",
       });
       return;
     }
     res.json({ developerToken });
+  });
+
+  app.get("/api/music/config", requireAuth, (_req, res) => {
+    res.json(readAppleMusicConfig());
+  });
+
+  app.post("/api/music/config", requireAuth, (req, res) => {
+    const body = req.body as {
+      keyName?: unknown;
+      teamId?: unknown;
+      keyId?: unknown;
+      privateKeyPath?: unknown;
+    };
+
+    try {
+      const config = saveAppleMusicConfig({
+        keyName: typeof body.keyName === "string" ? body.keyName : "",
+        teamId: typeof body.teamId === "string" ? body.teamId : "",
+        keyId: typeof body.keyId === "string" ? body.keyId : "",
+        privateKeyPath: typeof body.privateKeyPath === "string" ? body.privateKeyPath : "",
+      });
+      clearAppleMusicDeveloperTokenCache();
+      audit.write({
+        action: "music.apple_config",
+        summary: "Saved Apple Music MusicKit key metadata",
+        status: "ok",
+        details: { keyId: config.keyId, teamId: config.teamId, privateKeyConfigured: Boolean(config.privateKeyPath) },
+      });
+      res.json(config);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      audit.write({
+        action: "music.apple_config",
+        summary: message,
+        status: "error",
+      });
+      res.status(400).json({ error: message });
+    }
   });
 
   app.get("/api/music/playback-requests/next", requireAuth, (_req, res) => {

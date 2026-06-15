@@ -103,6 +103,11 @@ const {
   realtimeVoiceBadge,
   musicKitBadge,
   musicKitStatus,
+  appleMusicKeyNameInput,
+  appleMusicTeamIdInput,
+  appleMusicKeyIdInput,
+  appleMusicPrivateKeyPathInput,
+  saveAppleMusicConfigBtn,
   authorizeMusicKitBtn,
   codexLoginBadge,
   codexLoginStatus,
@@ -235,11 +240,13 @@ const initialize = async () => {
     addLine("system", "Start voice, then ask me to manage files, documents, drafts, email, calendar, music, apps, browser tasks, or safe shell commands.");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const detail = localRuntimeUnavailableDetail(message);
     onboardingStatus.textContent = message;
-    statusText.textContent = message;
-    renderOpenaiKeyStatus(false, "Start or restart the app backend to enable key saving.");
-    renderCodexLoginStatus({ configured: false, label: "Error", detail: "Start or restart the app backend to check Codex login." });
-    codexModelStatus.textContent = "Start or restart the app backend to load Codex models.";
+    renderOpenaiKeyStatus(false, detail);
+    renderMusicKitStatus(false, detail);
+    renderCodexLoginStatus({ configured: false, label: "Error", detail });
+    codexModelStatus.textContent = detail;
+    statusText.textContent = detail;
     showOnboarding(false);
     addLine("system", `Local backend unavailable: ${message}`);
     setVisualState("error");
@@ -250,6 +257,7 @@ const loadStartupData = async () => {
   await Promise.allSettled([
     loadOpenaiKeyStatus(),
     loadRealtimeVoice(),
+    loadAppleMusicConfig(),
     loadMusicKitStatus(),
     loadCodexLoginStatus(),
     loadCodexModel(),
@@ -498,6 +506,14 @@ type RealtimeVoiceStatus = {
   voice: string;
   options: Array<{ label: string; value: string; recommended?: boolean }>;
   note?: string;
+};
+
+type AppleMusicConfigStatus = {
+  keyName: string;
+  teamId: string;
+  keyId: string;
+  privateKeyPath: string;
+  configured: boolean;
 };
 
 type LocalExportResponse = {
@@ -1332,6 +1348,47 @@ const exportBetaFeedback = async () => {
   }
 };
 
+const renderAppleMusicConfig = (config: AppleMusicConfigStatus) => {
+  appleMusicKeyNameInput.value = config.keyName ?? "";
+  appleMusicTeamIdInput.value = config.teamId ?? "";
+  appleMusicKeyIdInput.value = config.keyId ?? "";
+  appleMusicPrivateKeyPathInput.value = config.privateKeyPath ?? "";
+  if (!config.configured) {
+    musicKitStatus.textContent = "Save Team ID, Key ID, and the absolute .p8 file path before authorizing Apple Music.";
+  }
+};
+
+const loadAppleMusicConfig = async () => {
+  try {
+    const config = await getJson<AppleMusicConfigStatus>("/api/music/config");
+    renderAppleMusicConfig(config);
+  } catch (error) {
+    musicKitStatus.textContent = `MusicKit config unavailable: ${errorMessage(error)}`;
+  }
+};
+
+const saveAppleMusicConfig = async () => {
+  saveAppleMusicConfigBtn.disabled = true;
+  musicKitStatus.textContent = "Saving MusicKit key metadata locally...";
+  try {
+    const config = await postJson<AppleMusicConfigStatus>("/api/music/config", {
+      keyName: appleMusicKeyNameInput.value,
+      teamId: appleMusicTeamIdInput.value,
+      keyId: appleMusicKeyIdInput.value,
+      privateKeyPath: appleMusicPrivateKeyPathInput.value,
+    });
+    renderAppleMusicConfig(config);
+    renderMusicKitStatus(false, "MusicKit key metadata saved locally. Click Authorize to connect Apple Music.");
+    addActivity("Apple Music MusicKit key metadata saved locally", "ok");
+  } catch (error) {
+    const message = errorMessage(error);
+    renderMusicKitStatus(false, message);
+    addActivity(`Apple Music config failed: ${message}`, "error");
+  } finally {
+    saveAppleMusicConfigBtn.disabled = false;
+  }
+};
+
 const loadMusicKitStatus = async () => {
   authorizeMusicKitBtn.disabled = true;
   musicKitBadge.textContent = "Checking";
@@ -1339,7 +1396,7 @@ const loadMusicKitStatus = async () => {
   musicKitStatus.textContent = "Checking Apple Music playback support...";
   try {
     const status = await getMusicKitStatus();
-    renderMusicKitStatus(status.authorized, status.configured ? undefined : "MusicKit is not configured.");
+    renderMusicKitStatus(status.authorized, musicKitStatusDetail(status));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     renderMusicKitStatus(false, message);
@@ -1353,7 +1410,12 @@ const authorizeAppleMusic = async () => {
   musicKitStatus.textContent = "Opening Apple Music authorization...";
   try {
     const status = await authorizeMusicKit();
-    renderMusicKitStatus(status.authorized, status.authorized ? "Authorized. Catalog songs can stream through MusicKit." : "Authorization did not complete.");
+    renderMusicKitStatus(
+      status.authorized,
+      status.authorized
+        ? musicKitStatusDetail(status)
+        : "Authorization did not complete. If the Apple sign-in window closed successfully, click Reauthorize once more.",
+    );
     addActivity(status.authorized ? "Apple Music authorized" : "Apple Music authorization incomplete", status.authorized ? "ok" : "pending");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1370,6 +1432,14 @@ const renderMusicKitStatus = (authorized: boolean, detail?: string) => {
   musicKitBadge.classList.toggle("error", Boolean(detail) && !authorized);
   musicKitStatus.textContent = detail ?? (authorized ? "Apple Music catalog streaming is enabled." : "Authorize Apple Music to stream subscription catalog songs.");
   authorizeMusicKitBtn.textContent = authorized ? "Reauthorize" : "Authorize";
+};
+
+const musicKitStatusDetail = (status: { configured: boolean; authorized: boolean; playbackSupported: boolean; detail?: string }) => {
+  if (!status.configured) return status.detail ?? "MusicKit is not configured.";
+  if (!status.authorized) return undefined;
+  return status.playbackSupported
+    ? "Authorized. Catalog songs can stream through MusicKit."
+    : "Authorized. This Electron runtime cannot play protected Apple Music streams directly, so Her will use the native Music app fallback when possible.";
 };
 
 const renderMiniPlayer = (track: MiniPlayerTrack) => {
@@ -2059,6 +2129,11 @@ const maybePlayAppleMusicCatalogResult = async (payload: unknown) => {
       addActivity("Apple Music authorization required", "pending");
       return;
     }
+    if (playback.status === "electron_playback_unsupported") {
+      renderMusicKitStatus(true, playback.note);
+      addActivity("Apple Music playback is using native Music fallback", "pending");
+      return;
+    }
     renderMiniPlayer({
       id: payload.id,
       title: payload.title,
@@ -2120,6 +2195,19 @@ const pollMusicPlaybackRequest = async () => {
       });
       return;
     }
+    if (playback.status === "electron_playback_unsupported") {
+      renderMusicKitStatus(true, playback.note);
+      addActivity("Apple Music playback is using native Music fallback", "pending");
+      await postJson("/api/music/playback-status", {
+        status: "electron_playback_unsupported",
+        songId: request.id,
+        title: request.title,
+        artist: request.artist,
+        album: request.album,
+        artworkUrl: request.artworkUrl,
+      });
+      return;
+    }
     renderMiniPlayer({
       id: request.id,
       title: request.title,
@@ -2152,6 +2240,11 @@ const errorMessage = (error: unknown) => {
     return String(error);
   }
 };
+
+const localRuntimeUnavailableDetail = (message: string) =>
+  message.includes("Local API bridge is unavailable")
+    ? "Open Her in the Electron desktop app window. The plain browser page cannot access local config, Apple Music authorization state, or Codex login."
+    : "Start or restart the app backend to enable local config, Apple Music authorization, and Codex login.";
 
 const truncateText = (value: string, maxLength: number) =>
   value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
@@ -2601,6 +2694,7 @@ resultWindowCloseBtn.addEventListener("click", () => resultWindow.classList.add(
 saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
 exportDiagnosticsBtn.addEventListener("click", () => void exportDiagnostics());
 exportFeedbackBtn.addEventListener("click", () => void exportBetaFeedback());
+saveAppleMusicConfigBtn.addEventListener("click", () => void saveAppleMusicConfig());
 authorizeMusicKitBtn.addEventListener("click", () => void authorizeAppleMusic());
 miniPlayerPlayBtn.addEventListener("click", () => void resumeMiniPlayer());
 miniPlayerPauseBtn.addEventListener("click", () => void pauseMiniPlayer());

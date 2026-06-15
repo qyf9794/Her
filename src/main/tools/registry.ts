@@ -2238,9 +2238,9 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
   }
 
   private async listAuthorizedWindows() {
-    const windows = await this.system.listWindows();
-    if (!this.gate) return windows;
+    if (!this.gate) return this.system.listWindows();
     const authorized = await this.gate.authorizedAppNames();
+    const windows = await this.system.listWindows(authorized);
     return windows.filter((window) => authorized.has(window.appName));
   }
 
