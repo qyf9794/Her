@@ -18,6 +18,7 @@ export type ToolRuntimeOptions = {
   gate?: CapabilityGate;
   timeoutMs: number;
   isYoloMode: () => boolean;
+  yoloExpiresAt?: () => string | undefined;
   summarize: (name: ToolName, args: Record<string, unknown>) => string;
   compactResult: (name: ToolName, result: unknown, source?: ToolSource) => unknown;
   executeManifestHandler: (name: ToolName, args: Record<string, unknown>, source: ToolSource) => Promise<unknown> | unknown;
@@ -130,6 +131,7 @@ export class ToolRuntime {
       summary,
       preview,
       yoloMode: this.options.isYoloMode(),
+      yoloExpiresAt: this.options.yoloExpiresAt?.(),
     });
     if (approval.type === "deny") {
       this.options.audit.write({ action: name, summary: approval.reason, status: "error" });
@@ -147,6 +149,13 @@ export class ToolRuntime {
           confirmationId: confirmation.id,
           summary,
           expiresAt: new Date(confirmation.expiresAt).toISOString(),
+          risk: confirmation.plan.risk,
+          riskLabel: confirmation.plan.riskLabel,
+          target: confirmation.plan.target,
+          preview: confirmation.plan.preview,
+          reversible: confirmation.plan.reversible,
+          policyRationale: confirmation.plan.policyRationale,
+          taskId: confirmation.plan.taskId,
         },
       };
     }

@@ -131,6 +131,15 @@ if (writeDecision.type !== "require_confirmation") fail(`file_trash should requi
 if (writeDecision.type === "require_confirmation" && writeDecision.plan.risk !== "local_write") {
   fail(`file_trash plan risk should be local_write, got ${writeDecision.plan.risk}.`);
 }
+if (writeDecision.type === "require_confirmation") {
+  if (writeDecision.plan.riskLabel !== "Local write") fail("ActionPlan should expose a reader-facing risk label.");
+  if (writeDecision.plan.target !== "path: /tmp/example.txt") fail(`ActionPlan should expose target, got ${writeDecision.plan.target}.`);
+  if (writeDecision.plan.policy?.name !== "path-policy") fail(`ActionPlan should expose path-policy, got ${writeDecision.plan.policy?.name}.`);
+  if (!Array.isArray(writeDecision.plan.policyRationale) || writeDecision.plan.policyRationale.length === 0) {
+    fail("ActionPlan should expose policy rationale.");
+  }
+  if (!writeDecision.plan.expiresAt) fail("ActionPlan should expose expiry.");
+}
 
 const shellDecision = policy.decide({
   toolName: "advanced_shell_command",
@@ -140,6 +149,16 @@ const shellDecision = policy.decide({
 });
 if (shellDecision.type !== "require_confirmation") fail("YOLO must not bypass shell confirmation.");
 
+const expiredYoloDecision = policy.decide({
+  toolName: "file_create_folder",
+  args: { parentPath: "/tmp", folderName: "expired-yolo" },
+  summary: "Create folder",
+  yoloMode: true,
+  yoloExpiresAt: "2026-01-01T00:00:00.000Z",
+  now: new Date("2026-01-01T00:00:01.000Z"),
+});
+if (expiredYoloDecision.type !== "require_confirmation") fail("Expired YOLO must not bypass local write confirmation.");
+
 if (!toolRequiresConfirmation("advanced_shell_command")) fail("advanced_shell_command should require confirmation.");
 if (toolRequiresConfirmation("file_read")) fail("file_read should not require confirmation.");
 
@@ -147,6 +166,9 @@ const queue = new ConfirmationQueue();
 if (writeDecision.type === "require_confirmation") {
   const pending = queue.add(writeDecision.plan);
   if (typeof pending.run !== "undefined") fail("Pending confirmation must not store a run closure.");
+  if (pending.plan.riskLabel !== "Local write" || pending.plan.policy?.name !== "path-policy" || !pending.plan.expiresAt) {
+    fail("Pending confirmation must preserve rich ActionPlan metadata.");
+  }
   const decided = await queue.decide(pending.id, true);
   if (decided.rejected || decided.plan.toolName !== "file_trash") fail("Confirmation approval should return the original ActionPlan.");
 }

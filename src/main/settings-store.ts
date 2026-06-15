@@ -12,8 +12,11 @@ export class SettingsStore {
   read(): UserSettings {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.settingsPath, "utf8")) as Partial<UserSettings>;
+      const yoloExpiresAt = typeof parsed.yoloExpiresAt === "string" ? parsed.yoloExpiresAt : undefined;
+      const yoloExpired = Boolean(yoloExpiresAt && Date.parse(yoloExpiresAt) <= Date.now());
       return {
-        yoloMode: Boolean(parsed.yoloMode),
+        yoloMode: Boolean(parsed.yoloMode) && !yoloExpired,
+        yoloExpiresAt: yoloExpired ? undefined : yoloExpiresAt,
         capabilities: { ...defaultCapabilities, ...(parsed.capabilities ?? {}) },
         appPermissions: parsed.appPermissions ?? {},
         hasCompletedOnboarding: Boolean(parsed.hasCompletedOnboarding),
@@ -22,6 +25,7 @@ export class SettingsStore {
     } catch {
       return {
         yoloMode: false,
+        yoloExpiresAt: undefined,
         capabilities: defaultCapabilities,
         appPermissions: {},
         hasCompletedOnboarding: false,
@@ -57,9 +61,11 @@ export class SettingsStore {
 
   setYoloMode(enabled: boolean, appPermissions: Record<string, boolean> = {}) {
     const current = this.read();
+    const yoloExpiresAt = enabled ? new Date(Date.now() + defaultYoloTtlMs).toISOString() : undefined;
     return this.write({
       ...current,
       yoloMode: enabled,
+      yoloExpiresAt,
       capabilities: enabled ? allCapabilitiesEnabled() : current.capabilities,
       appPermissions: enabled ? { ...current.appPermissions, ...appPermissions } : current.appPermissions,
       hasCompletedOnboarding: enabled ? true : current.hasCompletedOnboarding,
@@ -76,3 +82,5 @@ export class SettingsStore {
 
 export const allCapabilitiesEnabled = (): CapabilitySettings =>
   Object.fromEntries(Object.keys(defaultCapabilities).map((key) => [key, true])) as CapabilitySettings;
+
+export const defaultYoloTtlMs = 15 * 60 * 1000;

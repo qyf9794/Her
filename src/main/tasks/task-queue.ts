@@ -16,6 +16,8 @@ export type AwaitingConfirmationResult = {
   awaitingConfirmation: true;
   confirmationId: string;
   summary: string;
+  risk?: string;
+  target?: string;
 };
 
 export class TaskQueue {
@@ -149,6 +151,8 @@ export class TaskQueue {
             timestamp: new Date().toISOString(),
             confirmationId: result.confirmationId,
             summary: result.summary,
+            risk: result.risk,
+            target: result.target,
           });
           return;
         }

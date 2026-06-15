@@ -224,6 +224,7 @@ export class ToolRegistry {
       gate: this.gate,
       timeoutMs: config.toolQueueTaskTimeoutMs,
       isYoloMode: () => this.isYoloMode(),
+      yoloExpiresAt: () => this.permissions?.readSettings().yoloExpiresAt,
       summarize: (name, args) => this.summarize(name, args),
       compactResult: (name, result, source) => this.compactResult(name, result, source),
       executeManifestHandler: (name, args, source) => this.executeManifestHandler(name, args, source),
@@ -308,10 +309,13 @@ export class ToolRegistry {
         const result = await this.executeToolWithTimeout(name, args, source);
         if (result.ok && result.requiresConfirmation) {
           this.confirmationTaskIds.set(result.confirmationId, taskId);
+          this.confirmations.bindTask(result.confirmationId, taskId);
           return {
             awaitingConfirmation: true,
             confirmationId: result.confirmationId,
             summary: result.summary,
+            risk: result.risk,
+            target: result.target,
           };
         }
         if (!result.ok) throw new Error(result.error);
@@ -2092,8 +2096,13 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       name: item.name,
       summary: item.summary,
       risk: item.plan.risk,
+      riskLabel: item.plan.riskLabel,
+      target: item.plan.target,
       reversible: item.plan.reversible,
       preview: item.plan.preview,
+      policyRationale: item.plan.policyRationale,
+      taskId: item.plan.taskId,
+      createdAt: new Date(item.createdAt).toISOString(),
       expiresAt: new Date(item.expiresAt).toISOString(),
     }));
   }
@@ -2105,16 +2114,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       throw new Error(`There are ${pending.length} pending confirmations. Use confirmation_list and specify confirmationId.`);
     }
 
-    const decision = await this.confirmations.decide(id, approved);
-    const execution: unknown = decision.rejected ? undefined : await this.executeActionPlan(decision.plan);
-    const result = decision.rejected ? decision : { ...decision, result: execution };
-    this.updateTaskForConfirmation(id, approved, result);
-    const summary = decision.rejected ? (decision.summary ?? `Rejected ${id}`) : `Approved ${id}`;
-    this.audit.write({
-      action: "confirmation",
-      summary,
-      status: decision.rejected ? "rejected" : "ok",
-    });
+    const result = await this.confirm(id, approved);
     return {
       confirmationId: id,
       approved,
@@ -2175,6 +2175,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
     const settings = permissions.setYoloMode(enabled, appPermissions);
     return {
       enabled: settings.yoloMode,
+      expiresAt: settings.yoloExpiresAt,
       authorizedApps: enabled ? Object.keys(appPermissions).length : undefined,
       settingsUpdatedAt: settings.updatedAt,
     };

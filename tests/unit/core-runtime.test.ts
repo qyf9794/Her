@@ -55,6 +55,17 @@ describe("approval policy", () => {
       now: new Date("2026-01-01T00:00:00.000Z"),
     });
     expect(decision.type).toBe("require_confirmation");
+    if (decision.type === "require_confirmation") {
+      expect(decision.plan).toMatchObject({
+        risk: "local_write",
+        riskLabel: "Local write",
+        target: "path: /tmp/a",
+        reversible: true,
+        policy: { name: "path-policy" },
+      });
+      expect(decision.plan.policyRationale).toContain("The user must approve the exact local target before the write executes.");
+      expect(decision.plan.expiresAt).toBe("2026-01-01T00:05:00.000Z");
+    }
     expect(toolRequiresConfirmation("file_rename")).toBe(true);
 
     const unknown = policy.decide({
@@ -77,6 +88,29 @@ describe("approval policy", () => {
       });
       expect(decision.type, toolName).toBe("require_confirmation");
     }
+  });
+
+  it("lets active YOLO bypass low-risk local writes but not expired YOLO", () => {
+    const policy = new ApprovalPolicy();
+    const active = policy.decide({
+      toolName: "file_create_folder",
+      args: { parentPath: "/tmp", folderName: "ok" },
+      summary: "Create folder",
+      yoloMode: true,
+      yoloExpiresAt: "2026-01-01T00:10:00.000Z",
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    expect(active.type).toBe("allow");
+
+    const expired = policy.decide({
+      toolName: "file_create_folder",
+      args: { parentPath: "/tmp", folderName: "ok" },
+      summary: "Create folder",
+      yoloMode: true,
+      yoloExpiresAt: "2025-12-31T23:59:59.000Z",
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    expect(expired.type).toBe("require_confirmation");
   });
 });
 
@@ -123,7 +157,7 @@ describe("auth, confirmation, parser, and redaction utilities", () => {
     }
   });
 
-  it("expires stale confirmations", async () => {
+  it("expires stale confirmations and refuses approval", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:10:01.000Z"));
     const queue = new ConfirmationQueue();
@@ -172,12 +206,23 @@ describe("auth, confirmation, parser, and redaction utilities", () => {
         action: "secret-test",
         summary: "redact",
         status: "ok",
-        details: { OPENAI_API_KEY: "sk-secret", nested: { token: "secret", value: "safe" } },
+        details: {
+          OPENAI_API_KEY: "sk-secret",
+          plan: {
+            toolName: "advanced_shell_command",
+            args: { command: "echo ok", OPENAI_API_KEY: "sk-secret", nested: { password: "pw" } },
+          },
+          nested: { token: "secret", value: "safe" },
+        },
       });
 
       const line = fs.readFileSync(path.join(cwd, "data", "audit.jsonl"), "utf8").trim();
       const entry = JSON.parse(line) as { details: Record<string, unknown> };
       expect(entry.details.OPENAI_API_KEY).toBe("[redacted]");
+      expect(entry.details.plan).toEqual({
+        toolName: "advanced_shell_command",
+        args: { command: "echo ok", OPENAI_API_KEY: "[redacted]", nested: { password: "[redacted]" } },
+      });
       expect(entry.details.nested).toEqual({ token: "[redacted]", value: "safe" });
     } finally {
       process.chdir(originalCwd);

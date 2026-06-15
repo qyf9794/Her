@@ -965,6 +965,73 @@ body.orbOnlyActive .productShell {
   border-color: #9d5058;
 }
 
+.confirmationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #d9dfdc;
+  font-size: 0.78rem;
+}
+
+.riskBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid #c29b55;
+  border-radius: 999px;
+  color: #ffe2a8;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.confirmationMeta {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.78rem;
+}
+
+.confirmationMeta div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.confirmationMeta span {
+  color: #cbd2cf;
+}
+
+.confirmationMeta strong {
+  color: #ffffff;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.confirmationPreview {
+  max-height: 160px;
+  margin: 10px 0 0;
+  padding: 10px;
+  border: 1px solid #7c8780;
+  border-radius: 6px;
+  background: #41484a;
+  color: #f4f7f4;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.confirmationRationale {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #dbe2de;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .confirmActions {
   display: grid;
   grid-template-columns: 1fr 1fr;

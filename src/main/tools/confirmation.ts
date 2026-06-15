@@ -33,6 +33,14 @@ export class ConfirmationQueue {
     return [...this.pending.values()];
   }
 
+  bindTask(id: string, taskId: string) {
+    this.prune();
+    const confirmation = this.pending.get(id);
+    if (!confirmation) return undefined;
+    confirmation.plan.taskId = taskId;
+    return confirmation;
+  }
+
   async decide(id: string, approved: boolean) {
     this.prune();
     const confirmation = this.pending.get(id);

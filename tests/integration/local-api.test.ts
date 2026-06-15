@@ -58,9 +58,27 @@ describe("local API auth and confirmation flow", () => {
       source: "local",
       arguments: { parentPath: allowedDir, folderName },
     });
-    expect(execute.body).toMatchObject({ ok: true, requiresConfirmation: true });
+    expect(execute.body).toMatchObject({
+      ok: true,
+      requiresConfirmation: true,
+      risk: "local_write",
+      riskLabel: "Local write",
+      target: `parentPath: ${allowedDir}`,
+      reversible: true,
+    });
 
     const confirmationId = execute.body.confirmationId;
+    const pending = await apiGetJson("/api/tools/pending");
+    expect(pending.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        confirmationId,
+        risk: "local_write",
+        riskLabel: "Local write",
+        target: `parentPath: ${allowedDir}`,
+        policyRationale: expect.arrayContaining(["The user must approve the exact local target before the write executes."]),
+        expiresAt: expect.any(String),
+      }),
+    ]));
     const rejected = await apiJson("/api/tools/confirm", { confirmationId, approved: false });
     expect(rejected.body).toMatchObject({ ok: true, result: { rejected: true } });
     expect(fs.existsSync(path.join(allowedDir, folderName))).toBe(false);
@@ -157,5 +175,14 @@ const apiFetch = (apiPath: string, body: unknown, token: string | null = server.
 
 const apiJson = async (apiPath: string, body: unknown) => {
   const response = await apiFetch(apiPath, body);
+  return { status: response.status, body: await response.json() };
+};
+
+const apiGetJson = async (apiPath: string, token: string | null = server.localApiToken) => {
+  const response = await fetch(`http://127.0.0.1:${server.port}${apiPath}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
   return { status: response.status, body: await response.json() };
 };

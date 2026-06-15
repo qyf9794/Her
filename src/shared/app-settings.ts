@@ -35,6 +35,7 @@ export type AppPermission = {
 
 export type UserSettings = {
   yoloMode: boolean;
+  yoloExpiresAt?: string;
   capabilities: CapabilitySettings;
   appPermissions: Record<string, boolean>;
   hasCompletedOnboarding: boolean;

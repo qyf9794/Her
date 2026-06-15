@@ -1604,7 +1604,12 @@ const renderConfirmation = (result: Extract<ToolCallResult, { requiresConfirmati
   item.className = "confirmation";
   item.dataset.id = result.confirmationId;
   item.innerHTML = `
+    <div class="confirmationHeader">
+      <span class="riskBadge">${escapeHtml(result.riskLabel ?? result.risk ?? "Action")}</span>
+      <span>${escapeHtml(formatExpiry(result.expiresAt))}</span>
+    </div>
     <p>${escapeHtml(result.summary)}</p>
+    ${renderConfirmationDetails(result)}
     <div class="confirmActions">
       <button type="button" data-decision="approve">Approve</button>
       <button type="button" data-decision="reject">Reject</button>
@@ -1613,10 +1618,60 @@ const renderConfirmation = (result: Extract<ToolCallResult, { requiresConfirmati
   confirmations.prepend(item);
 };
 
+const renderConfirmationDetails = (result: Extract<ToolCallResult, { requiresConfirmation: true }>) => {
+  const rows = [
+    result.target ? ["Target", result.target] : undefined,
+    typeof result.reversible === "boolean" ? ["Reversible", result.reversible ? "Yes" : "No"] : undefined,
+    result.taskId ? ["Task", result.taskId.slice(0, 8)] : undefined,
+  ].filter(Boolean) as [string, string][];
+  const rowHtml = rows.map(([label, value]) => `
+    <div>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `).join("");
+  const preview = formatPreview(result.preview);
+  const previewHtml = preview ? `<pre class="confirmationPreview">${escapeHtml(preview)}</pre>` : "";
+  const rationale = result.policyRationale?.length
+    ? `<ul class="confirmationRationale">${result.policyRationale.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+    : "";
+  return `
+    ${rowHtml ? `<div class="confirmationMeta">${rowHtml}</div>` : ""}
+    ${previewHtml}
+    ${rationale}
+  `;
+};
+
+const formatPreview = (value: unknown) => {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "string") return truncateText(value, 900);
+  try {
+    return truncateText(JSON.stringify(value, null, 2), 900);
+  } catch {
+    return truncateText(String(value), 900);
+  }
+};
+
+const formatExpiry = (expiresAt: string) => {
+  const time = Date.parse(expiresAt);
+  if (!Number.isFinite(time)) return "Expires soon";
+  const seconds = Math.max(0, Math.round((time - Date.now()) / 1000));
+  if (seconds >= 60) return `Expires in ${Math.round(seconds / 60)}m`;
+  return `Expires in ${seconds}s`;
+};
+
 type PendingConfirmation = {
   confirmationId: string;
   name: ToolName;
   summary: string;
+  risk?: string;
+  riskLabel?: string;
+  target?: string;
+  preview?: unknown;
+  reversible?: boolean;
+  policyRationale?: string[];
+  taskId?: string;
+  createdAt?: string;
   expiresAt: string;
 };
 
@@ -1636,6 +1691,13 @@ const reloadPendingConfirmations = async () => {
       requiresConfirmation: true,
       confirmationId: item.confirmationId,
       summary: item.summary,
+      risk: item.risk,
+      riskLabel: item.riskLabel,
+      target: item.target,
+      preview: item.preview,
+      reversible: item.reversible,
+      policyRationale: item.policyRationale,
+      taskId: item.taskId,
       expiresAt: item.expiresAt,
     });
   }

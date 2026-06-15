@@ -51,7 +51,15 @@ export type HerTaskEvent =
   | { type: "task_created"; taskId: string; timestamp: string; task: HerTask }
   | { type: "task_status_changed"; taskId: string; timestamp: string; from: HerTaskStatus; to: HerTaskStatus }
   | { type: "task_progress"; taskId: string; timestamp: string; message: string; percent?: number }
-  | { type: "task_confirmation_required"; taskId: string; timestamp: string; confirmationId: string; summary: string }
+  | {
+      type: "task_confirmation_required";
+      taskId: string;
+      timestamp: string;
+      confirmationId: string;
+      summary: string;
+      risk?: string;
+      target?: string;
+    }
   | { type: "task_completed"; taskId: string; timestamp: string; result?: unknown }
   | { type: "task_failed"; taskId: string; timestamp: string; error: HerTask["error"] }
   | { type: "task_cancelled"; taskId: string; timestamp: string; reason?: string };

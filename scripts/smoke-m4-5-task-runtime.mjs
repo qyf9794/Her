@@ -124,6 +124,13 @@ async function testPilotConfirmationBinding() {
   const status = await registry.execute({ name: "task_status", source: "local", arguments: { taskId } });
   assert.equal(status.result.task.status, "awaiting_confirmation");
   assert.ok(status.result.task.confirmationId);
+  const events = await registry.execute({ name: "task_events", source: "local", arguments: { taskId } });
+  const confirmationEvent = events.result.events.find((event) => event.type === "task_confirmation_required");
+  assert.equal(confirmationEvent.risk, "local_write");
+  assert.equal(confirmationEvent.target, `path: ${filePath}`);
+  const pending = confirmations.list()[0];
+  assert.equal(pending.plan.taskId, taskId);
+  assert.equal(pending.plan.riskLabel, "Local write");
   assert.equal(fs.existsSync(filePath), true);
 
   await registry.confirm(status.result.task.confirmationId, true);

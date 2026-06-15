@@ -21,6 +21,13 @@ export type ToolCallResult =
       confirmationId: string;
       summary: string;
       expiresAt: string;
+      risk?: string;
+      riskLabel?: string;
+      target?: string;
+      preview?: unknown;
+      reversible?: boolean;
+      policyRationale?: string[];
+      taskId?: string;
     }
   | {
       ok: false;
