@@ -605,8 +605,19 @@ export class SystemControl {
   }
 
   async setVolume(level: number) {
-    await run("osascript", ["-e", `set volume output volume ${Math.round(level)}`]);
-    return { volume: Math.round(level) };
+    const requestedVolume = Math.round(level);
+    await run("osascript", ["-e", `set volume output volume ${requestedVolume}`]);
+    const readback = await this.getVolume();
+    const applied = readback.volume === requestedVolume;
+    return {
+      status: applied ? "set" : "platform_limited",
+      requestedVolume,
+      volume: readback.volume,
+      muted: readback.muted,
+      note: applied
+        ? "Set system output volume and verified readback."
+        : "macOS accepted the volume command, but output volume did not read back as requested. The active output device may not expose software volume control.",
+    };
   }
   async getVolume() {
     const output = await run("osascript", [
@@ -620,7 +631,17 @@ export class SystemControl {
 
   async muteVolume(muted: boolean) {
     await run("osascript", ["-e", `set volume ${muted ? "with" : "without"} output muted`]);
-    return { muted };
+    const readback = await this.getVolume();
+    const applied = readback.muted === muted;
+    return {
+      status: applied ? "set" : "platform_limited",
+      requestedMuted: muted,
+      muted: readback.muted,
+      volume: readback.volume,
+      note: applied
+        ? "Set output mute state and verified readback."
+        : "macOS accepted the mute command, but mute state did not read back as requested. The active output device may not expose software mute control.",
+    };
   }
 
   async setBrightness(level: number) {

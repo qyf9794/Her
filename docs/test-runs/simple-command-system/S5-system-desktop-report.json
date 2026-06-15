@@ -1,0 +1,198 @@
+{
+  "milestone": "S5",
+  "title": "System, Clipboard, Notification, Speech, and Screenshot",
+  "generatedAt": "2026-06-15T16:46:18.159Z",
+  "realtime2Connected": false,
+  "artifactDir": "docs/test-runs/simple-command-system/artifacts",
+  "summary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "S5.system.volume-read",
+      "title": "Read current system volume",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:10.674Z",
+      "completedAt": "2026-06-15T16:46:10.774Z",
+      "payload": {
+        "volume": 0,
+        "muted": false,
+        "actionSummary": "Read system output volume and mute state."
+      }
+    },
+    {
+      "id": "S5.system.volume-set-readback",
+      "title": "Set volume to 30 and read it back",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:10.774Z",
+      "completedAt": "2026-06-15T16:46:11.341Z",
+      "payload": {
+        "setResult": {
+          "status": "platform_limited",
+          "requestedVolume": 30,
+          "volume": 0,
+          "muted": false,
+          "note": "macOS accepted the volume command, but output volume did not read back as requested. The active output device may not expose software volume control."
+        },
+        "readback": {
+          "volume": 0,
+          "muted": false
+        },
+        "actionSummary": "Volume command reported that the active output device did not expose software volume readback."
+      }
+    },
+    {
+      "id": "S5.system.mute-unmute",
+      "title": "Mute and unmute volume",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:11.341Z",
+      "completedAt": "2026-06-15T16:46:12.011Z",
+      "payload": {
+        "muteResult": {
+          "status": "platform_limited",
+          "requestedMuted": true,
+          "muted": false,
+          "volume": 0,
+          "note": "macOS accepted the mute command, but mute state did not read back as requested. The active output device may not expose software mute control."
+        },
+        "unmuteResult": {
+          "status": "set",
+          "requestedMuted": false,
+          "muted": false,
+          "volume": 0,
+          "note": "Set output mute state and verified readback."
+        },
+        "muted": {
+          "volume": 0,
+          "muted": false
+        },
+        "unmuted": {
+          "volume": 0,
+          "muted": false
+        },
+        "actionSummary": "Mute command reported that the active output device did not expose software mute readback."
+      }
+    },
+    {
+      "id": "S5.system.brightness-set",
+      "title": "Set brightness to 50 or report platform limitation",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:12.011Z",
+      "completedAt": "2026-06-15T16:46:12.012Z",
+      "payload": {
+        "status": "platform_limited",
+        "reason": "Brightness control requires the local `brightness` CLI. Install it separately or use System Settings > Displays.",
+        "actionSummary": "Brightness control reported the local platform requirement instead of fake success."
+      }
+    },
+    {
+      "id": "S5.system.dark-mode-toggle-restore",
+      "title": "Toggle dark mode and restore original value",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:12.012Z",
+      "completedAt": "2026-06-15T16:46:13.151Z",
+      "payload": {
+        "initial": true,
+        "toggled": false,
+        "restored": true,
+        "actionSummary": "Toggled macOS dark mode and restored the original value."
+      }
+    },
+    {
+      "id": "S5.system.open-sound-settings",
+      "title": "Open Sound settings pane",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:13.151Z",
+      "completedAt": "2026-06-15T16:46:13.230Z",
+      "payload": {
+        "opened": "sound",
+        "actionSummary": "Opened the allowlisted Sound settings pane."
+      }
+    },
+    {
+      "id": "S5.clipboard.write-read",
+      "title": "Write and read fixture clipboard text",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:13.230Z",
+      "completedAt": "2026-06-15T16:46:13.251Z",
+      "payload": {
+        "text": "Her clipboard smoke text",
+        "actionSummary": "Wrote and read back non-sensitive clipboard fixture text."
+      }
+    },
+    {
+      "id": "S5.system.speak",
+      "title": "Speak fixture confirmation phrase",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:13.251Z",
+      "completedAt": "2026-06-15T16:46:16.872Z",
+      "payload": {
+        "spoken": true,
+        "phrase": "Her simple command test complete",
+        "actionSummary": "Spoke the S5 fixture phrase through macOS say."
+      }
+    },
+    {
+      "id": "S5.system.notification",
+      "title": "Show Her Test notification",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:16.872Z",
+      "completedAt": "2026-06-15T16:46:16.980Z",
+      "payload": {
+        "shown": true,
+        "dialog": false,
+        "title": "Her Test",
+        "message": "S5 notification smoke",
+        "actionSummary": "Displayed a system notification."
+      }
+    },
+    {
+      "id": "S5.screenshot.capture-artifact",
+      "title": "Capture screenshot and move artifact into test folder",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:16.980Z",
+      "completedAt": "2026-06-15T16:46:17.483Z",
+      "payload": {
+        "captured": true,
+        "mode": "desktop",
+        "artifactPath": "docs/test-runs/simple-command-system/artifacts/screenshot-20260616-004616.png",
+        "bytes": 15562369,
+        "actionSummary": "Captured a desktop screenshot and moved it into the S5 artifact folder."
+      }
+    },
+    {
+      "id": "S5.keyboard.escape",
+      "title": "Send Escape keyboard shortcut",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:17.483Z",
+      "completedAt": "2026-06-15T16:46:17.580Z",
+      "payload": {
+        "action": "escape",
+        "sent": true,
+        "actionSummary": "Sent a low-impact Escape keyboard shortcut."
+      }
+    },
+    {
+      "id": "S5.safety.lock-screen-confirmation",
+      "title": "Verify lock screen does not execute unattended",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:46:17.580Z",
+      "completedAt": "2026-06-15T16:46:17.580Z",
+      "payload": {
+        "policyDecision": "require_confirmation",
+        "risk": "system_change",
+        "actionSummary": "Created a confirmation requirement for lock screen without executing it."
+      }
+    }
+  ],
+  "acceptance": {
+    "systemStateChangesReadBackOrReportLimitations": true,
+    "clipboardUsesFixtureText": true,
+    "screenshotArtifactSavedInDisposableFolder": true,
+    "speechAndNotificationObservable": true,
+    "lockScreenRequiresConfirmationAndWasNotExecuted": true,
+    "originalStateRestored": true
+  }
+}

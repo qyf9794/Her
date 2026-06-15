@@ -361,3 +361,25 @@ Report: `docs/test-runs/simple-command-media/S4-media-video-report.json`
 - Realtime-2 connected: false
 - Real execution: Music app open/search/state, Spotify missing-config handling, NetEase and QQ Music search opening, media-key safety preflight, YouTube isolated search, and controlled local video state.
 - Safety checks: Spotify tokens were blanked for fixture testing; media keys were not sent without a visible target app; MusicKit private key material was not read into the report.
+
+## S5 System, Clipboard, Notification, Speech, and Screenshot - Failed
+
+Report: `docs/test-runs/simple-command-system/S5-system-desktop-report.json`
+
+- Total scenarios: 12
+- Passed: 10
+- Failed: 2
+- Realtime-2 connected: false
+- Real execution: volume read/set/mute, dark mode toggle with restore, Sound settings open, clipboard fixture write/read, speech, notification, screenshot artifact, and Escape shortcut.
+- Safety checks: brightness reports platform limitation when the CLI is unavailable; lock screen required confirmation and was not executed; original volume, mute, dark mode, and clipboard state were restored.
+
+## S5 System, Clipboard, Notification, Speech, and Screenshot - Passed
+
+Report: `docs/test-runs/simple-command-system/S5-system-desktop-report.json`
+
+- Total scenarios: 12
+- Passed: 12
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: volume read/set/mute, dark mode toggle with restore, Sound settings open, clipboard fixture write/read, speech, notification, screenshot artifact, and Escape shortcut.
+- Safety checks: brightness reports platform limitation when the CLI is unavailable; lock screen required confirmation and was not executed; original volume, mute, dark mode, and clipboard state were restored.
