@@ -9,6 +9,7 @@ import { localApiCors, requireTrustedLocalApiRequest } from "./api/cors";
 import { createRealtimeClientSecret } from "./realtime";
 import { DesktopContextService } from "./context/desktop-snapshot";
 import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
+import { buildBetaFeedbackExport, buildDiagnosticsExport, writeLocalExport } from "./diagnostics";
 import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
 import { CodingAgentRuntime } from "./agents/coding-agent/runtime";
 import { ArtifactStore } from "./tasks/artifact-store";
@@ -27,6 +28,7 @@ import { ToolRegistry } from "./tools/registry";
 import { manifestRealtimeToolDefinitions, manifestRealtimeToolDefinitionsForBundles } from "./tools/manifest";
 import { isToolBundleName, selectToolBundles } from "./agent/tool-bundle-router";
 import { SystemControl } from "./tools/system-control";
+import { getUpdateStatus } from "./updates";
 import type { CapabilitySettings } from "../shared/app-settings";
 import type { AuditEvent } from "../shared/events";
 import { realtimeVoiceOptions } from "../shared/realtime-config";
@@ -65,6 +67,20 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   }, memory, codingAgent, taskStore, taskQueue, aliasStore, artifacts, skillStore);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
+  const createDiagnosticsSnapshot = () =>
+    buildDiagnosticsExport({
+      appVersion: process.env.npm_package_version ?? "0.1.0",
+      isPackaged,
+      userDataDir,
+      serverPort: port,
+      openaiConfigured: Boolean(readOpenaiApiKey()),
+      realtimeVoice: readRealtimeVoice(),
+      updateStatus: getUpdateStatus(),
+      settings: settings.read(),
+      memoryStatus: memory.status(),
+      recentTasks: taskStore.list({ limit: 10 }),
+      recentArtifacts: artifacts.list(10),
+    });
 
   app.use(express.json({ limit: "1mb" }));
   app.use(localApiCors(isPackaged));
@@ -340,6 +356,33 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
       details: body.details && typeof body.details === "object" ? (body.details as Record<string, unknown>) : undefined,
     });
     res.json({ ok: true, id: entry.id });
+  });
+
+  app.post("/api/diagnostics/export", requireAuth, (_req, res) => {
+    const result = writeLocalExport(userDataDir, "her-diagnostics", createDiagnosticsSnapshot());
+    audit.write({
+      action: "diagnostics.export",
+      summary: `Diagnostics export saved to ${result.filename}`,
+      status: "ok",
+      details: { filename: result.filename, bytes: result.bytes },
+    });
+    res.json(result);
+  });
+
+  app.post("/api/beta/feedback-export", requireAuth, (req, res) => {
+    const body = req.body as { message?: unknown };
+    const feedback = buildBetaFeedbackExport({
+      message: typeof body.message === "string" ? body.message : "",
+      diagnostics: createDiagnosticsSnapshot(),
+    });
+    const result = writeLocalExport(userDataDir, "her-beta-feedback", feedback);
+    audit.write({
+      action: "beta.feedback_export",
+      summary: `Beta feedback export saved to ${result.filename}`,
+      status: "ok",
+      details: { filename: result.filename, bytes: result.bytes },
+    });
+    res.json(result);
   });
 
   app.post("/api/realtime/client-secret", requireAuth, async (_req, res) => {

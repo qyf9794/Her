@@ -106,6 +106,20 @@ export const renderAppShell = () => {
           </div>
           <p id="openaiKeyStatus" class="muted">Saved locally in .env.local for voice sessions.</p>
         </section>
+        <section class="betaSetupPanel">
+          <div class="sectionHeader">
+            <h2>Beta Setup</h2>
+            <span id="betaSetupBadge" class="keyBadge">0/5</span>
+          </div>
+          <div id="betaSetupList" class="setupChecklist"></div>
+          <p class="muted">Diagnostics and feedback exports stay local until you choose to share them. Secrets, tokens, cookies, and local API credentials are redacted.</p>
+          <textarea id="betaFeedbackInput" rows="3" placeholder="Optional feedback note"></textarea>
+          <div class="diagnosticActions">
+            <button id="exportDiagnosticsBtn" type="button">Export Diagnostics</button>
+            <button id="exportFeedbackBtn" type="button">Export Feedback</button>
+          </div>
+          <p id="diagnosticsStatus" class="muted">Use exports when a beta issue needs review.</p>
+        </section>
         <section class="voiceSettingsPanel">
           <div class="sectionHeader">
             <h2>Voice</h2>

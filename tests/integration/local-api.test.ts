@@ -49,6 +49,26 @@ describe("local API auth and confirmation flow", () => {
     expect(preflight.status).toBe(403);
   });
 
+  it("exports local diagnostics and beta feedback with redacted secrets", async () => {
+    const diagnostics = await apiJson("/api/diagnostics/export", {});
+    expect(diagnostics.status).toBe(200);
+    expect(fs.existsSync(diagnostics.body.path)).toBe(true);
+    const diagnosticsText = fs.readFileSync(diagnostics.body.path, "utf8");
+    expect(diagnosticsText).toContain("her_diagnostics");
+    expect(diagnosticsText).not.toContain(server.localApiToken);
+
+    const feedback = await apiJson("/api/beta/feedback-export", {
+      message: "fake key sk-feedbacksecret and cookie=sessionvalue",
+    });
+    expect(feedback.status).toBe(200);
+    expect(fs.existsSync(feedback.body.path)).toBe(true);
+    const feedbackText = fs.readFileSync(feedback.body.path, "utf8");
+    expect(feedbackText).toContain("her_beta_feedback");
+    expect(feedbackText).not.toContain("sk-feedbacksecret");
+    expect(feedbackText).not.toContain("sessionvalue");
+    expect(feedbackText).not.toContain(server.localApiToken);
+  });
+
   it("returns an auth-gated compact desktop context snapshot", async () => {
     fs.writeFileSync(path.join(allowedDir, "recent-context.txt"), "full file content should not appear in context snapshot");
     const response = await apiGetJson("/api/context/snapshot");

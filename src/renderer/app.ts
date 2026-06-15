@@ -92,6 +92,12 @@ const {
   saveOpenaiKeyBtn,
   openaiKeyStatus,
   openaiKeyBadge,
+  betaSetupBadge,
+  betaSetupList,
+  betaFeedbackInput,
+  exportDiagnosticsBtn,
+  exportFeedbackBtn,
+  diagnosticsStatus,
   realtimeVoiceSelect,
   realtimeVoiceStatus,
   realtimeVoiceBadge,
@@ -157,6 +163,10 @@ let taskRunsPoll: number | undefined;
 let workflowRunsPoll: number | undefined;
 let artifactsPoll: number | undefined;
 let agentRunsPoll: number | undefined;
+let codexLoginConfigured = false;
+let workflowPackCount = 0;
+let microphoneCheckStatus: "unknown" | "available" | "unavailable" =
+  typeof navigator.mediaDevices?.getUserMedia === "function" ? "available" : "unavailable";
 
 type MiniPlayerTrack = {
   id: string;
@@ -364,6 +374,7 @@ const renderSettings = () => {
   renderCapabilityControls(runtimeCapabilities, true);
   renderAppGrid();
   renderAuthorizedApps();
+  renderBetaSetup();
 };
 
 const renderYoloMode = () => {
@@ -489,6 +500,60 @@ type RealtimeVoiceStatus = {
   note?: string;
 };
 
+type LocalExportResponse = {
+  path: string;
+  filename: string;
+  bytes: number;
+  payload?: unknown;
+};
+
+const renderBetaSetup = () => {
+  const items = [
+    {
+      done: hasOpenaiApiKey,
+      title: "OpenAI key",
+      detail: hasOpenaiApiKey ? "Voice sessions can request Realtime access." : "Paste a key and press Save.",
+    },
+    {
+      done: microphoneCheckStatus === "available",
+      title: "Microphone",
+      detail: microphoneCheckStatus === "available" ? "System audio input is available." : "Open macOS Microphone settings or reconnect an input.",
+    },
+    {
+      done: Boolean(settings?.hasCompletedOnboarding),
+      title: "Permissions",
+      detail: settings?.hasCompletedOnboarding ? "App and capability preferences are saved." : "Review capabilities and authorized apps.",
+    },
+    {
+      done: codexLoginConfigured,
+      title: "Codex login",
+      detail: codexLoginConfigured ? "Coding tasks can use Codex." : "Start login before using coding-agent tasks.",
+    },
+    {
+      done: workflowPackCount > 0,
+      title: "First workflow",
+      detail: workflowPackCount > 0 ? `${workflowPackCount} workflow packs are ready.` : "Refresh workflow packs, then preview one before running.",
+    },
+  ];
+
+  const completed = items.filter((item) => item.done).length;
+  betaSetupBadge.textContent = `${completed}/${items.length}`;
+  betaSetupBadge.classList.toggle("configured", completed === items.length);
+  betaSetupList.innerHTML = items
+    .map(
+      (item) => `
+        <div class="setupItem ${item.done ? "done" : ""}">
+          <span>${item.done ? "✓" : "!"}</span>
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <small>${escapeHtml(item.detail)}</small>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+};
+
 const renderOpenaiKeyStatus = (configured: boolean, message?: string) => {
   hasOpenaiApiKey = configured;
   openaiKeyBadge.textContent = configured ? "Configured" : "Missing";
@@ -499,14 +564,17 @@ const renderOpenaiKeyStatus = (configured: boolean, message?: string) => {
     statusText.textContent = configured ? "Idle" : "Add OpenAI API key before starting voice";
     connectBtn.disabled = !configured;
   }
+  renderBetaSetup();
 };
 
 const renderCodexLoginStatus = (status: Pick<CodexLoginStatus, "configured" | "label" | "detail">) => {
+  codexLoginConfigured = status.configured;
   codexLoginBadge.textContent = status.label;
   codexLoginBadge.classList.toggle("configured", status.configured);
   codexLoginBadge.classList.toggle("error", status.label.toLowerCase() === "error");
   codexLoginStatus.textContent = status.detail;
   startCodexLoginBtn.disabled = status.configured;
+  renderBetaSetup();
 };
 
 const loadCodexLoginStatus = async () => {
@@ -901,8 +969,12 @@ const loadWorkflowPacks = async () => {
       executeWorkflowTool<{ packs: WorkflowPackSummary[] }>("workflow_pack_list", {}),
       executeWorkflowTool<{ runs: WorkflowRun[] }>("workflow_run_list", { limit: 5 }),
     ]);
+    workflowPackCount = packResult.packs.length;
+    renderBetaSetup();
     renderWorkflowPacks(packResult.packs, runResult.runs);
   } catch (error) {
+    workflowPackCount = 0;
+    renderBetaSetup();
     workflowPacks.textContent = `Workflow packs unavailable: ${errorMessage(error)}`;
     workflowPacks.classList.add("empty");
   }
@@ -1209,6 +1281,54 @@ const saveOpenaiKey = async () => {
     renderOpenaiKeyStatus(false, message);
   } finally {
     saveOpenaiKeyBtn.disabled = false;
+  }
+};
+
+const showLocalExportResult = (title: string, result: LocalExportResponse) => {
+  diagnosticsStatus.textContent = `Saved ${result.filename} (${result.bytes} bytes).`;
+  resultWindowTitle.textContent = title;
+  resultWindowSubtitle.textContent = result.filename;
+  resultWindowBody.innerHTML = `
+    <p class="resultNote">Saved locally. Review this file before sharing it with anyone.</p>
+    <div class="resultMetrics">
+      <div class="resultMetric"><span>Bytes</span><strong>${result.bytes}</strong></div>
+    </div>
+    <pre class="artifactPre">${escapeHtml(result.path)}</pre>
+  `;
+  resultWindow.classList.remove("hidden");
+};
+
+const exportDiagnostics = async () => {
+  exportDiagnosticsBtn.disabled = true;
+  diagnosticsStatus.textContent = "Exporting local diagnostics...";
+  try {
+    const result = await postJson<LocalExportResponse>("/api/diagnostics/export", {});
+    showLocalExportResult("Diagnostics Export", result);
+    addActivity("Diagnostics export saved locally", "ok");
+  } catch (error) {
+    const message = `Diagnostics export failed: ${errorMessage(error)}`;
+    diagnosticsStatus.textContent = message;
+    addActivity(message, "error");
+  } finally {
+    exportDiagnosticsBtn.disabled = false;
+  }
+};
+
+const exportBetaFeedback = async () => {
+  exportFeedbackBtn.disabled = true;
+  diagnosticsStatus.textContent = "Exporting beta feedback...";
+  try {
+    const result = await postJson<LocalExportResponse>("/api/beta/feedback-export", {
+      message: betaFeedbackInput.value,
+    });
+    showLocalExportResult("Beta Feedback Export", result);
+    addActivity("Beta feedback export saved locally", "ok");
+  } catch (error) {
+    const message = `Beta feedback export failed: ${errorMessage(error)}`;
+    diagnosticsStatus.textContent = message;
+    addActivity(message, "error");
+  } finally {
+    exportFeedbackBtn.disabled = false;
   }
 };
 
@@ -1531,6 +1651,7 @@ const getRealtimeAccess = async (): Promise<RealtimeAccess> => {
 
 const renderMicrophoneDevices = (devices: MediaDeviceInfo[]) => {
   const audioInputs = devices.filter((device) => device.kind === "audioinput");
+  microphoneCheckStatus = audioInputs.length ? "available" : "unavailable";
   const selectedStillExists = selectedMicrophoneId && audioInputs.some((device) => device.deviceId === selectedMicrophoneId);
   if (selectedMicrophoneId && !selectedStillExists) {
     selectedMicrophoneId = "";
@@ -1548,11 +1669,14 @@ const renderMicrophoneDevices = (devices: MediaDeviceInfo[]) => {
   microphoneStatus.textContent = audioInputs.length
     ? "Select your phone mic if it appears here."
     : "No microphone found. Check macOS Sound input or reconnect your phone mic.";
+  renderBetaSetup();
 };
 
 const refreshMicrophoneDevices = async () => {
   if (!navigator.mediaDevices?.enumerateDevices) {
+    microphoneCheckStatus = "unavailable";
     microphoneStatus.textContent = "This browser cannot list microphone devices.";
+    renderBetaSetup();
     return;
   }
 
@@ -1561,7 +1685,9 @@ const refreshMicrophoneDevices = async () => {
   try {
     renderMicrophoneDevices(await navigator.mediaDevices.enumerateDevices());
   } catch (error) {
+    microphoneCheckStatus = "unavailable";
     microphoneStatus.textContent = microphoneErrorMessage(error);
+    renderBetaSetup();
   } finally {
     refreshMicrophonesBtn.disabled = false;
   }
@@ -2473,6 +2599,8 @@ orbOnlyBtn.addEventListener("click", () => setOrbOnlyMode(!isOrbOnly));
 restorePanelBtn.addEventListener("click", () => setOrbOnlyMode(false));
 resultWindowCloseBtn.addEventListener("click", () => resultWindow.classList.add("hidden"));
 saveOpenaiKeyBtn.addEventListener("click", () => void saveOpenaiKey());
+exportDiagnosticsBtn.addEventListener("click", () => void exportDiagnostics());
+exportFeedbackBtn.addEventListener("click", () => void exportBetaFeedback());
 authorizeMusicKitBtn.addEventListener("click", () => void authorizeAppleMusic());
 miniPlayerPlayBtn.addEventListener("click", () => void resumeMiniPlayer());
 miniPlayerPauseBtn.addEventListener("click", () => void pauseMiniPlayer());

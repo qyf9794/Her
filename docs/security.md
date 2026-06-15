@@ -35,6 +35,13 @@ Task runtime and audit payloads redact common secret-like fields. Codex receives
 
 Explicit memory and Her Skills reject secret-like keys and values before persistence. Do not save API keys, OAuth tokens, cookies, passwords, bearer tokens, or local API tokens as aliases, memories, skill parameters, or skill step arguments.
 
+## Diagnostics And Beta Feedback
+
+- Diagnostics and beta feedback exports are local-only JSON files written under the app userData export directory.
+- Her does not upload diagnostics, feedback, transcripts, or telemetry automatically.
+- Exports redact secret-like keys and values by default, including API keys, bearer tokens, cookies, passwords, private keys, and local API tokens.
+- Users should review exported JSON before sharing it with a developer or issue tracker.
+
 ## Tool Safety
 
 Tool calls are checked in this order:
