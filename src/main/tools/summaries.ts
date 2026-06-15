@@ -44,6 +44,20 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return `Run HER Skill ${args.skillId ?? args.trigger}`;
       case "skill_delete":
         return `Delete HER Skill ${args.skillId ?? args.trigger}`;
+      case "workflow_pack_list":
+        return args.query ? `List workflow packs matching "${args.query}"` : "List workflow packs";
+      case "workflow_pack_inspect":
+        return `Inspect workflow pack ${args.packId}`;
+      case "workflow_pack_preview":
+        return `Preview workflow pack ${args.packId}`;
+      case "workflow_pack_run":
+        return `Run workflow pack ${args.packId}`;
+      case "workflow_run_status":
+        return `Read workflow run ${args.runId}`;
+      case "workflow_run_list":
+        return "List workflow runs";
+      case "workflow_run_cancel":
+        return `Cancel workflow run ${args.runId}`;
       case "codex_task_run":
         return `Run Codex background task: ${truncateText(String(args.prompt ?? ""), 120)}`;
       case "coding_agent_start":

@@ -107,6 +107,36 @@ try {
     return { savedSkill: list.skills[0].id, runStatus: run.status, skillsRemaining: status.skills.total };
   });
 
+  await runCase("workflow pack preview, confirmation wait, cancel, and partial failure are visible", async () => {
+    const targetPath = path.join(fixtureRoot, "workflow-cleanup.tmp");
+    fs.writeFileSync(targetPath, "workflow cleanup smoke\n", "utf8");
+
+    const preview = await mustExec("workflow_pack_preview", {
+      packId: "file_cleanup",
+      parameters: { root: fixtureRoot, query: "workflow-cleanup", targetPath },
+    });
+    assert(preview.preview.steps.some((step) => step.toolName === "file_trash" && step.requiresConfirmation), "workflow preview did not expose trash confirmation");
+
+    const run = await mustExec("workflow_pack_run", {
+      packId: "file_cleanup",
+      parameters: { root: fixtureRoot, query: "workflow-cleanup", targetPath },
+    });
+    assert(run.run.status === "awaiting_confirmation", "workflow run did not wait for confirmation");
+    assert(fs.existsSync(targetPath), "workflow moved a file before confirmation");
+
+    const cancelled = await mustExec("workflow_run_cancel", { runId: run.run.id });
+    assert(cancelled.run.status === "cancelled", "workflow cancel did not mark the run cancelled");
+    assert(fs.existsSync(targetPath), "workflow cancel still moved a file");
+
+    const failed = await mustExec("workflow_pack_run", {
+      packId: "file_cleanup",
+      parameters: { root: "/not-allowlisted", query: "missing", targetPath },
+    });
+    assert(failed.run.status === "failed", "workflow partial failure was not visible");
+    assert(failed.run.steps.some((step) => step.status === "skipped"), "workflow did not mark remaining steps skipped");
+    return { previewSteps: preview.preview.steps.length, cancelled: cancelled.run.status, failed: failed.run.status };
+  });
+
   await runCase("tool group disable blocks browser task, then re-enable allows it", async () => {
     const disabled = await mustExec("tool_group_set", { group: "browser", enabled: false });
     assert(disabled.enabled === false, "browser group was not disabled");

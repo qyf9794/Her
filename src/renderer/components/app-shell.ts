@@ -150,6 +150,13 @@ export const renderAppShell = () => {
           </div>
           <div id="taskRuns" class="agentRuns empty">No active tasks</div>
         </section>
+        <section class="workflowPanel">
+          <div class="sectionHeader">
+            <h2>Workflow Packs</h2>
+            <button id="refreshWorkflowsBtn" type="button">Refresh</button>
+          </div>
+          <div id="workflowPacks" class="agentRuns empty">No workflow packs loaded</div>
+        </section>
         <section class="artifactPanel">
           <div class="sectionHeader">
             <h2>Artifacts</h2>

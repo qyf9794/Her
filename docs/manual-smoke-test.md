@@ -70,6 +70,21 @@ Use this checklist after `npm run check` passes.
 5. Delete the skill.
    - Expected: deletion requires confirmation and the skill can no longer run.
 
+## Workflow Packs
+
+1. Open the Workflow Packs panel.
+   - Expected: Focus Writing, Meeting Prep, Research Desk, Coding Session, and File Cleanup are listed.
+2. Preview each pack.
+   - Expected: trigger phrases, required capabilities, risks, ordered steps, and rollback notes are visible.
+3. Preview File Cleanup with an explicit `targetPath`.
+   - Expected: search is read-only and the Trash step is marked confirmation-required.
+4. Run File Cleanup against a disposable file.
+   - Expected: workflow status becomes `awaiting_confirmation`, the file is still present, and the run shows a confirmation id.
+5. Cancel the workflow run.
+   - Expected: pending confirmation is rejected or removed, the Trash step is cancelled, and the file is still present.
+6. Run File Cleanup with a non-allowlisted root.
+   - Expected: the search step fails visibly and the Trash step is skipped.
+
 ## YOLO Mode
 
 1. Enable YOLO mode with an expiry.

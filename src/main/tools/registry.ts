@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { config } from "../config";
 import { AuditLog } from "../audit";
 import type { ToolCallRequest, ToolCallResult } from "../../shared/tools";
-import { toolGroups, type ToolGroup, type ToolName } from "./metadata";
+import { coreRealtimeToolNames, toolGroups, type ToolGroup, type ToolName } from "./metadata";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../../shared/app-settings";
 import { ConfirmationQueue } from "./confirmation";
 import type { ActionPlan } from "../policy/approval-policy";
@@ -41,9 +41,11 @@ import { AliasStore } from "../memory/alias-store";
 import { AliasValidationError, validateAliasTarget } from "../memory/alias-validation";
 import { resolveSkillArguments, SkillStore, SkillValidationError, toSkillValidationCode } from "../memory/skill-store";
 import type { HerSkillRunInput, HerSkillSaveInput } from "../../shared/skills";
+import { WorkflowRuntime, toWorkflowValidationCode } from "../workflows/workflow-runtime";
 
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
+const WORKFLOW_TOOL_OUTPUT_INLINE_LIMIT = 12000;
 const TOOL_RESULT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type PermissionManager = {
@@ -148,6 +150,7 @@ const toolGroupLookup = Object.fromEntries(
     .filter((entry) => Boolean(entry.group))
     .map((entry) => [entry.name, entry.group]),
 ) as Partial<Record<ToolName, ToolGroup>>;
+const nonQueueableCoreTools = new Set<string>(coreRealtimeToolNames);
 const runCommand = (command: string, args: string[]) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: "ignore" });
@@ -192,6 +195,7 @@ export class ToolRegistry {
   private memory: MemoryStore;
   private aliases: AliasStore;
   private skills: SkillStore;
+  private workflows: WorkflowRuntime;
   private runtime: ToolRuntime;
   private confirmationTaskIds = new Map<string, string>();
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
@@ -226,6 +230,12 @@ export class ToolRegistry {
     this.memory = memory ?? new MemoryStore();
     this.aliases = aliasStore ?? new AliasStore();
     this.skills = skillStore ?? new SkillStore();
+    this.workflows = new WorkflowRuntime({
+      executeTool: (name, args) => this.execute({ name, source: "local", arguments: args }),
+      readTask: (taskId) => this.herTasks.get(taskId),
+      cancelTask: (taskId) => this.cancelUnifiedTask(taskId),
+      rejectConfirmation: (confirmationId) => this.confirm(confirmationId, false),
+    });
     this.runtime = new ToolRuntime({
       audit: this.audit,
       confirmations: this.confirmations,
@@ -687,6 +697,20 @@ export class ToolRegistry {
         return this.runSkill(args as HerSkillRunInput);
       case "skill_delete":
         return this.skills.delete({ skillId: args.skillId as string | undefined, trigger: args.trigger as string | undefined });
+      case "workflow_pack_list":
+        return this.workflows.listPacks(args.query as string | undefined);
+      case "workflow_pack_inspect":
+        return this.workflows.inspectPack(args.packId as string);
+      case "workflow_pack_preview":
+        return this.workflows.previewPack(args.packId as string, args.parameters as Record<string, string>);
+      case "workflow_pack_run":
+        return this.workflows.runPack(args.packId as string, args.parameters as Record<string, string>);
+      case "workflow_run_status":
+        return this.workflows.status(args.runId as string);
+      case "workflow_run_list":
+        return this.workflows.listRuns(args.limit as number);
+      case "workflow_run_cancel":
+        return this.workflows.cancelRun(args.runId as string);
       case "file_list":
         return this.files.list(args.path as string, args.includeHidden as boolean);
       case "file_search":
@@ -1593,6 +1617,9 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
     source: "realtime" | "local",
   ) {
     this.assertTaskCreateRateLimit();
+    if (nonQueueableCoreTools.has(toolName)) {
+      throw new Error(`Tool cannot be queued through task_create: ${toolName}. Call it directly.`);
+    }
     if (!this.isQueueManagedToolName(toolName)) {
       throw new Error(`Tool is not queue-managed or does not exist: ${toolName}. Use tool_catalog_list first.`);
     }
@@ -2105,7 +2132,11 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
     this.createArtifactForTool(name, result);
     this.pruneResultCache();
     const serialized = stableSerialize(result);
-    const inlineLimit = source === "realtime" ? REALTIME_TOOL_OUTPUT_INLINE_LIMIT : TOOL_OUTPUT_INLINE_LIMIT;
+    const inlineLimit = source === "realtime"
+      ? REALTIME_TOOL_OUTPUT_INLINE_LIMIT
+      : name.startsWith("workflow_")
+        ? WORKFLOW_TOOL_OUTPUT_INLINE_LIMIT
+        : TOOL_OUTPUT_INLINE_LIMIT;
     if (serialized.length <= inlineLimit) return result;
 
     const handle = crypto.randomUUID();

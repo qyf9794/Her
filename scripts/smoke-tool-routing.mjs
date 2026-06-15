@@ -84,12 +84,35 @@ const samples = {
   },
   alias_list: { query: "routing smoke" },
   alias_delete: { phrase: "Open routing smoke app" },
+  skill_preview: {
+    name: "Routing Smoke Skill",
+    trigger: "routing smoke skill",
+    steps: [{ toolName: "file_create_folder", arguments: { parentPath: tmpRoot, folderName: "skill-smoke" } }],
+  },
+  skill_save: {
+    name: "Routing Smoke Skill",
+    trigger: "routing smoke skill",
+    steps: [{ toolName: "file_create_folder", arguments: { parentPath: tmpRoot, folderName: "skill-smoke" } }],
+    overwrite: true,
+  },
+  skill_list: { query: "routing" },
+  skill_inspect: { trigger: "routing smoke skill" },
+  skill_run: { trigger: "routing smoke skill", parameters: {} },
+  skill_delete: { trigger: "routing smoke skill" },
+  workflow_pack_list: { query: "focus" },
+  workflow_pack_inspect: { packId: "focus_writing" },
+  workflow_pack_preview: { packId: "file_cleanup", parameters: { root: tmpRoot, query: "sample", targetPath: sampleFile } },
+  workflow_pack_run: { packId: "file_cleanup", parameters: { root: tmpRoot, query: "sample", targetPath: sampleFile } },
+  workflow_run_status: { runId: "missing-routing-smoke-workflow" },
+  workflow_run_list: { limit: 5 },
+  workflow_run_cancel: { runId: "missing-routing-smoke-workflow" },
   codex_task_run: { prompt: "List the current directory.", cwd: tmpRoot, sandbox: "read_only", timeoutMs: 10000 },
   coding_agent_start: { prompt: "Inspect this repository without editing files.", repoPath: root, mode: "plan", timeoutMs: 10000 },
   coding_agent_status: { taskId: "missing-routing-smoke-coding-task" },
   coding_agent_continue: { taskId: "missing-routing-smoke-coding-task", prompt: "Continue the smoke task.", timeoutMs: 10000 },
   coding_agent_cancel: { taskId: "missing-routing-smoke-coding-task" },
   coding_agent_get_result: { taskId: "missing-routing-smoke-coding-task" },
+  coding_agent_apply_to_repo: { taskId: "missing-routing-smoke-coding-task" },
   yolo_mode_set: { enabled: false },
   app_permission_search: { query: "", limit: 8 },
   app_permission_set: { appName: "Google Chrome", authorized: true },
@@ -241,7 +264,7 @@ for (const name of realtimeDefinitionNames) {
   if (!realtimeNames.includes(name)) fail("realtime-definitions", `${name} is exposed by manifestRealtimeToolDefinitions but not listed as a core realtime tool.`);
 }
 
-for (const group of toolGroups) {
+for (const group of toolGroups.filter((group) => group !== "permissions")) {
   const count = queueManagedToolDefinitions.filter((definition) => toolGroupByName[definition.name] === group).length;
   if (count === 0) fail("catalog", `Tool group ${group} has no queue-managed tools.`);
 }

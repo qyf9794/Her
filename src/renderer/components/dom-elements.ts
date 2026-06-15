@@ -68,6 +68,8 @@ export const getRendererElements = () => ({
   codexModelStatus: requireElement<HTMLParagraphElement>("#codexModelStatus"),
   refreshTasksBtn: requireElement<HTMLButtonElement>("#refreshTasksBtn"),
   taskRuns: requireElement<HTMLDivElement>("#taskRuns"),
+  refreshWorkflowsBtn: requireElement<HTMLButtonElement>("#refreshWorkflowsBtn"),
+  workflowPacks: requireElement<HTMLDivElement>("#workflowPacks"),
   refreshArtifactsBtn: requireElement<HTMLButtonElement>("#refreshArtifactsBtn"),
   artifactList: requireElement<HTMLDivElement>("#artifactList"),
   refreshAgentRunsBtn: requireElement<HTMLButtonElement>("#refreshAgentRunsBtn"),

@@ -420,6 +420,54 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "workflow_pack_list",
+    description: "List built-in HER workflow packs such as Focus Writing, Meeting Prep, Research Desk, Coding Session, and File Cleanup.",
+    parameters: objectSchema({ query: { type: "string" } }),
+  },
+  {
+    type: "function",
+    name: "workflow_pack_inspect",
+    description: "Inspect one built-in workflow pack manifest, including trigger phrases, capabilities, risks, ordered steps, and rollback notes.",
+    parameters: objectSchema({ packId: { type: "string" } }, ["packId"]),
+  },
+  {
+    type: "function",
+    name: "workflow_pack_preview",
+    description: "Preview a built-in workflow pack with optional parameters before running it. Does not execute steps.",
+    parameters: objectSchema({
+      packId: { type: "string" },
+      parameters: { type: "object", additionalProperties: { type: "string" } },
+    }, ["packId"]),
+  },
+  {
+    type: "function",
+    name: "workflow_pack_run",
+    description: "Run a built-in workflow pack. Every step goes through HER's normal tool runtime, policy engine, and confirmation flow.",
+    parameters: objectSchema({
+      packId: { type: "string" },
+      parameters: { type: "object", additionalProperties: { type: "string" } },
+    }, ["packId"]),
+  },
+  {
+    type: "function",
+    name: "workflow_run_status",
+    description: "Read one workflow run with visible step events, confirmation ids, failures, and skipped steps.",
+    parameters: objectSchema({ runId: { type: "string" } }, ["runId"]),
+  },
+  {
+    type: "function",
+    name: "workflow_run_list",
+    description: "List recent workflow runs.",
+    parameters: objectSchema({ limit: { type: "integer", minimum: 1, maximum: 30, default: 10 } }),
+  },
+  {
+    type: "function",
+    name: "workflow_run_cancel",
+    description: "Cancel a running or confirmation-waiting workflow run. Pending workflow steps are marked cancelled or skipped.",
+    parameters: objectSchema({ runId: { type: "string" } }, ["runId"]),
+  },
+  {
+    type: "function",
     name: "codex_task_run",
     description: "Run a complex background intent through HER's Codex app-server runtime. Codex may request HER local tools only through HER Tool Gateway; HER validates and queues any requested side effects.",
     parameters: objectSchema(
@@ -1561,6 +1609,19 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   }).refine((value) => Boolean(value.skillId || value.trigger), {
     message: "skillId or trigger is required",
   }),
+  workflow_pack_list: z.object({ query: z.string().optional() }),
+  workflow_pack_inspect: z.object({ packId: z.string().min(1) }),
+  workflow_pack_preview: z.object({
+    packId: z.string().min(1),
+    parameters: z.record(z.string(), z.string()).optional().default({}),
+  }),
+  workflow_pack_run: z.object({
+    packId: z.string().min(1),
+    parameters: z.record(z.string(), z.string()).optional().default({}),
+  }),
+  workflow_run_status: z.object({ runId: z.string().min(1) }),
+  workflow_run_list: z.object({ limit: z.number().int().min(1).max(30).optional().default(10) }),
+  workflow_run_cancel: z.object({ runId: z.string().min(1) }),
   codex_task_run: z.object({
     prompt: z.string().min(1),
     cwd: z.string().min(1).optional(),
@@ -1780,6 +1841,13 @@ export const coreRealtimeToolNames = [
   "skill_inspect",
   "skill_run",
   "skill_delete",
+  "workflow_pack_list",
+  "workflow_pack_inspect",
+  "workflow_pack_preview",
+  "workflow_pack_run",
+  "workflow_run_status",
+  "workflow_run_list",
+  "workflow_run_cancel",
 ] as const satisfies readonly ToolName[];
 
 export const toolGroupByName = {
@@ -1796,6 +1864,13 @@ export const toolGroupByName = {
   skill_inspect: "permissions",
   skill_run: "permissions",
   skill_delete: "permissions",
+  workflow_pack_list: "permissions",
+  workflow_pack_inspect: "permissions",
+  workflow_pack_preview: "permissions",
+  workflow_pack_run: "permissions",
+  workflow_run_status: "permissions",
+  workflow_run_list: "permissions",
+  workflow_run_cancel: "permissions",
   yolo_mode_set: "permissions",
   app_permission_search: "permissions",
   app_permission_set: "permissions",
@@ -1966,4 +2041,7 @@ export const toolRiskOverrides: Partial<Record<ToolName, ToolRisk>> = {
   advanced_shell_command: "shell",
 };
 
-export const queueManagedToolDefinitions = allToolDefinitions.filter((definition) => definition.name in toolGroupByName);
+const coreRealtimeToolNameSet = new Set<string>(coreRealtimeToolNames);
+export const queueManagedToolDefinitions = allToolDefinitions.filter(
+  (definition) => definition.name in toolGroupByName && !coreRealtimeToolNameSet.has(definition.name),
+);

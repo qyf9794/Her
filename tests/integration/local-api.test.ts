@@ -313,6 +313,100 @@ describe("local API auth and confirmation flow", () => {
     });
     expect(secretMemory.body).toMatchObject({ ok: false, error: expect.stringContaining("Secret-like") });
   });
+
+  it("previews built-in workflow packs with scenario metadata", async () => {
+    const list = await apiJson("/api/tools/execute", {
+      name: "workflow_pack_list",
+      source: "local",
+      arguments: {},
+    });
+    expect(list.body.result.packs.map((pack: { id: string }) => pack.id)).toEqual(expect.arrayContaining([
+      "focus_writing",
+      "meeting_prep",
+      "research_desk",
+      "coding_session",
+      "file_cleanup",
+    ]));
+
+    const expectedSteps: Record<string, string[]> = {
+      focus_writing: ["file_search", "mac_note_create", "window_minimize_unrelated"],
+      meeting_prep: ["calendar_search", "app_open", "mac_note_create"],
+      research_desk: ["browser_search_open", "document_folder_digest"],
+      coding_session: ["file_search", "coding_agent_start"],
+      file_cleanup: ["file_search", "file_trash"],
+    };
+
+    for (const [packId, tools] of Object.entries(expectedSteps)) {
+      const preview = await apiJson("/api/tools/execute", {
+        name: "workflow_pack_preview",
+        source: "local",
+        arguments: { packId, parameters: { root: allowedDir, repoPath: allowedDir } },
+      });
+      expect(preview.body.ok).toBe(true);
+      expect(preview.body.result.preview).toMatchObject({
+        id: packId,
+        requiredCapabilities: expect.any(Array),
+        risks: expect.any(Array),
+        rollbackNotes: expect.any(Array),
+      });
+      expect(preview.body.result.preview.steps.map((step: { toolName: string }) => step.toolName)).toEqual(expect.arrayContaining(tools));
+    }
+  });
+
+  it("runs and cancels File Cleanup without trashing before confirmation", async () => {
+    const targetPath = path.join(allowedDir, "cleanup-target.tmp");
+    fs.writeFileSync(targetPath, "keep until confirmed");
+
+    const run = await apiJson("/api/tools/execute", {
+      name: "workflow_pack_run",
+      source: "local",
+      arguments: { packId: "file_cleanup", parameters: { root: allowedDir, query: "cleanup-target", targetPath } },
+    });
+    expect(run.body.ok).toBe(true);
+    expect(run.body.result.run.status).toBe("awaiting_confirmation");
+    expect(run.body.result.run.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolName: "file_trash", status: "awaiting_confirmation", confirmationId: expect.any(String) }),
+    ]));
+    expect(fs.existsSync(targetPath)).toBe(true);
+
+    const runId = run.body.result.run.id;
+    const cancel = await apiJson("/api/tools/execute", {
+      name: "workflow_run_cancel",
+      source: "local",
+      arguments: { runId },
+    });
+    expect(cancel.body.result).toMatchObject({ cancelled: true, run: expect.objectContaining({ status: "cancelled" }) });
+    expect(cancel.body.result.run.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolName: "file_trash", status: "cancelled" }),
+    ]));
+    expect(fs.existsSync(targetPath)).toBe(true);
+
+    const pending = await apiGetJson("/api/tools/pending");
+    expect(pending.body.some((item: { confirmationId: string }) => item.confirmationId === run.body.result.run.steps[1].confirmationId)).toBe(false);
+  });
+
+  it("shows partial workflow failure and skipped remaining steps", async () => {
+    const run = await apiJson("/api/tools/execute", {
+      name: "workflow_pack_run",
+      source: "local",
+      arguments: {
+        packId: "file_cleanup",
+        parameters: { root: "/not-allowlisted", query: "missing", targetPath: path.join(allowedDir, "never-trash.tmp") },
+      },
+    });
+    expect(run.body.ok).toBe(true);
+    expect(run.body.result.run).toMatchObject({
+      status: "failed",
+      steps: [
+        expect.objectContaining({ toolName: "file_search", status: "failed" }),
+        expect.objectContaining({ toolName: "file_trash", status: "skipped" }),
+      ],
+    });
+    expect(run.body.result.run.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "workflow_step_failed" }),
+      expect.objectContaining({ type: "workflow_step_skipped" }),
+    ]));
+  });
 });
 
 const apiFetch = (apiPath: string, body: unknown, token: string | null = server.localApiToken) =>

@@ -40,3 +40,17 @@ M7 adds reusable local workflow skills:
 - `skill_delete` requires confirmation before removing the saved workflow.
 
 Skills are explicit local memory. They may include parameter placeholders such as `{{folder}}`, but they cannot store secret-like keys or values.
+
+## Workflow Packs
+
+M8 adds built-in workflow packs for signature desktop modes:
+
+- Focus Writing
+- Meeting Prep
+- Research Desk
+- Coding Session
+- File Cleanup
+
+Workflow packs are fixed product manifests, not user-editable custom workflows. Each pack exposes trigger phrases, required capabilities, risks, ordered steps, and rollback notes. `workflow_pack_preview` shows the full plan before execution. `workflow_pack_run` creates a grouped workflow run with visible step events, then sends each step through `ToolRegistry.execute` so capability gates, task runtime, and high-risk confirmation still apply.
+
+Workflow cancellation rejects any pending workflow confirmation when possible and marks remaining steps cancelled or skipped. File Cleanup is intentionally explicit: it searches candidates first and only moves `targetPath` to Trash after the normal file confirmation flow.

@@ -12,6 +12,7 @@ import type { CodingAgentTaskView } from "../shared/agents/coding-agent";
 import type { HerArtifact, HerArtifactListResponse } from "../shared/artifacts";
 import type { DesktopContextSnapshot } from "../shared/context";
 import type { HerTaskView } from "../shared/tasks";
+import type { WorkflowPackPreview, WorkflowRun } from "../shared/workflows";
 import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
 import {
   createRealtimeSessionConfig,
@@ -106,6 +107,8 @@ const {
   codexModelStatus,
   refreshTasksBtn,
   taskRuns,
+  refreshWorkflowsBtn,
+  workflowPacks,
   refreshArtifactsBtn,
   artifactList,
   refreshAgentRunsBtn,
@@ -151,6 +154,7 @@ let musicPlaybackPoll: number | undefined;
 let contextPoll: number | undefined;
 let currentMiniPlayerTrack: MiniPlayerTrack | undefined;
 let taskRunsPoll: number | undefined;
+let workflowRunsPoll: number | undefined;
 let artifactsPoll: number | undefined;
 let agentRunsPoll: number | undefined;
 
@@ -207,29 +211,17 @@ const realtimeUsageStats: RealtimeUsageStats = {
 };
 
 const initialize = async () => {
-  initOrb();
   renderRealtimeUsage();
+  showOnboarding(false);
+  setState("idle", "Loading local backend...");
+  addLine("system", "Loading Her local runtime...");
+  initOrb();
+
   try {
     settings = await getJson<UserSettings>("/api/settings");
-    await loadOpenaiKeyStatus();
-    await loadRealtimeVoice();
-    await loadMusicKitStatus();
-    await loadCodexLoginStatus();
-    await loadCodexModel();
-    await loadDesktopContext();
-    startContextPolling();
-    await loadTaskRuns();
-    startTaskRunsPolling();
-    await loadArtifacts();
-    startArtifactsPolling();
-    await loadAgentRuns();
-    startAgentRunsPolling();
-    await refreshMicrophoneDevices();
-    startMusicPlaybackRequestPolling();
-    installedApps = await getJson<InstalledApp[]>("/api/apps");
-    appPermissions = Object.fromEntries(installedApps.map((item) => [item.bundleId, item.authorized]));
     renderSettings();
     showOnboarding(!settings.hasCompletedOnboarding);
+    void loadStartupData();
     addLine("system", "Start voice, then ask me to manage files, documents, drafts, email, calendar, music, apps, browser tasks, or safe shell commands.");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -241,6 +233,42 @@ const initialize = async () => {
     showOnboarding(false);
     addLine("system", `Local backend unavailable: ${message}`);
     setVisualState("error");
+  }
+};
+
+const loadStartupData = async () => {
+  await Promise.allSettled([
+    loadOpenaiKeyStatus(),
+    loadRealtimeVoice(),
+    loadMusicKitStatus(),
+    loadCodexLoginStatus(),
+    loadCodexModel(),
+    loadDesktopContext(),
+    loadTaskRuns(),
+    loadWorkflowPacks(),
+    loadArtifacts(),
+    loadAgentRuns(),
+    refreshMicrophoneDevices(),
+    loadInstalledApps(),
+  ]);
+
+  startContextPolling();
+  startTaskRunsPolling();
+  startWorkflowRunsPolling();
+  startArtifactsPolling();
+  startAgentRunsPolling();
+  startMusicPlaybackRequestPolling();
+};
+
+const loadInstalledApps = async () => {
+  try {
+    installedApps = await getJson<InstalledApp[]>("/api/apps");
+    appPermissions = Object.fromEntries(installedApps.map((item) => [item.bundleId, item.authorized]));
+    renderSettings();
+    onboardingStatus.textContent = `${installedApps.length} local apps found. Recommended low-risk apps are preselected.`;
+  } catch (error) {
+    onboardingStatus.textContent = `Application inventory unavailable: ${errorMessage(error)}`;
+    renderSettings();
   }
 };
 
@@ -843,6 +871,187 @@ const cancelTaskRun = async (taskId: string) => {
   } catch (error) {
     addActivity(`Task cancel failed: ${errorMessage(error)}`, "error");
   }
+};
+
+type WorkflowPackSummary = {
+  id: string;
+  title: string;
+  description: string;
+  triggers: string[];
+  requiredCapabilities: string[];
+  risks: string[];
+  stepCount: number;
+  rollbackNotes: string[];
+};
+
+const startWorkflowRunsPolling = () => {
+  if (workflowRunsPoll) return;
+  workflowRunsPoll = window.setInterval(() => void loadWorkflowPacks(), 4000);
+};
+
+const executeWorkflowTool = async <T>(name: ToolName, args: Record<string, unknown>) => {
+  const response = await postJson<ToolCallResult>("/api/tools/execute", { name, source: "local", arguments: args });
+  if (!response.ok) throw new Error(response.error);
+  if (response.requiresConfirmation) throw new Error(`Workflow tool ${name} unexpectedly requires confirmation.`);
+  return response.result as T;
+};
+
+const loadWorkflowPacks = async () => {
+  try {
+    const [packResult, runResult] = await Promise.all([
+      executeWorkflowTool<{ packs: WorkflowPackSummary[] }>("workflow_pack_list", {}),
+      executeWorkflowTool<{ runs: WorkflowRun[] }>("workflow_run_list", { limit: 5 }),
+    ]);
+    renderWorkflowPacks(packResult.packs, runResult.runs);
+  } catch (error) {
+    workflowPacks.textContent = `Workflow packs unavailable: ${errorMessage(error)}`;
+    workflowPacks.classList.add("empty");
+  }
+};
+
+const renderWorkflowPacks = (packs: WorkflowPackSummary[], runs: WorkflowRun[]) => {
+  workflowPacks.textContent = "";
+  workflowPacks.classList.toggle("empty", packs.length === 0);
+  if (!packs.length) {
+    workflowPacks.textContent = "No workflow packs loaded";
+    return;
+  }
+
+  for (const pack of packs) {
+    const item = document.createElement("article");
+    item.className = "agentRun";
+    item.innerHTML = `
+      <div class="agentRunHeader">
+        <strong>${escapeHtml(pack.title)}</strong>
+        <span>
+          <button type="button" data-workflow-preview="${escapeHtml(pack.id)}">Preview</button>
+          <button type="button" data-workflow-run="${escapeHtml(pack.id)}">Run</button>
+        </span>
+      </div>
+      <p>${escapeHtml(pack.description)}</p>
+      <div class="agentRunMeta">
+        <span>${pack.stepCount} steps</span>
+        <span>${escapeHtml(pack.requiredCapabilities.join(", "))}</span>
+        <span>${escapeHtml(pack.risks.join(", "))}</span>
+      </div>
+    `;
+    workflowPacks.append(item);
+  }
+
+  for (const run of runs) {
+    const item = document.createElement("article");
+    item.className = `agentRun ${run.status}`;
+    const latest = run.events.at(-1);
+    item.innerHTML = `
+      <div class="agentRunHeader">
+        <strong>${escapeHtml(run.title)} · ${escapeHtml(run.status)}</strong>
+        ${run.status === "running" || run.status === "awaiting_confirmation" ? `<button type="button" data-workflow-cancel="${escapeHtml(run.id)}">Cancel</button>` : ""}
+      </div>
+      <div class="agentRunMeta">
+        <span>${escapeHtml(run.id.slice(0, 8))}</span>
+        <span>${run.steps.filter((step) => step.status === "completed").length}/${run.steps.length} complete</span>
+        ${run.steps.some((step) => step.confirmationId) ? `<span>waiting confirmation</span>` : ""}
+      </div>
+      ${latest ? `<p class="agentRunEvent">${escapeHtml(latest.message)}</p>` : ""}
+      ${run.error ? `<p class="agentRunError">${escapeHtml(run.error)}</p>` : ""}
+      <button type="button" data-workflow-status="${escapeHtml(run.id)}">Status</button>
+    `;
+    workflowPacks.append(item);
+  }
+};
+
+const previewWorkflowPack = async (packId: string) => {
+  try {
+    const result = await executeWorkflowTool<{ preview: WorkflowPackPreview }>("workflow_pack_preview", { packId });
+    renderWorkflowPreviewWindow(result.preview);
+  } catch (error) {
+    addActivity(`Workflow preview failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const runWorkflowPack = async (packId: string) => {
+  try {
+    const result = await executeWorkflowTool<{ run: WorkflowRun }>("workflow_pack_run", { packId });
+    addActivity(`${result.run.title} is ${result.run.status}`, result.run.status === "failed" ? "error" : "pending");
+    renderWorkflowRunWindow(result.run);
+    await loadWorkflowPacks();
+  } catch (error) {
+    addActivity(`Workflow run failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const showWorkflowRun = async (runId: string) => {
+  try {
+    const result = await executeWorkflowTool<{ run: WorkflowRun }>("workflow_run_status", { runId });
+    renderWorkflowRunWindow(result.run);
+  } catch (error) {
+    addActivity(`Workflow status failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const cancelWorkflowRun = async (runId: string) => {
+  try {
+    await executeWorkflowTool<{ run: WorkflowRun; cancelled: boolean }>("workflow_run_cancel", { runId });
+    await loadWorkflowPacks();
+  } catch (error) {
+    addActivity(`Workflow cancel failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const renderWorkflowPreviewWindow = (preview: WorkflowPackPreview) => {
+  resultWindowTitle.textContent = preview.title;
+  resultWindowSubtitle.textContent = [preview.requiredCapabilities.join(", "), preview.risks.join(", ")].filter(Boolean).join(" · ");
+  resultWindowBody.innerHTML = `
+    <p class="resultNote">${escapeHtml(preview.description)}</p>
+    <section class="resultItems">
+      ${preview.steps.map((step) => `
+        <article class="resultItem">
+          <h3>${escapeHtml(step.title)}</h3>
+          <p>${escapeHtml(step.summary)}</p>
+          <div class="resultMeta">
+            <span>${escapeHtml(step.toolName)}</span>
+            <span>${escapeHtml(step.riskLabel)}</span>
+            ${step.requiresConfirmation ? `<span>confirmation</span>` : ""}
+          </div>
+          ${step.rollbackNote ? `<p class="resultSubtitle">${escapeHtml(step.rollbackNote)}</p>` : ""}
+        </article>
+      `).join("")}
+    </section>
+    <p class="resultNote">${escapeHtml(preview.rollbackNotes.join(" "))}</p>
+  `;
+  resultWindow.classList.remove("hidden");
+};
+
+const renderWorkflowRunWindow = (run: WorkflowRun) => {
+  resultWindowTitle.textContent = `${run.title} · ${run.status}`;
+  resultWindowSubtitle.textContent = [run.id.slice(0, 8), new Date(run.updatedAt).toLocaleString()].join(" · ");
+  resultWindowBody.innerHTML = `
+    <section class="resultItems">
+      ${run.steps.map((step) => `
+        <article class="resultItem">
+          <h3>${escapeHtml(step.title)} · ${escapeHtml(step.status)}</h3>
+          <p>${escapeHtml(step.summary)}</p>
+          <div class="resultMeta">
+            <span>${escapeHtml(step.toolName)}</span>
+            <span>${escapeHtml(step.risk)}</span>
+            ${step.confirmationId ? `<span>confirm ${escapeHtml(step.confirmationId.slice(0, 8))}</span>` : ""}
+            ${step.childTaskId ? `<span>task ${escapeHtml(step.childTaskId.slice(0, 8))}</span>` : ""}
+          </div>
+          ${step.error ? `<p class="agentRunError">${escapeHtml(step.error)}</p>` : ""}
+        </article>
+      `).join("")}
+    </section>
+    <section class="resultItems">
+      ${run.events.map((event) => `
+        <article class="resultItem">
+          <h3>${escapeHtml(event.type)}</h3>
+          <p>${escapeHtml(event.message)}</p>
+          <div class="resultMeta"><span>${escapeHtml(new Date(event.timestamp).toLocaleTimeString())}</span></div>
+        </article>
+      `).join("")}
+    </section>
+  `;
+  resultWindow.classList.remove("hidden");
 };
 
 const startAgentRunsPolling = () => {
@@ -2009,6 +2218,7 @@ const initOrb = () => {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
   camera.position.set(0, 0, 9.5);
+  let orbReadyToRender = false;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
   renderer.setClearColor(0x000000, 0);
@@ -2162,8 +2372,15 @@ const initOrb = () => {
   const resize = () => {
     if (isOrbOnly) renderOrbPosition();
     const rect = orbMount.getBoundingClientRect();
-    renderer.setSize(rect.width, rect.height, false);
-    camera.aspect = rect.width / Math.max(1, rect.height);
+    const width = Math.floor(rect.width);
+    const height = Math.floor(rect.height);
+    if (width < 2 || height < 2) {
+      orbReadyToRender = false;
+      return;
+    }
+    orbReadyToRender = true;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
   };
   resize();
@@ -2172,6 +2389,10 @@ const initOrb = () => {
   const clock = new THREE.Clock();
   const animate = () => {
     requestAnimationFrame(animate);
+    if (!orbReadyToRender) {
+      resize();
+      return;
+    }
     const nextUserLevel = readLevel(inputAnalyser);
     const nextAiLevel = readLevel(outputAnalyser);
     userLevel += (nextUserLevel - userLevel) * (nextUserLevel > userLevel ? 0.42 : 0.12);
@@ -2260,6 +2481,7 @@ refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus()
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
 codexModelSelect.addEventListener("change", () => void saveCodexModel());
 refreshTasksBtn.addEventListener("click", () => void loadTaskRuns());
+refreshWorkflowsBtn.addEventListener("click", () => void loadWorkflowPacks());
 refreshArtifactsBtn.addEventListener("click", () => void loadArtifacts());
 refreshAgentRunsBtn.addEventListener("click", () => void loadAgentRuns());
 realtimeVoiceSelect.addEventListener("change", () => void saveRealtimeVoice());
@@ -2309,6 +2531,28 @@ taskRuns.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-task-cancel]");
   if (!button?.dataset.taskCancel) return;
   void cancelTaskRun(button.dataset.taskCancel);
+});
+workflowPacks.addEventListener("click", (event) => {
+  const target = event.target as HTMLElement;
+  const previewButton = target.closest<HTMLButtonElement>("button[data-workflow-preview]");
+  if (previewButton?.dataset.workflowPreview) {
+    void previewWorkflowPack(previewButton.dataset.workflowPreview);
+    return;
+  }
+  const runButton = target.closest<HTMLButtonElement>("button[data-workflow-run]");
+  if (runButton?.dataset.workflowRun) {
+    void runWorkflowPack(runButton.dataset.workflowRun);
+    return;
+  }
+  const statusButton = target.closest<HTMLButtonElement>("button[data-workflow-status]");
+  if (statusButton?.dataset.workflowStatus) {
+    void showWorkflowRun(statusButton.dataset.workflowStatus);
+    return;
+  }
+  const cancelButton = target.closest<HTMLButtonElement>("button[data-workflow-cancel]");
+  if (cancelButton?.dataset.workflowCancel) {
+    void cancelWorkflowRun(cancelButton.dataset.workflowCancel);
+  }
 });
 artifactList.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-artifact-action]");
