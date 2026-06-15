@@ -248,7 +248,6 @@ const loadStartupData = async () => {
     loadWorkflowPacks(),
     loadArtifacts(),
     loadAgentRuns(),
-    refreshMicrophoneDevices(),
     loadInstalledApps(),
   ]);
 

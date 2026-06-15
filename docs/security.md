@@ -10,6 +10,15 @@ Her is a local desktop agent, so the default posture is explicit local control, 
 - Packaged app API calls are expected from trusted local contexts.
 - `Sec-Fetch-Site` is rejected unless it is `same-origin`, `same-site`, or `none`.
 
+## Electron Shell
+
+- Packaged renderer loads through Her's privileged `her://app/index.html` protocol, not long-term `file://`.
+- Development renderer is limited to the normalized Vite origin, normally `http://127.0.0.1:5174`.
+- Renderer windows keep `contextIsolation: true`, `sandbox: true`, and `nodeIntegration: false`; the preload exposes only the narrow Her IPC bridge.
+- A Content Security Policy is applied to Her renderer documents. Production avoids `unsafe-eval`; development permits Vite's local origin and websocket endpoint.
+- In-window navigation is allowed only for trusted Her renderer URLs. Safe HTTPS URLs may open externally through Electron's `shell.openExternal`; `javascript:`, `file:`, unknown protocols, and untrusted origins are blocked.
+- Browser permission requests are allowed only from trusted Her renderer URLs and only for voice media permissions.
+
 ## Secrets
 
 Do not expose or persist:

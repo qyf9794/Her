@@ -48,7 +48,7 @@ If `HER_MAC_SIGN_IDENTITY` is not set, Forge packages unsigned local builds. If 
 
 ## Auto-Update Skeleton
 
-M5 adds only an update skeleton. It does not configure a real update server.
+M9 keeps this as an update skeleton. It does not configure a real update server.
 
 Channels:
 
@@ -63,7 +63,17 @@ HER_UPDATE_CHANNEL=stable
 HER_UPDATE_FEED_URL=https://updates.example.com/her
 ```
 
-Updates are disabled in development and disabled in packaged builds unless `HER_UPDATE_FEED_URL` is set. When enabled, Her appends `channel`, `platform`, and `version` query parameters to the feed URL.
+Updates are disabled in development and disabled in packaged builds unless `HER_UPDATE_FEED_URL` is set. The feed URL must use HTTPS. When enabled, Her appends `channel`, `platform`, and `version` query parameters to the feed URL.
+
+## Renderer Protocol
+
+Production windows load the renderer from Her's custom Electron protocol:
+
+```text
+her://app/index.html
+```
+
+The protocol resolves files from `dist/renderer` inside the packaged app. Development continues to load Vite from `http://127.0.0.1:5174`.
 
 ## Packaged Files
 

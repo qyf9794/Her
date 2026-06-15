@@ -18,9 +18,27 @@ const status: UpdateStatus = {
 
 export const configureAutoUpdates = () => {
   status.channel = config.updateChannel;
-  if (!app.isPackaged || !config.updateFeedUrl) return status;
+  status.enabled = false;
+  status.feedUrl = undefined;
+  status.lastError = undefined;
 
-  const feedUrl = updateFeedUrlForChannel(config.updateFeedUrl, config.updateChannel);
+  if (!app.isPackaged) {
+    status.lastEvent = "disabled-development";
+    return status;
+  }
+
+  if (!config.updateFeedUrl) {
+    status.lastEvent = "disabled-no-feed-url";
+    return status;
+  }
+
+  const feedUrl = updateFeedUrlForChannel(config.updateFeedUrl, config.updateChannel, process.platform, app.getVersion());
+  if (!feedUrl) {
+    status.lastEvent = "disabled-invalid-feed-url";
+    status.lastError = "Update feed URL must use HTTPS.";
+    return status;
+  }
+
   status.enabled = true;
   status.feedUrl = feedUrl;
 
@@ -52,10 +70,20 @@ export const configureAutoUpdates = () => {
 
 export const getUpdateStatus = () => ({ ...status });
 
-const updateFeedUrlForChannel = (baseUrl: string, channel: UpdateChannel) => {
-  const url = new URL(baseUrl);
-  url.searchParams.set("channel", channel);
-  url.searchParams.set("platform", process.platform);
-  url.searchParams.set("version", app.getVersion());
-  return url.toString();
+export const updateFeedUrlForChannel = (
+  baseUrl: string,
+  channel: UpdateChannel,
+  platform: string,
+  version: string,
+) => {
+  try {
+    const url = new URL(baseUrl);
+    if (url.protocol !== "https:") return undefined;
+    url.searchParams.set("channel", channel);
+    url.searchParams.set("platform", platform);
+    url.searchParams.set("version", version);
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 };

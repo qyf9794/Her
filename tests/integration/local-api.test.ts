@@ -32,6 +32,23 @@ describe("local API auth and confirmation flow", () => {
     expect((await apiGetJson("/api/artifacts", null)).status).toBe(401);
   });
 
+  it("rejects arbitrary web origins even with a valid local API token", async () => {
+    const response = await apiFetch("/api/tools/execute", {}, server.localApiToken, {
+      Origin: "https://evil.example",
+      "Sec-Fetch-Site": "cross-site",
+    });
+    expect(response.status).toBe(403);
+
+    const preflight = await fetch(`http://127.0.0.1:${server.port}/api/tools/execute`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://evil.example",
+        "Access-Control-Request-Method": "POST",
+      },
+    });
+    expect(preflight.status).toBe(403);
+  });
+
   it("returns an auth-gated compact desktop context snapshot", async () => {
     fs.writeFileSync(path.join(allowedDir, "recent-context.txt"), "full file content should not appear in context snapshot");
     const response = await apiGetJson("/api/context/snapshot");
@@ -409,11 +426,17 @@ describe("local API auth and confirmation flow", () => {
   });
 });
 
-const apiFetch = (apiPath: string, body: unknown, token: string | null = server.localApiToken) =>
+const apiFetch = (
+  apiPath: string,
+  body: unknown,
+  token: string | null = server.localApiToken,
+  headers: Record<string, string> = {},
+) =>
   fetch(`http://127.0.0.1:${server.port}${apiPath}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...headers,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),

@@ -1,6 +1,23 @@
 import path from "node:path";
-import { app, BrowserWindow, ipcMain, shell, type Rectangle } from "electron";
+import { pathToFileURL } from "node:url";
+import { app, BrowserWindow, ipcMain, net, protocol, session, shell, type Rectangle } from "electron";
 import { config } from "./config";
+import {
+  HER_APP_INDEX_URL,
+  HER_APP_PROTOCOL,
+  classifyNavigationUrl,
+  createContentSecurityPolicy,
+  createSecureWebPreferences,
+  isRendererCspTargetUrl,
+  isSafeExternalUrl,
+  isTrustedMusicKitPopupUrl,
+  isTrustedRendererUrl,
+  normalizeRendererDevUrl,
+  rendererRootPath,
+  resolveHerProtocolFilePath,
+  shouldAllowPermissionRequest,
+  type RendererSecurityOptions,
+} from "./electron-security";
 import { startLocalServer, type LocalServer } from "./server";
 import { configureAutoUpdates } from "./updates";
 
@@ -9,8 +26,24 @@ let localServer: LocalServer | null = null;
 let restoreBounds: Rectangle | null = null;
 let orbBounds: Rectangle | null = null;
 
-const rendererDevUrl = process.env.HER_RENDERER_DEV_URL;
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: HER_APP_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
+
+const rendererDevUrl = normalizeRendererDevUrl(process.env.HER_RENDERER_DEV_URL);
 const shouldUseDevServer = Boolean(rendererDevUrl) && !app.isPackaged;
+const rendererSecurity: RendererSecurityOptions = {
+  useDevServer: shouldUseDevServer,
+  rendererDevUrl,
+};
 
 const setOrbOnlyWindowMode = (window: BrowserWindow, enabled: boolean) => {
   if (enabled) {
@@ -56,12 +89,15 @@ const createWindow = async () => {
     transparent: true,
     backgroundColor: "#00000000",
     titleBarStyle: "hiddenInset",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      preload: path.join(__dirname, "preload.js"),
-    },
+    webPreferences: createSecureWebPreferences(path.join(__dirname, "preload.js")),
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const decision = classifyNavigationUrl(url, rendererSecurity);
+    if (decision.action === "allow") return;
+
+    event.preventDefault();
+    if (decision.action === "external") void shell.openExternal(url).catch(() => undefined);
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -74,26 +110,19 @@ const createWindow = async () => {
           title: "Apple Music Authorization",
           parent: mainWindow ?? undefined,
           modal: false,
-          webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-          },
+          webPreferences: createSecureWebPreferences(),
         },
       };
     }
 
-    shell.openExternal(url);
+    if (isSafeExternalUrl(url)) void shell.openExternal(url).catch(() => undefined);
     return { action: "deny" };
   });
 
   if (shouldUseDevServer && rendererDevUrl) {
     await mainWindow.loadURL(rendererDevUrl);
   } else {
-    const rendererIndex = app.isPackaged
-      ? path.join(app.getAppPath(), "dist", "renderer", "index.html")
-      : path.resolve(__dirname, "..", "..", "..", "dist", "renderer", "index.html");
-    await mainWindow.loadFile(rendererIndex);
+    await mainWindow.loadURL(HER_APP_INDEX_URL);
   }
 };
 
@@ -107,11 +136,13 @@ ipcMain.handle("her-window:set-orb-only", (event, enabled: unknown) => {
 ipcMain.handle("her-local-api:request", async (event, request: unknown) => {
   if (!localServer) throw new Error("Local API server is not ready.");
   const senderUrl = event.senderFrame?.url;
-  if (!senderUrl || !isTrustedRendererUrl(senderUrl)) throw new Error("Untrusted renderer local API caller.");
+  if (!senderUrl || !isTrustedRendererUrl(senderUrl, rendererSecurity)) throw new Error("Untrusted renderer local API caller.");
   return localApiRequest(localServer, request);
 });
 
 app.whenReady().then(async () => {
+  registerHerAppProtocol();
+  configureSessionSecurity();
   localServer = await startLocalServer(config.serverPort, app.getPath("userData"), app.isPackaged);
   configureAutoUpdates();
   await createWindow();
@@ -125,34 +156,34 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-const isTrustedRendererUrl = (rawUrl: string) => {
-  try {
-    const url = new URL(rawUrl);
-    if (shouldUseDevServer && rendererDevUrl) {
-      const devUrl = new URL(rendererDevUrl);
-      return url.origin === devUrl.origin;
+const registerHerAppProtocol = () => {
+  const rendererRoot = rendererRootPath(app.isPackaged, app.getAppPath(), __dirname);
+  protocol.handle(HER_APP_PROTOCOL, (request) => {
+    const filePath = resolveHerProtocolFilePath(request.url, rendererRoot);
+    if (!filePath) return new Response("Not found.", { status: 404 });
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+};
+
+const configureSessionSecurity = () => {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!isRendererCspTargetUrl(details.url, rendererSecurity)) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
     }
-    return url.protocol === "file:";
-  } catch {
-    return false;
-  }
-};
 
-const isTrustedMusicKitPopupUrl = (rawUrl: string) => {
-  try {
-    const url = new URL(rawUrl);
-    return url.protocol === "https:" && musicKitPopupHosts.has(url.hostname);
-  } catch {
-    return false;
-  }
-};
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [createContentSecurityPolicy(rendererSecurity)],
+      },
+    });
+  });
 
-const musicKitPopupHosts = new Set([
-  "authorize.music.apple.com",
-  "music.apple.com",
-  "idmsa.apple.com",
-  "appleid.apple.com",
-]);
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(shouldAllowPermissionRequest(details.requestingUrl ?? webContents.getURL(), permission, rendererSecurity));
+  });
+};
 
 type LocalApiBridgeRequest = {
   method?: unknown;

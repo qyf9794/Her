@@ -21,6 +21,7 @@ git checkout -b codex/her-agent-runtime-m0-m10
 6. `milestone-6-codex-review-flow.md`
 7. `milestone-7-workflow-skills-memory.md`
 8. `milestone-8-focus-workflow-packs.md`
+9. `milestone-9-electron-production-security.md`
 
 原产品化路线历史顺序：
 
