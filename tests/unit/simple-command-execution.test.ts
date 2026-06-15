@@ -40,8 +40,8 @@ describe("simple command execution", () => {
     const registry = createRegistry(confirmations);
 
     const cancel = await registry.execute({ name: "task_cancel", arguments: { taskId: "last_task" }, source: "local" });
-    expect(cancel).toMatchObject({ ok: true, name: "task_cancel", requiresConfirmation: true });
-    expect(confirmations.list()).toHaveLength(1);
+    expect(cancel).toMatchObject({ ok: false, name: "task_cancel" });
+    expect(confirmations.list()).toHaveLength(0);
 
     const draft = await registry.execute({
       name: "email_draft",
@@ -49,7 +49,7 @@ describe("simple command execution", () => {
       source: "local",
     });
     expect(draft).toMatchObject({ ok: true, name: "email_draft", requiresConfirmation: true });
-    expect(confirmations.list()).toHaveLength(2);
+    expect(confirmations.list()).toHaveLength(1);
   });
 });
 

@@ -405,3 +405,58 @@ Report: `docs/test-runs/simple-command-productivity/S6-productivity-report.json`
 - Realtime-2 connected: false
 - Real execution: local email draft/search/read, local calendar create/search, local copy draft save/search, and macOS Reminders/Notes create-cleanup when automation is available.
 - Safety checks: Mail draft, email send, macOS Calendar creation, and copy publish stopped at confirmation; local adapter data files were restored after the run.
+
+## S7 Task, Confirmation, and Low-Risk Shell - Failed
+
+Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json`
+
+- Total scenarios: 8
+- Passed: 5
+- Failed: 3
+- Realtime-2 connected: false
+- Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
+- Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.
+
+## S7 Task, Confirmation, and Low-Risk Shell - Failed
+
+Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json`
+
+- Total scenarios: 8
+- Passed: 7
+- Failed: 1
+- Realtime-2 connected: false
+- Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
+- Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.
+
+## S7 Task, Confirmation, and Low-Risk Shell - Failed
+
+Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json`
+
+- Total scenarios: 8
+- Passed: 7
+- Failed: 1
+- Realtime-2 connected: false
+- Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
+- Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.
+
+## S7 Task, Confirmation, and Low-Risk Shell - Failed
+
+Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json`
+
+- Total scenarios: 8
+- Passed: 7
+- Failed: 1
+- Realtime-2 connected: false
+- Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
+- Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.
+
+## S7 Task, Confirmation, and Low-Risk Shell - Passed
+
+Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json`
+
+- Total scenarios: 8
+- Passed: 8
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
+- Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.

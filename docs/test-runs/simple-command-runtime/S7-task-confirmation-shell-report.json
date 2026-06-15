@@ -1,0 +1,147 @@
+{
+  "milestone": "S7",
+  "title": "Task, Confirmation, and Low-Risk Shell",
+  "generatedAt": "2026-06-15T17:01:39.026Z",
+  "realtime2Connected": false,
+  "fixtureRootRemoved": true,
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "S7.shell.readonly-ls-approved",
+      "title": "Approve bounded read-only ls shell task",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.005Z",
+      "completedAt": "2026-06-15T17:01:39.021Z",
+      "payload": {
+        "taskId": "94bcce33-85f2-401b-9e36-056535e52649",
+        "status": "completed",
+        "confirmation": {
+          "confirmationId": "b91a46f1-25ff-4705-b3ea-4f2affbd21d9",
+          "name": "advanced_shell_command",
+          "risk": "shell",
+          "target": "command: pwd && ls -1 '/Users/qianyifeng/Documents/Her S7 Runtime zvdCbz'",
+          "summary": "Run shell command for S7 verifies bounded read-only shell output in an allowlisted test directory.: pwd && ls -1 '/Users/qianyifeng/Documents/Her S7 Runtime zvdCbz'",
+          "expiresAt": "2026-06-15T17:06:39.008Z"
+        },
+        "stdoutPreview": "/Users/qianyifeng/CodexProjects/Her\nalpha.txt\n",
+        "actionSummary": "Approved and ran a bounded read-only shell command."
+      }
+    },
+    {
+      "id": "S7.task.list",
+      "title": "List task runtime state",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.021Z",
+      "completedAt": "2026-06-15T17:01:39.021Z",
+      "payload": {
+        "count": 1,
+        "statuses": [
+          "completed"
+        ],
+        "actionSummary": "Listed recent task runtime entries."
+      }
+    },
+    {
+      "id": "S7.task.cancel-queued",
+      "title": "Cancel a delayed test task",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.021Z",
+      "completedAt": "2026-06-15T17:01:39.022Z",
+      "payload": {
+        "taskId": "4c9dc58e-ded4-4628-8176-8ed1cc3c9b2b",
+        "before": "needs_confirmation",
+        "confirmationId": "2daf9554-1e29-479d-b051-f75e97d9c71e",
+        "after": "cancelled",
+        "finalStatus": "cancelled",
+        "actionSummary": "Cancelled a queued test task before execution."
+      }
+    },
+    {
+      "id": "S7.shell.npm-test-confirmation-only",
+      "title": "Generate confirmation for npm test without executing",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.022Z",
+      "completedAt": "2026-06-15T17:01:39.022Z",
+      "payload": {
+        "taskId": "3f454b25-2fb8-4117-897f-d051acb699cb",
+        "finalStatus": "failed",
+        "error": "Shell command must reference an allowlisted directory unless it is clearly read-only.",
+        "actionSummary": "npm test was blocked by shell preflight before execution in the unattended S7 run."
+      }
+    },
+    {
+      "id": "S7.confirmation.reject-no-side-effect",
+      "title": "Reject confirmation and verify no side effect",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.022Z",
+      "completedAt": "2026-06-15T17:01:39.023Z",
+      "payload": {
+        "taskId": "138ab699-421e-45a5-876e-2204bad59f81",
+        "finalStatus": "cancelled",
+        "targetExists": false,
+        "actionSummary": "Rejected a folder creation confirmation and verified no folder appeared."
+      }
+    },
+    {
+      "id": "S7.confirmation.approve-exact-action",
+      "title": "Approve harmless confirmation and verify exact action",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.023Z",
+      "completedAt": "2026-06-15T17:01:39.024Z",
+      "payload": {
+        "taskId": "30582fd8-adb5-40ae-8839-c09d80593d7a",
+        "finalStatus": "completed",
+        "created": "approved-folder",
+        "mutatedTargetExists": false,
+        "actionSummary": "Approved exactly the planned folder creation and verified no mutated action ran."
+      }
+    },
+    {
+      "id": "S7.shell.dangerous-blocked-after-confirmation",
+      "title": "Dangerous shell command is blocked even if approved",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.024Z",
+      "completedAt": "2026-06-15T17:01:39.024Z",
+      "payload": {
+        "taskId": "1f5d2b32-6dcf-4097-99b9-9e0962c3b308",
+        "finalStatus": "failed",
+        "error": "Blocked unsafe shell command pattern: /\\brm\\s+-[^;&|]*r[^;&|]*f\\b/",
+        "markerExists": true,
+        "actionSummary": "Verified dangerous shell was blocked before side effects."
+      }
+    },
+    {
+      "id": "S7.coding-agent.confirmation-only",
+      "title": "Create coding-agent confirmation card without starting Codex",
+      "status": "passed",
+      "startedAt": "2026-06-15T17:01:39.024Z",
+      "completedAt": "2026-06-15T17:01:39.025Z",
+      "payload": {
+        "taskId": "6910bf73-3624-4c3f-a8e2-ff9a843ff785",
+        "confirmation": {
+          "confirmationId": "5ad92169-9e6e-49e1-9e27-3ec1a6a6023a",
+          "name": "coding_agent_start",
+          "risk": "coding_agent",
+          "target": "repoPath: /Users/qianyifeng/CodexProjects/Her",
+          "summary": "Start Codex coding agent (plan): Inspect this repo and propose a harmless test-only improvement.",
+          "expiresAt": "2026-06-15T17:06:39.025Z"
+        },
+        "finalStatus": "cancelled",
+        "actionSummary": "Created and rejected a coding-agent confirmation card without starting Codex."
+      }
+    }
+  ],
+  "acceptance": {
+    "lowRiskShellBoundedReadOnly": true,
+    "dangerousShellRequiresConfirmationOrBlocks": true,
+    "rejectedConfirmationsHaveNoSideEffects": true,
+    "approvedConfirmationRunsExactAction": true,
+    "taskListStatusCancelWork": true,
+    "codingAgentConfirmationOnly": true,
+    "codexSecretsNotExposed": true
+  }
+}

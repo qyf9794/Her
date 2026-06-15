@@ -1744,14 +1744,34 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
     };
   }
 
-  private cancelUnifiedTask(taskId: string) {
+  private async cancelUnifiedTask(taskId: string) {
     if (this.herTasks.get(taskId)) return this.herTaskQueue.cancel(taskId);
     return this.cancelTask(taskId);
   }
 
-  private cancelTask(taskId: string) {
+  private async cancelTask(taskId: string) {
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`Task not found: ${taskId}`);
+    if (task.status === "needs_confirmation") {
+      const confirmationId = task.confirmationId;
+      if (confirmationId) {
+        await this.confirmations.decide(confirmationId, false).catch(() => undefined);
+        this.confirmationTaskIds.delete(confirmationId);
+      }
+      task.status = "cancelled";
+      task.updatedAt = Date.now();
+      task.completedAt = task.updatedAt;
+      task.error = "Task cancelled while waiting for confirmation.";
+      task.result = { ok: false, name: task.toolName, error: task.error, code: "task_cancelled" };
+      this.addTaskProgress(task, "warning", "HER 已取消等待确认的任务");
+      this.audit.write({
+        action: "task.cancel",
+        summary: `Cancelled confirmation-waiting task ${task.id}`,
+        status: "cancelled",
+        details: { taskId: task.id, toolName: task.toolName, source: task.source, confirmationId },
+      });
+      return { task: this.toTaskView(task, false), cancelled: true, confirmationId };
+    }
     if (task.status !== "queued") {
       return {
         task: this.toTaskView(task, false),

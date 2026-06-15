@@ -1971,7 +1971,6 @@ export const toolRiskOverrides: Partial<Record<ToolName, ToolRisk>> = {
   alias_delete: "local_write",
   skill_save: "local_write",
   skill_delete: "local_write",
-  task_cancel: "system_change",
   codex_task_run: "coding_agent",
   coding_agent_start: "coding_agent",
   coding_agent_continue: "coding_agent",
