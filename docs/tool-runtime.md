@@ -27,3 +27,5 @@ Pilot managed tools include file rename/move/trash, close-all windows, advanced 
 ## Regression Gates
 
 Default tests cover manifest uniqueness, bundle routing, policy confirmation, capability denial, local API auth, confirmation approve/reject, malformed args, Codex parser, and secret redaction.
+
+M6 adds Codex review/apply coverage. Completed coding-agent tasks can produce structured review artifacts from isolated worktrees, and applying those changes to the original repository is a separate confirmation-gated tool call.

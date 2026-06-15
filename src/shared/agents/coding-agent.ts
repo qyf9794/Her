@@ -18,6 +18,22 @@ export type CodingAgentEvent = {
   kind?: string;
 };
 
+export type CodingAgentChangedFile = {
+  path: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "copied" | "untracked" | "unknown";
+};
+
+export type CodingAgentReview = {
+  generatedAt: string;
+  summary: string;
+  changedFiles: CodingAgentChangedFile[];
+  diffPreview: string;
+  diffTruncated: boolean;
+  tests: string[];
+  followUps: string[];
+  applyAvailable: boolean;
+};
+
 export type CodingAgentTask = {
   id: string;
   prompt: string;
@@ -35,6 +51,9 @@ export type CodingAgentTask = {
   exitCode?: number | null;
   error?: string;
   resultText?: string;
+  review?: CodingAgentReview;
+  appliedAt?: string;
+  appliedPaths?: string[];
   eventCount: number;
 };
 
@@ -53,4 +72,16 @@ export type CodingAgentContinueInput = {
   taskId: string;
   prompt: string;
   timeoutMs?: number;
+};
+
+export type CodingAgentApplyInput = {
+  taskId: string;
+  paths?: string[];
+};
+
+export type CodingAgentApplyResult = {
+  task: CodingAgentTaskView;
+  appliedPaths: string[];
+  deletedPaths: string[];
+  review: CodingAgentReview;
 };

@@ -935,6 +935,13 @@ body.orbOnlyActive .productShell {
   text-transform: capitalize;
 }
 
+.agentRunActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .agentRunHeader button {
   min-height: 30px;
   padding: 0 10px;

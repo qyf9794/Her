@@ -877,22 +877,89 @@ const renderAgentRuns = (tasks: CodingAgentTaskView[]) => {
     const cancel = task.status === "queued" || task.status === "running"
       ? `<button type="button" data-agent-cancel="${escapeHtml(task.id)}">Cancel</button>`
       : "";
+    const review = task.review
+      ? `<button type="button" data-agent-review="${escapeHtml(task.id)}">Review</button>`
+      : "";
+    const apply = task.review?.applyAvailable
+      ? `<button type="button" data-agent-apply="${escapeHtml(task.id)}">Apply</button>`
+      : "";
     item.innerHTML = `
       <div class="agentRunHeader">
         <strong>${escapeHtml(task.mode)} · ${escapeHtml(task.status)}</strong>
-        ${cancel}
+        <div class="agentRunActions">${review}${apply}${cancel}</div>
       </div>
       <p>${escapeHtml(truncateText(task.prompt, 180))}</p>
       <div class="agentRunMeta">
         <span>${escapeHtml(task.id.slice(0, 8))}</span>
         ${branch}
         ${task.worktreePath ? `<span>${escapeHtml(task.worktreePath)}</span>` : ""}
+        ${task.review ? `<span>${task.review.changedFiles.length} changed</span>` : ""}
+        ${task.appliedAt ? `<span>applied</span>` : ""}
       </div>
       ${latest ? `<p class="agentRunEvent">${escapeHtml(latest.message)}</p>` : ""}
       ${task.error ? `<p class="agentRunError">${escapeHtml(task.error)}</p>` : ""}
       ${result}
     `;
     agentRuns.append(item);
+  }
+};
+
+const showAgentReview = async (taskId: string) => {
+  try {
+    const response = await getJson<{ task: CodingAgentTaskView }>(`/api/agents/coding/tasks/${encodeURIComponent(taskId)}`);
+    const task = response.task;
+    if (!task.review) {
+      addActivity(`No Codex review is available for ${taskId}`, "error");
+      return;
+    }
+    resultWindowTitle.textContent = `Codex Review · ${task.id.slice(0, 8)}`;
+    resultWindowSubtitle.textContent = [task.mode, task.status, task.branch].filter(Boolean).join(" · ");
+    resultWindowBody.innerHTML = renderAgentReviewBody(task);
+    resultWindow.classList.remove("hidden");
+  } catch (error) {
+    addActivity(`Load Codex review failed: ${errorMessage(error)}`, "error");
+  }
+};
+
+const renderAgentReviewBody = (task: CodingAgentTaskView) => {
+  const review = task.review;
+  if (!review) return `<p class="resultEmpty">No review is available.</p>`;
+  return `
+    <p class="resultNote">${escapeHtml(review.summary)}</p>
+    <table class="artifactTable">
+      <thead><tr><th>Status</th><th>Path</th></tr></thead>
+      <tbody>
+        ${review.changedFiles.map((file) => `<tr><td>${escapeHtml(file.status)}</td><td>${escapeHtml(file.path)}</td></tr>`).join("")}
+      </tbody>
+    </table>
+    ${review.tests.length ? `<h3>Tests</h3><pre class="artifactPre">${escapeHtml(review.tests.join("\n"))}</pre>` : ""}
+    ${review.followUps.length ? `<h3>Follow-ups</h3><pre class="artifactPre">${escapeHtml(review.followUps.join("\n"))}</pre>` : ""}
+    <h3>Diff</h3>
+    <pre class="artifactPre diff">${escapeHtml(review.diffPreview || "No diff preview.")}</pre>
+  `;
+};
+
+const applyAgentRun = async (taskId: string) => {
+  try {
+    const result = await postJson<ToolCallResult>("/api/tools/execute", {
+      name: "coding_agent_apply_to_repo",
+      source: "local",
+      arguments: { taskId },
+    });
+    if (result.ok && "requiresConfirmation" in result && result.requiresConfirmation) {
+      addActivity(`Codex apply requires confirmation: ${result.summary}`, "pending");
+      await reloadPendingConfirmations();
+      return;
+    }
+    if (result.ok) {
+      addActivity(`Codex apply completed for ${taskId}`, "ok");
+      await loadAgentRuns();
+      await loadArtifacts();
+      return;
+    }
+    addActivity(`Codex apply failed: ${result.error}`, "error");
+  } catch (error) {
+    addActivity(`Codex apply failed: ${errorMessage(error)}`, "error");
   }
 };
 
@@ -2256,9 +2323,21 @@ artifactList.addEventListener("click", (event) => {
   }
 });
 agentRuns.addEventListener("click", (event) => {
-  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-agent-cancel]");
-  if (!button?.dataset.agentCancel) return;
-  void cancelAgentRun(button.dataset.agentCancel);
+  const target = event.target as HTMLElement;
+  const cancelButton = target.closest<HTMLButtonElement>("button[data-agent-cancel]");
+  if (cancelButton?.dataset.agentCancel) {
+    void cancelAgentRun(cancelButton.dataset.agentCancel);
+    return;
+  }
+  const reviewButton = target.closest<HTMLButtonElement>("button[data-agent-review]");
+  if (reviewButton?.dataset.agentReview) {
+    void showAgentReview(reviewButton.dataset.agentReview);
+    return;
+  }
+  const applyButton = target.closest<HTMLButtonElement>("button[data-agent-apply]");
+  if (applyButton?.dataset.agentApply) {
+    void applyAgentRun(applyButton.dataset.agentApply);
+  }
 });
 
 setState("idle", "Idle");

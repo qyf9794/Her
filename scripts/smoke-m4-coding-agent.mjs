@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import { sanitizeCodexEnv } from "../electron/dist/main/agents/coding-agent/env-
 import { parseCodexJsonLine, parseCodexJsonLines } from "../electron/dist/main/agents/coding-agent/jsonl-parser.js";
 import { CodingAgentTaskStore } from "../electron/dist/main/agents/coding-agent/task-store.js";
 import { assertGitRepository } from "../electron/dist/main/agents/coding-agent/worktree-manager.js";
+import { applyCodingAgentReviewToRepo, buildCodingAgentReview } from "../electron/dist/main/agents/coding-agent/artifact-adapter.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "her-m4-"));
 
@@ -16,6 +18,7 @@ try {
   testJsonlParser();
   await testWorktreeRejectsNonGit();
   testTaskLifecycle();
+  await testReviewAndApplyAdapter();
   await testRunnerCancel();
   console.log(JSON.stringify({
     ok: true,
@@ -24,6 +27,7 @@ try {
       "JSONL parser extracts events",
       "worktree rejects non-git folder",
       "task lifecycle store updates",
+      "review adapter summarizes and applies selected worktree changes",
       "runner cancel terminates fake codex process",
     ],
   }, null, 2));
@@ -82,6 +86,47 @@ function testTaskLifecycle() {
   assert.equal(store.get(view.id).resultText, "done");
 }
 
+async function testReviewAndApplyAdapter() {
+  const repo = path.join(tmp, "review-repo");
+  fs.mkdirSync(repo);
+  git(repo, ["init", "-b", "main"]);
+  fs.writeFileSync(path.join(repo, "README.md"), "before\n");
+  git(repo, ["add", "README.md"]);
+  git(repo, ["-c", "user.email=test@example.com", "-c", "user.name=Her Test", "commit", "-m", "init"]);
+  const worktree = path.join(tmp, "review-worktree");
+  git(repo, ["worktree", "add", "-b", "her/codex/smoke-review", worktree]);
+  fs.writeFileSync(path.join(worktree, "README.md"), "after\n");
+  fs.writeFileSync(path.join(worktree, "scratch.md"), "scratch\n");
+
+  const task = {
+    id: "smoke-review",
+    prompt: "fix tests",
+    mode: "patch",
+    status: "completed",
+    repoPath: repo,
+    worktreePath: worktree,
+    branch: "her/codex/smoke-review",
+    sandbox: "workspace-write",
+    approvalPolicy: "on-request",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    exitCode: 0,
+    resultText: "npm run test passed\nFollow-up: inspect diff",
+    eventCount: 0,
+    events: [],
+  };
+  const review = await buildCodingAgentReview(task);
+  assert.equal(review.applyAvailable, true);
+  assert.ok(review.changedFiles.some((file) => file.path === "README.md" && file.status === "modified"));
+  assert.ok(review.changedFiles.some((file) => file.path === "scratch.md" && file.status === "untracked"));
+  assert.equal(fs.readFileSync(path.join(repo, "README.md"), "utf8"), "before\n");
+  const applied = await applyCodingAgentReviewToRepo({ ...task, review }, { taskId: task.id, paths: ["README.md"] });
+  assert.deepEqual(applied.appliedPaths, ["README.md"]);
+  assert.equal(fs.readFileSync(path.join(repo, "README.md"), "utf8"), "after\n");
+  assert.equal(fs.existsSync(path.join(repo, "scratch.md")), false);
+}
+
 async function testRunnerCancel() {
   const fakeCodex = path.join(tmp, "fake-codex.mjs");
   fs.writeFileSync(fakeCodex, `#!/usr/bin/env node
@@ -104,6 +149,14 @@ setInterval(() => {}, 1000);
   await assert.rejects(run, /exited with code|null|SIGTERM|started/i);
   assert.equal(runner.isRunning("cancel-test"), false);
   assert.ok(events.some((event) => event.message === "started"));
+}
+
+function git(cwd, args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `git ${args.join(" ")} failed`);
+  }
+  return result.stdout;
 }
 
 async function waitFor(predicate, timeoutMs) {

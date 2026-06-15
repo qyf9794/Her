@@ -44,6 +44,8 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return `Cancel coding agent task ${args.taskId}`;
       case "coding_agent_get_result":
         return `Read coding agent result ${args.taskId}`;
+      case "coding_agent_apply_to_repo":
+        return `Apply Codex task ${args.taskId} changes to the original repository`;
       case "contacts_search":
         return `Search contacts for ${args.query}`;
       case "phone_call":

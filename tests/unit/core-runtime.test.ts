@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import express from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyCodingAgentReviewToRepo, buildCodingAgentReview } from "../../src/main/agents/coding-agent/artifact-adapter";
 import { selectToolBundles } from "../../src/main/agent/tool-bundle-router";
 import { createLocalApiAuth, requireLocalApiAuth } from "../../src/main/api/auth";
 import { CapabilityGate } from "../../src/main/capability-gate";
@@ -16,6 +18,7 @@ import { ConfirmationQueue } from "../../src/main/tools/confirmation";
 import { allToolDefinitions } from "../../src/main/tools/metadata";
 import { manifestRealtimeToolDefinitionsForBundles, toolManifest, toolRequiresConfirmation } from "../../src/main/tools/manifest";
 import { redactTaskValue } from "../../src/main/tasks/task-redaction";
+import type { CodingAgentTaskView } from "../../src/shared/agents/coding-agent";
 
 const tmpDirs: string[] = [];
 
@@ -93,10 +96,10 @@ describe("approval policy", () => {
 
   it("does not let YOLO bypass shell, system change, external send, browser submit, or coding agent", () => {
     const policy = new ApprovalPolicy();
-    for (const toolName of ["advanced_shell_command", "system_sleep", "email_send", "browser_click", "coding_agent_start"] as const) {
+    for (const toolName of ["advanced_shell_command", "system_sleep", "email_send", "browser_click", "coding_agent_start", "coding_agent_apply_to_repo"] as const) {
       const decision = policy.decide({
         toolName,
-        args: toolName === "coding_agent_start" ? { prompt: "plan" } : {},
+        args: toolName === "coding_agent_start" ? { prompt: "plan" } : toolName === "coding_agent_apply_to_repo" ? { taskId: "task-1" } : {},
         summary: toolName,
         yoloMode: true,
       });
@@ -280,6 +283,34 @@ describe("auth, confirmation, parser, and redaction utilities", () => {
       process.chdir(originalCwd);
     }
   });
+
+  it("builds Codex review artifacts and applies selected worktree files explicitly", async () => {
+    const repo = makeTmpDir();
+    runGit(repo, ["init", "-b", "main"]);
+    fs.writeFileSync(path.join(repo, "README.md"), "before\n");
+    runGit(repo, ["add", "README.md"]);
+    runGit(repo, ["-c", "user.email=test@example.com", "-c", "user.name=Her Test", "commit", "-m", "init"]);
+
+    const worktree = path.join(makeTmpDir(), "repo");
+    runGit(repo, ["worktree", "add", "-b", "her/codex/test-review", worktree]);
+    fs.writeFileSync(path.join(worktree, "README.md"), "after\n");
+    fs.writeFileSync(path.join(worktree, "notes.md"), "new file\n");
+
+    const task = makeCompletedCodingTask(repo, worktree);
+    const review = await buildCodingAgentReview(task);
+    expect(review.applyAvailable).toBe(true);
+    expect(review.changedFiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "README.md", status: "modified" }),
+      expect.objectContaining({ path: "notes.md", status: "untracked" }),
+    ]));
+    expect(review.diffPreview).toContain("-before");
+    expect(fs.readFileSync(path.join(repo, "README.md"), "utf8")).toBe("before\n");
+
+    const applied = await applyCodingAgentReviewToRepo({ ...task, review }, { taskId: task.id, paths: ["README.md"] });
+    expect(applied.appliedPaths).toEqual(["README.md"]);
+    expect(fs.readFileSync(path.join(repo, "README.md"), "utf8")).toBe("after\n");
+    expect(fs.existsSync(path.join(repo, "notes.md"))).toBe(false);
+  });
 });
 
 const makeTmpDir = () => {
@@ -303,3 +334,26 @@ const listen = (app: express.Express) =>
     });
     server.on("error", reject);
   });
+
+const runGit = (cwd: string, args: string[]) => {
+  execFileSync("git", args, { cwd, stdio: "pipe" });
+};
+
+const makeCompletedCodingTask = (repoPath: string, worktreePath: string): CodingAgentTaskView => ({
+  id: "task-review",
+  prompt: "fix tests",
+  mode: "patch",
+  status: "completed",
+  repoPath,
+  worktreePath,
+  branch: "her/codex/test-review",
+  sandbox: "workspace-write",
+  approvalPolicy: "on-request",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:01:00.000Z",
+  completedAt: "2026-01-01T00:01:00.000Z",
+  exitCode: 0,
+  resultText: "npm run test passed\nFollow-up: review manually",
+  eventCount: 0,
+  events: [],
+});

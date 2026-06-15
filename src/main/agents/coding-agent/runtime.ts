@@ -1,9 +1,11 @@
 import path from "node:path";
 import { config } from "../../config";
+import { applyCodingAgentReviewToRepo, buildCodingAgentReview } from "./artifact-adapter";
 import { CodexExecRunner } from "./codex-exec-runner";
 import { CodingAgentTaskStore } from "./task-store";
 import { CodingAgentWorktreeManager } from "./worktree-manager";
 import type {
+  CodingAgentApplyInput,
   CodingAgentContinueInput,
   CodingAgentMode,
   CodingAgentSandbox,
@@ -12,9 +14,11 @@ import type {
 } from "../../../shared/agents/coding-agent";
 
 export class CodingAgentRuntime {
-  private store = new CodingAgentTaskStore();
-  private worktrees = new CodingAgentWorktreeManager();
-  private runner = new CodexExecRunner();
+  constructor(
+    private store = new CodingAgentTaskStore(),
+    private worktrees = new CodingAgentWorktreeManager(),
+    private runner = new CodexExecRunner(),
+  ) {}
 
   start(input: CodingAgentStartInput) {
     if (!config.codexEnabled) throw new Error("Codex provider is disabled. HER will not fall back to another provider.");
@@ -65,7 +69,32 @@ export class CodingAgentRuntime {
       result: task.resultText,
       worktreePath: task.worktreePath,
       branch: task.branch,
+      review: task.review,
     };
+  }
+
+  async review(taskId: string) {
+    const task = this.get(taskId);
+    const review = await buildCodingAgentReview(task);
+    this.store.update(taskId, { review });
+    return { task: this.get(taskId), review };
+  }
+
+  async applyToRepo(input: CodingAgentApplyInput) {
+    const task = this.get(input.taskId);
+    const review = task.review ?? (await this.review(input.taskId)).review;
+    const applied = await applyCodingAgentReviewToRepo({ ...task, review }, input);
+    this.store.update(input.taskId, {
+      review: applied.review,
+      appliedAt: new Date().toISOString(),
+      appliedPaths: [...applied.appliedPaths, ...applied.deletedPaths],
+    });
+    this.store.addEvent(input.taskId, {
+      level: "info",
+      kind: "apply",
+      message: `Applied ${applied.appliedPaths.length + applied.deletedPaths.length} Codex file change(s) to the original repository.`,
+    });
+    return { ...applied, task: this.get(input.taskId) };
   }
 
   async waitForTerminal(taskId: string, timeoutMs = config.codexTurnTimeoutMs + 60000) {
@@ -151,6 +180,8 @@ export class CodingAgentRuntime {
         exitCode: result.exitCode,
         resultText: result.resultText,
       });
+      const review = await buildCodingAgentReview(this.get(taskId));
+      this.store.update(taskId, { review });
       this.store.addEvent(taskId, { level: "info", kind: "complete", message: "Coding agent task completed." });
     } catch (error) {
       if (this.store.require(taskId).status === "cancelled") return;

@@ -174,7 +174,7 @@ const policyForRisk = (risk: ToolRisk, toolName: ToolName, args: Record<string, 
 };
 
 const inferTarget = (risk: ToolRisk, args: Record<string, unknown>) => {
-  for (const key of ["path", "parentPath", "from", "to", "url", "draftId", "repoPath", "appName", "name", "selector", "command"]) {
+  for (const key of ["path", "parentPath", "from", "to", "url", "draftId", "repoPath", "taskId", "appName", "name", "selector", "command"]) {
     const value = args[key];
     if (typeof value === "string" && value.trim()) return `${key}: ${value.trim()}`;
   }

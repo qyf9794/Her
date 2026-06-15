@@ -385,6 +385,18 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "coding_agent_apply_to_repo",
+    description: "Apply reviewed Codex worktree file changes back to the original repository. This requires explicit confirmation.",
+    parameters: objectSchema(
+      {
+        taskId: { type: "string", description: "Completed coding-agent task id." },
+        paths: { type: "array", items: { type: "string" }, description: "Optional changed file paths to apply. Defaults to all changed files." },
+      },
+      ["taskId"],
+    ),
+  },
+  {
+    type: "function",
     name: "yolo_mode_set",
     description: "Turn YOLO mode on or off. When enabled, HER grants every discovered app permission, enables all global capabilities, and bypasses local confirmation prompts. Only call this when the user explicitly asks for YOLO, no-confirmation, or full-permission mode.",
     parameters: objectSchema(
@@ -1428,6 +1440,10 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   }),
   coding_agent_cancel: z.object({ taskId: z.string().min(1) }),
   coding_agent_get_result: z.object({ taskId: z.string().min(1) }),
+  coding_agent_apply_to_repo: z.object({
+    taskId: z.string().min(1),
+    paths: z.array(z.string().min(1)).optional(),
+  }),
   yolo_mode_set: z.object({ enabled: z.boolean() }),
   file_list: z.object({ path: z.string().min(1), includeHidden: z.boolean().optional().default(false) }),
   file_search: z.object({ root: z.string().min(1), query: z.string(), maxDepth: z.number().int().min(1).max(8).optional().default(4), limit: z.number().int().min(1).max(50).optional().default(20) }),
@@ -1624,6 +1640,7 @@ export const toolGroupByName = {
   coding_agent_continue: "agents",
   coding_agent_cancel: "agents",
   coding_agent_get_result: "agents",
+  coding_agent_apply_to_repo: "agents",
   yolo_mode_set: "permissions",
   app_permission_search: "permissions",
   app_permission_set: "permissions",
@@ -1726,6 +1743,7 @@ export const toolRiskOverrides: Partial<Record<ToolName, ToolRisk>> = {
   codex_task_run: "coding_agent",
   coding_agent_start: "coding_agent",
   coding_agent_continue: "coding_agent",
+  coding_agent_apply_to_repo: "coding_agent",
   phone_call: "external_send",
   file_open: "local_open",
   file_create_folder: "local_write",

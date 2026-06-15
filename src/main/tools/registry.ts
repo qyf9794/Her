@@ -500,6 +500,30 @@ export class ToolRegistry {
       }
     }
 
+    if (name === "coding_agent_apply_to_repo") {
+      try {
+        const review = await this.codingAgent.review(args.taskId as string);
+        const changedFiles = review.review.changedFiles
+          .map((file) => `${file.status}: ${file.path}`)
+          .join("\n");
+        return {
+          ok: true,
+          summary: `${summary}\n${review.review.summary}`,
+          preview: {
+            taskId: args.taskId,
+            changedFiles: review.review.changedFiles,
+            diffPreview: review.review.diffPreview,
+            diffTruncated: review.review.diffTruncated,
+            requestedPaths: args.paths,
+            summary: review.review.summary,
+            text: [review.review.summary, changedFiles, review.review.diffPreview].filter(Boolean).join("\n\n"),
+          },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error), code: "coding_agent_review_unavailable" };
+      }
+    }
+
     if (name === "advanced_shell_command") {
       try {
         this.shell.validate(args.command as string);
@@ -805,6 +829,8 @@ export class ToolRegistry {
         return this.codingAgent.start(args as never);
       case "coding_agent_continue":
         return this.codingAgent.continue(args as never);
+      case "coding_agent_apply_to_repo":
+        return this.codingAgent.applyToRepo(args as never);
       default:
         throw new Error(`Tool handler is not implemented: ${name}`);
     }
@@ -3431,6 +3457,7 @@ const artifactDescriptorForTool = (
     case "codex_task_run":
     case "coding_agent_start":
     case "coding_agent_get_result":
+    case "coding_agent_apply_to_repo":
       return { type: "coding_result", title: "Coding Agent Result", summary: codingSummary(result) };
     default:
       return undefined;

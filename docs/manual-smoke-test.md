@@ -44,6 +44,19 @@ Use this checklist after `npm run check` passes.
 3. Start another coding task for the same repo.
    - Expected: same-repo work is serialized by the repo lock.
 
+## Codex Review And Apply
+
+1. Start a patch or test-fix coding-agent task against a disposable repo.
+   - Expected: Codex runs in an isolated worktree, not the original checkout.
+2. When the task completes, open `Review`.
+   - Expected: changed files, test signals, follow-ups, and a bounded diff preview are visible.
+3. Click `Apply`.
+   - Expected: a high-risk confirmation appears with changed files and diff preview.
+4. Reject the confirmation.
+   - Expected: original checkout remains unchanged.
+5. Click `Apply` again and approve.
+   - Expected: selected file changes are copied from the worktree to the original checkout.
+
 ## YOLO Mode
 
 1. Enable YOLO mode with an expiry.
