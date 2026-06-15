@@ -383,3 +383,25 @@ Report: `docs/test-runs/simple-command-system/S5-system-desktop-report.json`
 - Realtime-2 connected: false
 - Real execution: volume read/set/mute, dark mode toggle with restore, Sound settings open, clipboard fixture write/read, speech, notification, screenshot artifact, and Escape shortcut.
 - Safety checks: brightness reports platform limitation when the CLI is unavailable; lock screen required confirmation and was not executed; original volume, mute, dark mode, and clipboard state were restored.
+
+## S6 Mail, Calendar, Reminders, Notes, and Copy Drafts - Failed
+
+Report: `docs/test-runs/simple-command-productivity/S6-productivity-report.json`
+
+- Total scenarios: 11
+- Passed: 9
+- Failed: 2
+- Realtime-2 connected: false
+- Real execution: local email draft/search/read, local calendar create/search, local copy draft save/search, and macOS Reminders/Notes create-cleanup when automation is available.
+- Safety checks: Mail draft, email send, macOS Calendar creation, and copy publish stopped at confirmation; local adapter data files were restored after the run.
+
+## S6 Mail, Calendar, Reminders, Notes, and Copy Drafts - Passed
+
+Report: `docs/test-runs/simple-command-productivity/S6-productivity-report.json`
+
+- Total scenarios: 11
+- Passed: 11
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: local email draft/search/read, local calendar create/search, local copy draft save/search, and macOS Reminders/Notes create-cleanup when automation is available.
+- Safety checks: Mail draft, email send, macOS Calendar creation, and copy publish stopped at confirmation; local adapter data files were restored after the run.

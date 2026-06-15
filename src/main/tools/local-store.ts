@@ -58,6 +58,9 @@ export class LocalStore {
       .slice(0, limit)
       .map(({ body, ...draft }) => ({
         ...draft,
+        source: "local-draft-adapter",
+        title: draft.subject,
+        date: draft.createdAt,
         preview: body.slice(0, 240),
       }));
   }
@@ -122,6 +125,8 @@ export class LocalStore {
       .slice(0, limit)
       .map((event) => ({
         ...event,
+        source: "local-calendar-adapter",
+        date: event.start,
         notes: event.notes ? event.notes.slice(0, 500) : undefined,
         notesTruncated: Boolean(event.notes && event.notes.length > 500),
       }));
@@ -148,6 +153,8 @@ export class LocalStore {
       .slice(0, limit)
       .map(({ body, ...draft }) => ({
         ...draft,
+        source: "local-copy-draft-adapter",
+        date: draft.createdAt,
         preview: body.slice(0, 300),
       }));
   }
