@@ -22,6 +22,7 @@
     "test:system:s5": "tsc -p electron/tsconfig.json && node scripts/simple-command-s5-system-report.mjs",
     "test:productivity:s6": "tsc -p electron/tsconfig.json && node scripts/simple-command-s6-productivity-report.mjs",
     "test:tasks:s7": "tsc -p electron/tsconfig.json && node scripts/simple-command-s7-task-shell-report.mjs",
+    "test:safety:s8": "tsc -p electron/tsconfig.json && node scripts/simple-command-s8-safety-report.mjs",
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run test && npm run build",
     "prepackage": "npm run build",

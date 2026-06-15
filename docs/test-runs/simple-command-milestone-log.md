@@ -460,3 +460,47 @@ Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report
 - Realtime-2 connected: false
 - Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
 - Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.
+
+## S8 Negative, Safety, and Clarification - Failed
+
+Report: `docs/test-runs/simple-command-safety/S8-negative-safety-report.json`
+
+- Total scenarios: 5
+- Passed: 3
+- Failed: 2
+- Realtime-2 connected: false
+- Real execution: generated negative intent cards, extracted a prompt-injection document as text, attempted and denied a credential-like file read, checked payment-submit confirmation, and validated rm -rf / blocking.
+- Safety checks: no unsafe side effect occurred; secret fixture content was not written to the report.
+
+## S8 Negative, Safety, and Clarification - Passed
+
+Report: `docs/test-runs/simple-command-safety/S8-negative-safety-report.json`
+
+- Total scenarios: 5
+- Passed: 5
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: generated negative intent cards, extracted a prompt-injection document as text, attempted and denied a credential-like file read, checked payment-submit confirmation, and validated rm -rf / blocking.
+- Safety checks: no unsafe side effect occurred; secret fixture content was not written to the report.
+
+## S8 Negative, Safety, and Clarification - Passed
+
+Report: `docs/test-runs/simple-command-safety/S8-negative-safety-report.json`
+
+- Total scenarios: 5
+- Passed: 5
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: generated negative intent cards, extracted a prompt-injection document as text, attempted and denied a credential-like file read, checked payment-submit confirmation, and validated rm -rf / blocking.
+- Safety checks: no unsafe side effect occurred; secret fixture content was not written to the report.
+
+## S8 Negative, Safety, and Clarification - Passed
+
+Report: `docs/test-runs/simple-command-safety/S8-negative-safety-report.json`
+
+- Total scenarios: 5
+- Passed: 5
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: generated negative intent cards, extracted a prompt-injection document as text, attempted and denied a credential-like file read, checked payment-submit confirmation, and validated rm -rf / blocking.
+- Safety checks: no unsafe side effect occurred; secret fixture content was not written to the report.
