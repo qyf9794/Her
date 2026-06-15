@@ -32,41 +32,42 @@ const writeText = (filePath, content) => {
 };
 
 const writeMinimalPdf = (filePath) => {
-  const pdf = `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length 64 >>
-stream
-BT /F1 18 Tf 40 90 Td (Her S2 PDF fixture) Tj 0 -24 Td (Visible test file) Tj ET
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000247 00000 n 
-0000000361 00000 n 
-trailer
-<< /Root 1 0 R /Size 6 >>
-startxref
-431
-%%EOF
-`;
+  const stream = "BT /F1 18 Tf 40 90 Td (Her S2 PDF fixture) Tj 0 -24 Td (Valid test file) Tj ET\n";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}endstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(pdf, "utf8"));
+    pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, "utf8");
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, pdf, "utf8");
+};
+
+const assertValidPdfFixture = (filePath) => {
+  const content = fs.readFileSync(filePath, "utf8");
+  assert(content.startsWith("%PDF-1.4\n"), "PDF fixture should have a valid PDF header.");
+  assert(content.endsWith("%%EOF\n"), "PDF fixture should have a valid EOF marker.");
+  const startxref = Number(content.match(/startxref\n(\d+)\n%%EOF\n$/)?.[1]);
+  assert(Number.isInteger(startxref) && content.slice(startxref, startxref + 4) === "xref", "PDF fixture should point startxref to the xref table.");
+  const offsets = [...content.matchAll(/^(\d{10}) 00000 n $/gm)].map((match) => Number(match[1]));
+  assert(offsets.length === 5, "PDF fixture should include five object xref offsets.");
+  for (let index = 0; index < offsets.length; index += 1) {
+    assert(content.slice(offsets[index]).startsWith(`${index + 1} 0 obj\n`), `PDF object ${index + 1} offset should be valid.`);
+  }
 };
 
 const assert = (condition, message) => {
@@ -110,7 +111,7 @@ const fixture = {
   chinese: path.join(sandboxRoot, "合同-中文.txt"),
   duplicateA: path.join(sandboxRoot, "A", "EB5 合同 duplicate.txt"),
   duplicateB: path.join(sandboxRoot, "B", "EB5 合同 duplicate.txt"),
-  pdf: path.join(sandboxRoot, "sample.pdf"),
+  pdf: path.join(sandboxRoot, "Her S2 valid fixture.pdf"),
   p8: path.join(sandboxRoot, "AuthKey_FAKE123456.p8"),
   secretText: path.join(sandboxRoot, "redaction-note.txt"),
 };
@@ -162,9 +163,10 @@ await runScenario("S2.file.read.markdown", "Read Markdown note with source path"
 });
 
 await runScenario("S2.file.open.pdf", "Open PDF fixture through Finder", async () => {
+  assertValidPdfFixture(fixture.pdf);
   const result = await files.open(fixture.pdf, "Finder");
   assert(result.opened === fixture.pdf, "Open result should identify the PDF path.");
-  return result;
+  return { ...result, pdfFixtureValidated: true };
 });
 
 await runScenario("S2.file.create_folder", "Create disposable folder", async () => {
