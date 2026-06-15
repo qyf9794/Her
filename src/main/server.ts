@@ -15,6 +15,7 @@ import { ArtifactStore } from "./tasks/artifact-store";
 import { TaskQueue } from "./tasks/task-queue";
 import { TaskStore } from "./tasks/task-store";
 import { AliasStore } from "./memory/alias-store";
+import { SkillStore } from "./memory/skill-store";
 import { readCodexDeviceAuth, readCodexLoginStatus, startCodexDeviceAuth } from "./codex-login";
 import { AuditLog } from "./audit";
 import { AppInventoryService } from "./app-inventory";
@@ -50,6 +51,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   const taskStore = new TaskStore(userDataDir);
   const taskQueue = new TaskQueue(taskStore);
   const aliasStore = new AliasStore(userDataDir);
+  const skillStore = new SkillStore(userDataDir);
   const inventory = new AppInventoryService(settings);
   const gate = new CapabilityGate(settings, () => inventory.listApps());
   const system = new SystemControl();
@@ -60,7 +62,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     setAppPermissions: (appPermissions) => settings.setAppPermissions(appPermissions),
     setCapabilities: (capabilities) => settings.setCapabilities(capabilities),
     setYoloMode: (enabled, appPermissions) => settings.setYoloMode(enabled, appPermissions),
-  }, memory, codingAgent, taskStore, taskQueue, aliasStore, artifacts);
+  }, memory, codingAgent, taskStore, taskQueue, aliasStore, artifacts, skillStore);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
 

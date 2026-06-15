@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { assertNoSecretLikeArguments } from "./memory/alias-validation";
 
 export type MemoryType = "path_alias" | "preference" | "task_template";
 
@@ -84,6 +85,13 @@ export class MemoryStore {
   }
 
   save(input: MemorySaveInput) {
+    assertNoSecretLikeArguments({
+      [input.key]: input.value ?? input.content ?? input.summary ?? "",
+      summary: input.summary,
+      content: input.content,
+      aliases: input.aliases,
+      tags: input.tags,
+    });
     const now = new Date().toISOString();
     const current = this.read();
     const existing = current.find((item) => item.type === input.type && normalize(item.key) === normalize(input.key));

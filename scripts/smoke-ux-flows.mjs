@@ -77,6 +77,36 @@ try {
     return { savedKey: saved.memory.key, lookupCount: lookup.count, remaining: status.total };
   });
 
+  await runCase("skill roundtrip saves, runs through policy, and deletes explicit workflow", async () => {
+    const skillInput = {
+      name: "UX Smoke Meeting Prep",
+      trigger: "准备开会 ux smoke",
+      parameters: [{ name: "folder", required: true }],
+      steps: [{
+        toolName: "file_create_folder",
+        arguments: { parentPath: fixtureRoot, folderName: "{{folder}}" },
+        title: "Create meeting folder",
+      }],
+    };
+    const preview = await mustExec("skill_preview", skillInput);
+    assert(preview.requiresConfirmation === true, "skill preview did not detect high-risk step");
+    assert(preview.requiredCapabilities.includes("fileManagement"), "skill preview did not expose file capability");
+    const save = await exec("skill_save", skillInput);
+    assert(save.ok && save.requiresConfirmation === true, "skill_save did not require confirmation");
+    await mustExec("confirmation_decide", { confirmationId: save.confirmationId, approved: true });
+    const list = await mustExec("skill_list", { query: "meeting" });
+    assert(list.skills.length === 1, "skill_list did not show saved skill");
+    const run = await mustExec("skill_run", { skillId: list.skills[0].id, parameters: { folder: "skill-run-folder" } });
+    assert(run.status === "awaiting_confirmation", "skill_run did not route high-risk step to confirmation");
+    assert(!fs.existsSync(path.join(fixtureRoot, "skill-run-folder")), "skill_run changed files before confirmation");
+    const deleted = await exec("skill_delete", { skillId: list.skills[0].id });
+    assert(deleted.ok && deleted.requiresConfirmation === true, "skill_delete did not require confirmation");
+    await mustExec("confirmation_decide", { confirmationId: deleted.confirmationId, approved: true });
+    const status = await mustExec("memory_status", {});
+    assert(status.skills.total === 0, "memory_status did not reflect deleted skill");
+    return { savedSkill: list.skills[0].id, runStatus: run.status, skillsRemaining: status.skills.total };
+  });
+
   await runCase("tool group disable blocks browser task, then re-enable allows it", async () => {
     const disabled = await mustExec("tool_group_set", { group: "browser", enabled: false });
     assert(disabled.enabled === false, "browser group was not disabled");
@@ -232,7 +262,7 @@ try {
       limit: 5,
     });
     assert(events.some((item) => item.title === "HER UX local calendar adapter smoke"), "calendar_search did not find local adapter event");
-    const draft = await mustExec("email_draft", {
+    const draft = await executeWithConfirmation("email_draft", {
       to: "local-adapter@example.com",
       subject: "HER UX local draft adapter",
       body: "This is a local adapter draft used for email_read smoke.",
@@ -297,6 +327,13 @@ async function queueAndApprove(toolName, args, terminalStatuses = ["completed"])
   assert(pending.confirmationId, `${toolName} did not request confirmation`);
   await mustExec("confirmation_decide", { confirmationId: pending.confirmationId, approved: true });
   return waitTask(queued.task.taskId, terminalStatuses);
+}
+
+async function executeWithConfirmation(toolName, args) {
+  const pending = await exec(toolName, args);
+  assert(pending.ok && pending.requiresConfirmation === true, `${toolName} did not request confirmation`);
+  const decided = await mustExec("confirmation_decide", { confirmationId: pending.confirmationId, approved: true });
+  return decided.result;
 }
 
 async function waitTask(taskId, wantedStatuses = ["completed", "failed", "cancelled"]) {

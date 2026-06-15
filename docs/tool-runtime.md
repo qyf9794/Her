@@ -29,3 +29,14 @@ Pilot managed tools include file rename/move/trash, close-all windows, advanced 
 Default tests cover manifest uniqueness, bundle routing, policy confirmation, capability denial, local API auth, confirmation approve/reject, malformed args, Codex parser, and secret redaction.
 
 M6 adds Codex review/apply coverage. Completed coding-agent tasks can produce structured review artifacts from isolated worktrees, and applying those changes to the original repository is a separate confirmation-gated tool call.
+
+## Her Skills
+
+M7 adds reusable local workflow skills:
+
+- `skill_preview` validates a proposed skill and returns step summaries, risks, and required capabilities.
+- `skill_save` persists the skill only after confirmation.
+- `skill_run` expands the skill and sends each step back through `ToolRegistry.execute`, so capability checks, path checks, approval policy, task runtime, and confirmation still apply.
+- `skill_delete` requires confirmation before removing the saved workflow.
+
+Skills are explicit local memory. They may include parameter placeholders such as `{{folder}}`, but they cannot store secret-like keys or values.

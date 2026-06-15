@@ -19,6 +19,7 @@ git checkout -b codex/her-agent-runtime-m0-m10
 4. `milestone-4-desktop-context-snapshot.md`
 5. `milestone-5-task-timeline-artifacts.md`
 6. `milestone-6-codex-review-flow.md`
+7. `milestone-7-workflow-skills-memory.md`
 
 原产品化路线历史顺序：
 

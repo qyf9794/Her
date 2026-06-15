@@ -104,6 +104,10 @@ export class AliasStore {
     return current;
   }
 
+  count() {
+    return this.aliases.size;
+  }
+
   private load() {
     if (!this.filePath || !fs.existsSync(this.filePath)) return;
     try {

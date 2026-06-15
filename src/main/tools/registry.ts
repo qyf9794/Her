@@ -39,6 +39,8 @@ import type { HerArtifact, HerArtifactType } from "../../shared/artifacts";
 import { ArtifactStore } from "../tasks/artifact-store";
 import { AliasStore } from "../memory/alias-store";
 import { AliasValidationError, validateAliasTarget } from "../memory/alias-validation";
+import { resolveSkillArguments, SkillStore, SkillValidationError, toSkillValidationCode } from "../memory/skill-store";
+import type { HerSkillRunInput, HerSkillSaveInput } from "../../shared/skills";
 
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
@@ -189,6 +191,7 @@ export class ToolRegistry {
   private herTaskQueue: TaskQueue;
   private memory: MemoryStore;
   private aliases: AliasStore;
+  private skills: SkillStore;
   private runtime: ToolRuntime;
   private confirmationTaskIds = new Map<string, string>();
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
@@ -214,6 +217,7 @@ export class ToolRegistry {
     taskQueue?: TaskQueue,
     aliasStore?: AliasStore,
     private artifacts: ArtifactStore = new ArtifactStore(),
+    skillStore?: SkillStore,
   ) {
     this.codex = new CodexAppServerHarness(audit);
     this.codingAgent = codingAgent ?? new CodingAgentRuntime();
@@ -221,6 +225,7 @@ export class ToolRegistry {
     this.herTaskQueue = taskQueue ?? new TaskQueue(this.herTasks);
     this.memory = memory ?? new MemoryStore();
     this.aliases = aliasStore ?? new AliasStore();
+    this.skills = skillStore ?? new SkillStore();
     this.runtime = new ToolRuntime({
       audit: this.audit,
       confirmations: this.confirmations,
@@ -408,10 +413,20 @@ export class ToolRegistry {
       case "memory_forget":
         return this.memory.forget(args.idOrKey as string);
       case "memory_status":
-        return this.memory.status();
+        return this.memoryStatus();
       default:
         throw new Error(`Not a task control tool: ${name}`);
     }
+  }
+
+  private memoryStatus() {
+    const memory = this.memory.status();
+    return {
+      ...memory,
+      aliases: { total: this.aliases.count() },
+      skills: { total: this.skills.count() },
+      note: "HER remembers explicit memory items, exact aliases, and reusable workflow skills only.",
+    };
   }
 
   async confirm(confirmationId: string, approved: boolean) {
@@ -544,6 +559,40 @@ export class ToolRegistry {
       }
     }
 
+    if (name === "skill_save") {
+      try {
+        const preview = this.skills.preview(args as HerSkillSaveInput);
+        return {
+          ok: true,
+          summary: `Save HER Skill "${preview.name}" for trigger "${preview.trigger}" with ${preview.steps.length} step${preview.steps.length === 1 ? "" : "s"}.`,
+          preview,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          code: toSkillValidationCode(error),
+        };
+      }
+    }
+
+    if (name === "skill_delete") {
+      try {
+        const skill = this.findSkill(args.skillId as string | undefined, args.trigger as string | undefined);
+        return {
+          ok: true,
+          summary: `Delete HER Skill "${skill.name}" for trigger "${skill.trigger}".`,
+          preview: { skillId: skill.id, name: skill.name, trigger: skill.trigger, steps: skill.steps.length },
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          code: error instanceof SkillValidationError ? error.code : "skill_not_found",
+        };
+      }
+    }
+
     return { ok: true, summary };
   }
 
@@ -626,6 +675,18 @@ export class ToolRegistry {
         return { aliases: this.aliases.list(args.query as string | undefined) };
       case "alias_delete":
         return this.aliases.delete({ aliasId: args.aliasId as string | undefined, phrase: args.phrase as string | undefined });
+      case "skill_preview":
+        return this.skills.preview(args as HerSkillSaveInput);
+      case "skill_save":
+        return this.skills.save(args as HerSkillSaveInput);
+      case "skill_list":
+        return { skills: this.skills.list(args.query as string | undefined) };
+      case "skill_inspect":
+        return { skill: this.findSkill(args.skillId as string | undefined, args.trigger as string | undefined) };
+      case "skill_run":
+        return this.runSkill(args as HerSkillRunInput);
+      case "skill_delete":
+        return this.skills.delete({ skillId: args.skillId as string | undefined, trigger: args.trigger as string | undefined });
       case "file_list":
         return this.files.list(args.path as string, args.includeHidden as boolean);
       case "file_search":
@@ -864,6 +925,52 @@ export class ToolRegistry {
       description: typeof args.description === "string" ? args.description : undefined,
       overwrite: args.overwrite === true,
     });
+  }
+
+  private findSkill(skillId?: string, trigger?: string) {
+    const skill = skillId ? this.skills.get(skillId) : trigger ? this.skills.getByTrigger(trigger) : null;
+    if (!skill) throw new SkillValidationError("Skill not found.", "skill_not_found");
+    return skill;
+  }
+
+  private async runSkill(input: HerSkillRunInput) {
+    const skill = this.findSkill(input.skillId, input.trigger);
+    const parameters = this.resolveSkillParameters(skill, input.parameters ?? {});
+    const results: unknown[] = [];
+    for (const step of skill.steps) {
+      const args = resolveSkillArguments(step, parameters);
+      const result = await this.execute({ name: step.toolName, source: "local", arguments: args });
+      results.push({ step: step.title ?? step.toolName, toolName: step.toolName, result });
+      if (result.ok && "requiresConfirmation" in result && result.requiresConfirmation) {
+        this.skills.markRun(skill.id);
+        return {
+          skill,
+          status: "awaiting_confirmation",
+          parameters,
+          results,
+          note: "A skill step requires confirmation. Approve or reject it before continuing this workflow.",
+        };
+      }
+      if (!result.ok) {
+        this.skills.markRun(skill.id);
+        return { skill, status: "failed", parameters, results, error: result.error };
+      }
+    }
+    this.skills.markRun(skill.id);
+    return { skill: this.findSkill(skill.id), status: "completed", parameters, results };
+  }
+
+  private resolveSkillParameters(skill: { parameters: Array<{ name: string; required?: boolean; defaultValue?: string }> }, provided: Record<string, string>) {
+    const resolved: Record<string, string> = {};
+    for (const parameter of skill.parameters) {
+      const value = provided[parameter.name] ?? parameter.defaultValue;
+      if (parameter.required && !value) throw new SkillValidationError(`Missing required skill parameter: ${parameter.name}`, "skill_parameter_missing");
+      if (value !== undefined) resolved[parameter.name] = value;
+    }
+    for (const [key, value] of Object.entries(provided)) {
+      if (!(key in resolved)) resolved[key] = value;
+    }
+    return resolved;
   }
 
   private isTaskControlTool(name: ToolName) {

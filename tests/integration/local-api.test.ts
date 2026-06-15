@@ -198,6 +198,121 @@ describe("local API auth and confirmation flow", () => {
     });
     expect(afterDelete.body.result.aliases).toHaveLength(0);
   });
+
+  it("previews, saves, runs, and deletes skills through policy gates", async () => {
+    const skillInput = {
+      name: "Meeting Prep Smoke",
+      trigger: "准备开会 smoke",
+      parameters: [{ name: "folder", required: true }],
+      steps: [
+        {
+          toolName: "file_create_folder",
+          arguments: { parentPath: allowedDir, folderName: "{{folder}}" },
+          title: "Create meeting folder",
+        },
+      ],
+    };
+
+    const preview = await apiJson("/api/tools/execute", {
+      name: "skill_preview",
+      source: "local",
+      arguments: skillInput,
+    });
+    expect(preview.body.ok).toBe(true);
+    expect(preview.body.result).toMatchObject({
+      trigger: "准备开会 smoke",
+      requiredCapabilities: expect.arrayContaining(["fileManagement"]),
+      risks: expect.arrayContaining(["local_write"]),
+      requiresConfirmation: true,
+    });
+
+    const save = await apiJson("/api/tools/execute", {
+      name: "skill_save",
+      source: "local",
+      arguments: skillInput,
+    });
+    expect(save.body).toMatchObject({
+      ok: true,
+      requiresConfirmation: true,
+      risk: "local_write",
+      preview: expect.objectContaining({ trigger: "准备开会 smoke" }),
+    });
+    await apiJson("/api/tools/confirm", { confirmationId: save.body.confirmationId, approved: true });
+
+    const list = await apiJson("/api/tools/execute", {
+      name: "skill_list",
+      source: "local",
+      arguments: { query: "meeting" },
+    });
+    expect(list.body.result.skills).toHaveLength(1);
+    const skillId = list.body.result.skills[0].id;
+
+    const inspect = await apiJson("/api/tools/execute", {
+      name: "skill_inspect",
+      source: "local",
+      arguments: { skillId },
+    });
+    expect(inspect.body.result.skill).toMatchObject({ id: skillId, trigger: "准备开会 smoke" });
+
+    const run = await apiJson("/api/tools/execute", {
+      name: "skill_run",
+      source: "local",
+      arguments: { skillId, parameters: { folder: "skill-created" } },
+    });
+    expect(run.body.ok).toBe(true);
+    expect(run.body.result).toMatchObject({ status: "awaiting_confirmation" });
+    expect(run.body.result.results[0].result).toMatchObject({
+      requiresConfirmation: true,
+      risk: "local_write",
+    });
+    expect(fs.existsSync(path.join(allowedDir, "skill-created"))).toBe(false);
+
+    const status = await apiJson("/api/tools/execute", {
+      name: "memory_status",
+      source: "local",
+      arguments: {},
+    });
+    expect(status.body.result).toMatchObject({
+      aliases: expect.objectContaining({ total: expect.any(Number) }),
+      skills: { total: 1 },
+      counts: expect.any(Object),
+    });
+
+    const deleteSkill = await apiJson("/api/tools/execute", {
+      name: "skill_delete",
+      source: "local",
+      arguments: { skillId },
+    });
+    expect(deleteSkill.body).toMatchObject({ ok: true, requiresConfirmation: true, risk: "local_write" });
+    await apiJson("/api/tools/confirm", { confirmationId: deleteSkill.body.confirmationId, approved: true });
+
+    const afterDelete = await apiJson("/api/tools/execute", {
+      name: "skill_list",
+      source: "local",
+      arguments: { query: "meeting" },
+    });
+    expect(afterDelete.body.result.skills).toHaveLength(0);
+  });
+
+  it("rejects secret-like skill and memory payloads", async () => {
+    const secretSkill = await apiJson("/api/tools/execute", {
+      name: "skill_save",
+      source: "local",
+      arguments: {
+        name: "Secret Skill",
+        trigger: "login smoke",
+        steps: [{ toolName: "app_open", arguments: { appName: "Chrome", nested: { password: "secret" } } }],
+      },
+    });
+    expect(secretSkill.body).toMatchObject({ ok: false, code: "secret_like_key_rejected" });
+
+    const secretMemory = await apiJson("/api/tools/execute", {
+      name: "memory_save",
+      source: "local",
+      arguments: { type: "preference", key: "OPENAI_API_KEY", value: "sk-secret" },
+    });
+    expect(secretMemory.body).toMatchObject({ ok: false, error: expect.stringContaining("Secret-like") });
+  });
 });
 
 const apiFetch = (apiPath: string, body: unknown, token: string | null = server.localApiToken) =>

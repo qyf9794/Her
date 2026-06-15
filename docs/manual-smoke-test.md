@@ -57,6 +57,19 @@ Use this checklist after `npm run check` passes.
 5. Click `Apply` again and approve.
    - Expected: selected file changes are copied from the worktree to the original checkout.
 
+## Skills And Memory
+
+1. Ask Her to remember a reusable workflow such as `以后我说准备开会，就创建会议文件夹`.
+   - Expected: Her shows a skill preview with steps, capabilities, and risks.
+2. Approve saving the skill.
+   - Expected: skill appears in skill list and memory status reports the skill count.
+3. Run the skill.
+   - Expected: high-risk steps still request confirmation before side effects.
+4. Try saving a skill or memory containing an API key or password.
+   - Expected: Her rejects it before persistence.
+5. Delete the skill.
+   - Expected: deletion requires confirmation and the skill can no longer run.
+
 ## YOLO Mode
 
 1. Enable YOLO mode with an expiry.

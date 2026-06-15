@@ -24,6 +24,8 @@ Do not expose or persist:
 
 Task runtime and audit payloads redact common secret-like fields. Codex receives only a small allowlist of environment variables.
 
+Explicit memory and Her Skills reject secret-like keys and values before persistence. Do not save API keys, OAuth tokens, cookies, passwords, bearer tokens, or local API tokens as aliases, memories, skill parameters, or skill step arguments.
+
 ## Tool Safety
 
 Tool calls are checked in this order:
@@ -35,6 +37,8 @@ Tool calls are checked in this order:
 5. Handler executes only after the above gates.
 
 YOLO mode may bypass low-risk local open/write operations, but it must not bypass shell, browser submit, external send, system change, or coding-agent confirmation.
+
+Running a Her Skill is not a policy bypass. Each step is re-entered through the tool runtime and can still be denied or require confirmation.
 
 ## Prompt Injection
 

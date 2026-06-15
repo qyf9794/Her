@@ -319,6 +319,107 @@ export const allToolDefinitions = [
   },
   {
     type: "function",
+    name: "skill_preview",
+    description: "Preview a reusable HER Skill before saving it. Validates steps, parameters, risks, and required capabilities without persisting anything.",
+    parameters: objectSchema(
+      {
+        name: { type: "string" },
+        trigger: { type: "string" },
+        description: { type: "string" },
+        parameters: {
+          type: "array",
+          items: objectSchema({
+            name: { type: "string" },
+            description: { type: "string" },
+            required: { type: "boolean" },
+            defaultValue: { type: "string" },
+          }),
+        },
+        steps: {
+          type: "array",
+          items: objectSchema(
+            {
+              toolName: { type: "string" },
+              arguments: { type: "object", additionalProperties: true },
+              title: { type: "string" },
+            },
+            ["toolName", "arguments"],
+          ),
+        },
+      },
+      ["name", "trigger", "steps"],
+    ),
+  },
+  {
+    type: "function",
+    name: "skill_save",
+    description: "Save a user-approved reusable HER Skill. This stores local workflow memory and requires confirmation.",
+    parameters: objectSchema(
+      {
+        name: { type: "string" },
+        trigger: { type: "string" },
+        description: { type: "string" },
+        parameters: {
+          type: "array",
+          items: objectSchema({
+            name: { type: "string" },
+            description: { type: "string" },
+            required: { type: "boolean" },
+            defaultValue: { type: "string" },
+          }),
+        },
+        steps: {
+          type: "array",
+          items: objectSchema(
+            {
+              toolName: { type: "string" },
+              arguments: { type: "object", additionalProperties: true },
+              title: { type: "string" },
+            },
+            ["toolName", "arguments"],
+          ),
+        },
+        overwrite: { type: "boolean", default: false },
+      },
+      ["name", "trigger", "steps"],
+    ),
+  },
+  {
+    type: "function",
+    name: "skill_list",
+    description: "List saved HER Skills without running them.",
+    parameters: objectSchema({ query: { type: "string" } }),
+  },
+  {
+    type: "function",
+    name: "skill_inspect",
+    description: "Inspect one saved HER Skill by id or trigger without running it.",
+    parameters: objectSchema({
+      skillId: { type: "string" },
+      trigger: { type: "string" },
+    }),
+  },
+  {
+    type: "function",
+    name: "skill_run",
+    description: "Run a saved HER Skill. Each skill step goes through HER's normal tool runtime and policy engine.",
+    parameters: objectSchema({
+      skillId: { type: "string" },
+      trigger: { type: "string" },
+      parameters: { type: "object", additionalProperties: { type: "string" } },
+    }),
+  },
+  {
+    type: "function",
+    name: "skill_delete",
+    description: "Delete a saved HER Skill by id or trigger. This changes persistent local memory and requires confirmation.",
+    parameters: objectSchema({
+      skillId: { type: "string" },
+      trigger: { type: "string" },
+    }),
+  },
+  {
+    type: "function",
     name: "codex_task_run",
     description: "Run a complex background intent through HER's Codex app-server runtime. Codex may request HER local tools only through HER Tool Gateway; HER validates and queues any requested side effects.",
     parameters: objectSchema(
@@ -1314,6 +1415,24 @@ const folderNameSchema = z.string().min(1).refine(
   },
   { message: "folderName must be a valid folder name without slashes." },
 );
+const skillParameterSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  defaultValue: z.string().optional(),
+});
+const skillStepSchema = z.object({
+  toolName: z.string().min(1),
+  arguments: z.record(z.string(), z.unknown()),
+  title: z.string().optional(),
+});
+const skillDefinitionSchema = z.object({
+  name: z.string().min(1),
+  trigger: z.string().min(1),
+  description: z.string().optional(),
+  parameters: z.array(skillParameterSchema).optional().default([]),
+  steps: z.array(skillStepSchema).min(1),
+});
 
 export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
   system_status: z.object({}),
@@ -1417,6 +1536,30 @@ export const toolSchemas: Record<ToolName, z.ZodTypeAny> = {
     phrase: z.string().min(1).optional(),
   }).refine((value) => Boolean(value.aliasId || value.phrase), {
     message: "aliasId or phrase is required",
+  }),
+  skill_preview: skillDefinitionSchema,
+  skill_save: skillDefinitionSchema.extend({
+    overwrite: z.boolean().optional().default(false),
+  }),
+  skill_list: z.object({ query: z.string().optional() }),
+  skill_inspect: z.object({
+    skillId: z.string().min(1).optional(),
+    trigger: z.string().min(1).optional(),
+  }).refine((value) => Boolean(value.skillId || value.trigger), {
+    message: "skillId or trigger is required",
+  }),
+  skill_run: z.object({
+    skillId: z.string().min(1).optional(),
+    trigger: z.string().min(1).optional(),
+    parameters: z.record(z.string(), z.string()).optional().default({}),
+  }).refine((value) => Boolean(value.skillId || value.trigger), {
+    message: "skillId or trigger is required",
+  }),
+  skill_delete: z.object({
+    skillId: z.string().min(1).optional(),
+    trigger: z.string().min(1).optional(),
+  }).refine((value) => Boolean(value.skillId || value.trigger), {
+    message: "skillId or trigger is required",
   }),
   codex_task_run: z.object({
     prompt: z.string().min(1),
@@ -1631,6 +1774,12 @@ export const coreRealtimeToolNames = [
   "memory_save",
   "memory_forget",
   "memory_status",
+  "skill_preview",
+  "skill_save",
+  "skill_list",
+  "skill_inspect",
+  "skill_run",
+  "skill_delete",
 ] as const satisfies readonly ToolName[];
 
 export const toolGroupByName = {
@@ -1641,6 +1790,12 @@ export const toolGroupByName = {
   coding_agent_cancel: "agents",
   coding_agent_get_result: "agents",
   coding_agent_apply_to_repo: "agents",
+  skill_preview: "permissions",
+  skill_save: "permissions",
+  skill_list: "permissions",
+  skill_inspect: "permissions",
+  skill_run: "permissions",
+  skill_delete: "permissions",
   yolo_mode_set: "permissions",
   app_permission_search: "permissions",
   app_permission_set: "permissions",
@@ -1739,6 +1894,8 @@ export const toolGroupByName = {
 export const toolRiskOverrides: Partial<Record<ToolName, ToolRisk>> = {
   alias_create: "local_write",
   alias_delete: "local_write",
+  skill_save: "local_write",
+  skill_delete: "local_write",
   task_cancel: "system_change",
   codex_task_run: "coding_agent",
   coding_agent_start: "coding_agent",

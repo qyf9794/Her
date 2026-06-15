@@ -32,6 +32,18 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return args.query ? `List aliases matching "${args.query}"` : "List aliases";
       case "alias_delete":
         return `Delete alias ${args.aliasId ?? args.phrase}`;
+      case "skill_preview":
+        return `Preview HER Skill "${args.name}" for trigger "${args.trigger}"`;
+      case "skill_save":
+        return `Save HER Skill "${args.name}" for trigger "${args.trigger}"`;
+      case "skill_list":
+        return args.query ? `List HER Skills matching "${args.query}"` : "List HER Skills";
+      case "skill_inspect":
+        return `Inspect HER Skill ${args.skillId ?? args.trigger}`;
+      case "skill_run":
+        return `Run HER Skill ${args.skillId ?? args.trigger}`;
+      case "skill_delete":
+        return `Delete HER Skill ${args.skillId ?? args.trigger}`;
       case "codex_task_run":
         return `Run Codex background task: ${truncateText(String(args.prompt ?? ""), 120)}`;
       case "coding_agent_start":
