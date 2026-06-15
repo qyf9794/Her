@@ -1,3 +1,5 @@
+import type { DesktopContextRoutingMetadata } from "../../shared/context";
+
 export type ToolBundleName =
   | "core"
   | "file"
@@ -39,19 +41,20 @@ const bundleRules: Array<{ bundle: Exclude<ToolBundleName, "core">; pattern: Reg
   { bundle: "coding", pattern: /\b(code|coding|repo|repository|git|test|tests|pr|pull request|codex|build|lint|typecheck)\b|代码|仓库|测试|构建|提交|拉取请求/u, reason: "coding terms" },
 ];
 
-export const selectToolBundles = (transcript: string): ToolBundleSelection => {
+export const selectToolBundles = (transcript: string, context?: DesktopContextRoutingMetadata): ToolBundleSelection => {
   const text = transcript.trim().toLowerCase();
   if (!text) {
     return {
-      bundles: ["core"],
-      confidence: 0,
-      reason: "empty transcript",
+      bundles: contextBundles(context),
+      confidence: context ? 0.2 : 0,
+      reason: context ? "empty transcript; compact desktop context available" : "empty transcript",
       shouldAskModelToSelect: true,
     };
   }
 
   const matched = bundleRules.filter((rule) => rule.pattern.test(text));
-  const bundles = uniqueBundles(["core", ...matched.map((rule) => rule.bundle)]);
+  const contextMatched = contextBundleRules(context);
+  const bundles = uniqueBundles(["core", ...matched.map((rule) => rule.bundle), ...contextMatched.map((rule) => rule.bundle)]);
 
   if (bundles.includes("file") && !bundles.includes("document") && /\b(document|docx|pdf|markdown)\b|文档/u.test(text)) {
     bundles.push("document");
@@ -68,17 +71,17 @@ export const selectToolBundles = (transcript: string): ToolBundleSelection => {
 
   if (matched.length === 0) {
     return {
-      bundles: ["core"],
-      confidence: 0.25,
-      reason: "no deterministic bundle terms matched",
+      bundles: contextMatched.length ? uniqueBundles(["core", ...contextMatched.map((rule) => rule.bundle)]) : ["core"],
+      confidence: contextMatched.length ? 0.35 : 0.25,
+      reason: contextMatched.length ? `context terms: ${contextMatched.map((rule) => rule.reason).join(", ")}` : "no deterministic bundle terms matched",
       shouldAskModelToSelect: true,
     };
   }
 
   return {
     bundles: uniqueBundles(bundles),
-    confidence: Math.min(0.95, 0.55 + matched.length * 0.15),
-    reason: matched.map((rule) => rule.reason).join(", "),
+    confidence: Math.min(0.95, 0.55 + matched.length * 0.15 + contextMatched.length * 0.05),
+    reason: [...matched.map((rule) => rule.reason), ...contextMatched.map((rule) => `context ${rule.reason}`)].join(", "),
     shouldAskModelToSelect: false,
   };
 };
@@ -95,4 +98,19 @@ const uniqueBundles = (bundles: readonly ToolBundleName[]) => {
     result.push(bundle);
   }
   return result;
+};
+
+const contextBundles = (context: DesktopContextRoutingMetadata | undefined): ToolBundleName[] =>
+  uniqueBundles(["core", ...contextBundleRules(context).map((rule) => rule.bundle)]);
+
+const contextBundleRules = (context: DesktopContextRoutingMetadata | undefined): Array<{ bundle: Exclude<ToolBundleName, "core">; reason: string }> => {
+  if (!context) return [];
+  const rules: Array<{ bundle: Exclude<ToolBundleName, "core">; reason: string }> = [];
+  const appText = `${context.activeApp ?? ""} ${context.activeWindowTitle ?? ""}`.toLowerCase();
+  if (appText && /\b(finder|desktop|downloads|documents)\b|访达|桌面|下载|文档/u.test(appText)) rules.push({ bundle: "file", reason: "frontmost file app" });
+  if (appText && /\b(safari|chrome|browser|arc|edge|firefox)\b|浏览器/u.test(appText)) rules.push({ bundle: "browser", reason: "frontmost browser app" });
+  if (appText && /\b(mail|calendar|notes|reminders)\b|邮件|日历|备忘录|提醒/u.test(appText)) rules.push({ bundle: "comms", reason: "frontmost productivity app" });
+  if (context.activeApp) rules.push({ bundle: "desktop", reason: "frontmost app metadata" });
+  if (context.clipboard?.status === "available") rules.push({ bundle: "system", reason: "clipboard summary available" });
+  return rules;
 };

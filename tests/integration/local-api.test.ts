@@ -28,6 +28,22 @@ describe("local API auth and confirmation flow", () => {
   it("rejects missing and invalid auth tokens", async () => {
     expect((await apiFetch("/api/tools/execute", {}, null)).status).toBe(401);
     expect((await apiFetch("/api/tools/execute", {}, "bad-token")).status).toBe(401);
+    expect((await apiGetJson("/api/context/snapshot", null)).status).toBe(401);
+  });
+
+  it("returns an auth-gated compact desktop context snapshot", async () => {
+    fs.writeFileSync(path.join(allowedDir, "recent-context.txt"), "full file content should not appear in context snapshot");
+    const response = await apiGetJson("/api/context/snapshot");
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      capturedAt: expect.any(String),
+      frontmost: expect.objectContaining({ status: expect.any(String) }),
+      clipboard: expect.objectContaining({ status: expect.any(String), chars: expect.any(Number) }),
+      selection: expect.objectContaining({ status: "unsupported" }),
+      routingMetadata: expect.objectContaining({ recentFiles: expect.any(Array) }),
+      failures: expect.any(Array),
+    });
+    expect(JSON.stringify(response.body)).not.toContain("full file content should not appear");
   });
 
   it("returns invalid_arguments for malformed tool args", async () => {

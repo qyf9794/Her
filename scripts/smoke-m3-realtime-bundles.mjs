@@ -60,6 +60,17 @@ if (!lowConfidence.shouldAskModelToSelect || lowConfidence.bundles.length !== 1 
   fail(`Low-confidence transcript should fall back to core + her_select_bundle: ${JSON.stringify(lowConfidence)}`);
 }
 
+const contextSelection = selectToolBundles("帮我处理这个", {
+  activeApp: "Finder",
+  activeWindowTitle: "Desktop",
+  clipboard: { status: "redacted", chars: 32 },
+  selectedText: { status: "unsupported", chars: 0 },
+  recentFiles: [],
+});
+if (!contextSelection.bundles.includes("file") || !contextSelection.bundles.includes("desktop")) {
+  fail(`Compact desktop context should influence bundle selection without clipboard content: ${JSON.stringify(contextSelection)}`);
+}
+
 const browserTools = manifestRealtimeToolDefinitionsForBundles(["browser"]);
 const browserToolNames = browserTools.map((definition) => definition.name);
 if (!browserToolNames.includes("browser_click")) fail("Browser bundle should expose browser_click.");
@@ -97,6 +108,7 @@ console.log(JSON.stringify({
     manifestTools: Object.keys(toolManifest).length,
     deterministicCases: cases.length,
     lowConfidenceFallback: true,
+    contextRoutingMetadata: true,
     dynamicBrowserTools: browserTools.length,
     createResponseFalse: true,
     highRiskPolicyPreserved: true,

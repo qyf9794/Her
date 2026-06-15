@@ -7,6 +7,7 @@ import path from "node:path";
 import { createLocalApiAuth, requireLocalApiAuth } from "./api/auth";
 import { localApiCors, requireTrustedLocalApiRequest } from "./api/cors";
 import { createRealtimeClientSecret } from "./realtime";
+import { DesktopContextService } from "./context/desktop-snapshot";
 import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
 import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
 import { CodingAgentRuntime } from "./agents/coding-agent/runtime";
@@ -50,6 +51,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   const inventory = new AppInventoryService(settings);
   const gate = new CapabilityGate(settings, () => inventory.listApps());
   const system = new SystemControl();
+  const desktopContext = new DesktopContextService();
   const tools = new ToolRegistry(confirmations, audit, gate, {
     listApps: (refresh = false) => inventory.listApps(refresh),
     readSettings: () => settings.read(),
@@ -348,6 +350,10 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     }
   });
 
+  app.get("/api/context/snapshot", requireAuth, async (_req, res) => {
+    res.json(await desktopContext.snapshot());
+  });
+
   app.get("/api/realtime/tools", requireAuth, (req, res) => {
     const bundles = parseBundleQuery(req.query.bundles);
     res.json({
@@ -377,11 +383,13 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     res.json({ ok: true });
   });
 
-  app.post("/api/realtime/bundles/select", requireAuth, (req, res) => {
+  app.post("/api/realtime/bundles/select", requireAuth, async (req, res) => {
     const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : "";
-    const selection = selectToolBundles(transcript);
+    const context = (await desktopContext.snapshot()).routingMetadata;
+    const selection = selectToolBundles(transcript, context);
     res.json({
       selection,
+      context,
       tools: manifestRealtimeToolDefinitionsForBundles(selection.bundles),
     });
   });

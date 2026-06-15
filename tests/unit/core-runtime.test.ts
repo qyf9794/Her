@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { selectToolBundles } from "../../src/main/agent/tool-bundle-router";
 import { createLocalApiAuth, requireLocalApiAuth } from "../../src/main/api/auth";
 import { CapabilityGate } from "../../src/main/capability-gate";
+import { summarizeText } from "../../src/main/context/desktop-snapshot";
 import { createActionPlan, ApprovalPolicy } from "../../src/main/policy/approval-policy";
 import { SettingsStore } from "../../src/main/settings-store";
 import { parseCodexJsonLine, parseCodexJsonLines } from "../../src/main/agents/coding-agent/jsonl-parser";
@@ -41,6 +42,18 @@ describe("tool manifest and routing", () => {
     const selection = selectToolBundles("运行 Codex 修复 bug，同时播放周杰伦的晴天");
     expect(selection.bundles).toEqual(expect.arrayContaining(["core", "coding", "media"]));
     expect(selection.shouldAskModelToSelect).toBe(false);
+  });
+
+  it("uses compact desktop context as a weak realtime bundle signal", () => {
+    const selection = selectToolBundles("帮我处理这个", {
+      activeApp: "Finder",
+      activeWindowTitle: "Desktop",
+      clipboard: { status: "redacted", chars: 42 },
+      selectedText: { status: "unsupported", chars: 0 },
+      recentFiles: [],
+    });
+    expect(selection.bundles).toEqual(expect.arrayContaining(["core", "desktop", "file"]));
+    expect(selection.reason).toContain("context");
   });
 });
 
@@ -191,6 +204,18 @@ describe("auth, confirmation, parser, and redaction utilities", () => {
     expect(redactTaskValue({ token: "secret", nested: { password: "pw", ok: true } })).toEqual({
       token: "[redacted]",
       nested: { password: "[redacted]", ok: true },
+    });
+  });
+
+  it("summarizes context text without exposing secret-like content", () => {
+    expect(summarizeText("OPENAI_API_KEY=sk-abcdefghi")).toMatchObject({
+      status: "redacted",
+      redacted: true,
+      preview: "[redacted secret-like content]",
+    });
+    expect(summarizeText("A short harmless clipboard note")).toMatchObject({
+      status: "available",
+      preview: "A short harmless clipboard note",
     });
   });
 

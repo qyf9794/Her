@@ -9,6 +9,7 @@ import {
 } from "@openai/agents/realtime";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../shared/app-settings";
 import type { CodingAgentTaskView } from "../shared/agents/coding-agent";
+import type { DesktopContextSnapshot } from "../shared/context";
 import type { HerTaskView } from "../shared/tasks";
 import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
 import {
@@ -49,6 +50,10 @@ const {
   runtimeCapabilities,
   authorizedApps,
   statusText,
+  contextApp,
+  contextWindow,
+  contextClipboard,
+  contextRecentFiles,
   connectBtn,
   disconnectBtn,
   orbOnlyBtn,
@@ -140,6 +145,7 @@ let hasOpenaiApiKey = false;
 let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
 let isOrbOnly = window.localStorage.getItem("her:orbOnly") === "true";
 let musicPlaybackPoll: number | undefined;
+let contextPoll: number | undefined;
 let currentMiniPlayerTrack: MiniPlayerTrack | undefined;
 let taskRunsPoll: number | undefined;
 let agentRunsPoll: number | undefined;
@@ -206,6 +212,8 @@ const initialize = async () => {
     await loadMusicKitStatus();
     await loadCodexLoginStatus();
     await loadCodexModel();
+    await loadDesktopContext();
+    startContextPolling();
     await loadTaskRuns();
     startTaskRunsPolling();
     await loadAgentRuns();
@@ -607,6 +615,41 @@ const pollCodexDeviceAuth = async () => {
   }
   codexLoginPoll = undefined;
   await loadCodexLoginStatus();
+};
+
+const startContextPolling = () => {
+  if (contextPoll) return;
+  contextPoll = window.setInterval(() => void loadDesktopContext(), 5000);
+};
+
+const loadDesktopContext = async () => {
+  try {
+    renderDesktopContext(await getJson<DesktopContextSnapshot>("/api/context/snapshot"));
+  } catch (error) {
+    contextApp.textContent = "Unavailable";
+    contextWindow.textContent = errorMessage(error);
+    contextClipboard.textContent = "Unknown";
+    contextRecentFiles.textContent = "0 files";
+  }
+};
+
+const renderDesktopContext = (snapshot: DesktopContextSnapshot) => {
+  contextApp.textContent = snapshot.frontmost.appName ?? labelForContextStatus(snapshot.frontmost.status);
+  contextWindow.textContent = snapshot.frontmost.windowTitle ?? snapshot.frontmost.reason ?? labelForContextStatus(snapshot.frontmost.status);
+  contextClipboard.textContent = snapshot.clipboard.redacted
+    ? "Redacted"
+    : snapshot.clipboard.status === "available"
+      ? `${snapshot.clipboard.chars} chars`
+      : labelForContextStatus(snapshot.clipboard.status);
+  contextRecentFiles.textContent = `${snapshot.recentFiles.length} ${snapshot.recentFiles.length === 1 ? "file" : "files"}`;
+};
+
+const labelForContextStatus = (status: string) => {
+  if (status === "available") return "Available";
+  if (status === "redacted") return "Redacted";
+  if (status === "unsupported") return "Unsupported";
+  if (status === "unavailable") return "Unavailable";
+  return "Empty";
 };
 
 const startCodexLogin = async () => {
@@ -1432,9 +1475,10 @@ type AppleMusicToolPayload = {
 
 const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: string) => {
   setVisualState("tool");
+  const args = await enrichToolArgumentsWithContext(name, coerceToolArguments(input));
   const result = await postJson<ToolCallResult>("/api/tools/execute", {
     name,
-    arguments: coerceToolArguments(input),
+    arguments: args,
     callId,
     source: "realtime",
   } satisfies ToolCallRequest);
@@ -1461,6 +1505,25 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
   }
 
   return result;
+};
+
+const enrichToolArgumentsWithContext = async (name: ToolName, args: Record<string, unknown>) => {
+  if (name !== "intent_route") return args;
+  try {
+    const snapshot = await getJson<DesktopContextSnapshot>("/api/context/snapshot");
+    renderDesktopContext(snapshot);
+    return {
+      ...args,
+      activeApp: typeof args.activeApp === "string" && args.activeApp.trim() ? args.activeApp : snapshot.routingMetadata.activeApp,
+      selectedText: typeof args.selectedText === "string" && args.selectedText.trim()
+        ? args.selectedText
+        : snapshot.routingMetadata.selectedText?.status === "available"
+          ? snapshot.routingMetadata.selectedText.preview
+          : undefined,
+    };
+  } catch {
+    return args;
+  }
 };
 
 const maybePlayAppleMusicCatalogResult = async (payload: unknown) => {

@@ -299,7 +299,7 @@ body.orbOnlyActive .productShell {
 
 .voiceStage {
   display: grid;
-  grid-template-rows: auto 330px minmax(0, 1fr);
+  grid-template-rows: auto auto 330px minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -313,6 +313,7 @@ body.orbOnlyActive .productShell {
 }
 
 .appView.orbOnly .topbar,
+.appView.orbOnly .contextStrip,
 .appView.orbOnly .conversation,
 .appView.orbOnly .sidepanel {
   display: none;
@@ -341,6 +342,40 @@ body.orbOnlyActive .productShell {
 .topbar input,
 .topbar select {
   -webkit-app-region: no-drag;
+}
+
+.contextStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border-bottom: 1px solid #74787d;
+  background: #74787d;
+}
+
+.contextStrip div {
+  min-width: 0;
+  padding: 10px 14px;
+  background: #60656a;
+}
+
+.contextStrip span,
+.contextStrip strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextStrip span {
+  color: #ccd4d2;
+  font-size: 0.72rem;
+}
+
+.contextStrip strong {
+  margin-top: 3px;
+  color: #ffffff;
+  font-size: 0.86rem;
+  font-weight: 650;
 }
 
 .miniPlayer {
@@ -1249,6 +1284,10 @@ code {
   .onboardingHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .contextStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .controls {

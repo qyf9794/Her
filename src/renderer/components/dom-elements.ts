@@ -6,6 +6,10 @@ const onboardingCapabilities = document.querySelector<HTMLDivElement>("#onboardi
 const runtimeCapabilities = document.querySelector<HTMLDivElement>("#runtimeCapabilities")!;
 const authorizedApps = document.querySelector<HTMLDivElement>("#authorizedApps")!;
 const statusText = document.querySelector<HTMLParagraphElement>("#statusText")!;
+const contextApp = document.querySelector<HTMLElement>("#contextApp")!;
+const contextWindow = document.querySelector<HTMLElement>("#contextWindow")!;
+const contextClipboard = document.querySelector<HTMLElement>("#contextClipboard")!;
+const contextRecentFiles = document.querySelector<HTMLElement>("#contextRecentFiles")!;
 const connectBtn = document.querySelector<HTMLButtonElement>("#connectBtn")!;
 const disconnectBtn = document.querySelector<HTMLButtonElement>("#disconnectBtn")!;
 const orbOnlyBtn = document.querySelector<HTMLButtonElement>("#orbOnlyBtn")!;
@@ -73,6 +77,10 @@ export const getRendererElements = () => ({
   runtimeCapabilities,
   authorizedApps,
   statusText,
+  contextApp,
+  contextWindow,
+  contextClipboard,
+  contextRecentFiles,
   connectBtn,
   disconnectBtn,
   orbOnlyBtn,

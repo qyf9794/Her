@@ -52,6 +52,25 @@ export const renderAppShell = () => {
           </div>
         </header>
 
+        <section class="contextStrip" aria-label="Desktop context">
+          <div>
+            <span>App</span>
+            <strong id="contextApp">Unknown</strong>
+          </div>
+          <div>
+            <span>Window</span>
+            <strong id="contextWindow">Unavailable</strong>
+          </div>
+          <div>
+            <span>Clipboard</span>
+            <strong id="contextClipboard">Empty</strong>
+          </div>
+          <div>
+            <span>Recent</span>
+            <strong id="contextRecentFiles">0 files</strong>
+          </div>
+        </section>
+
         <section class="orbPanel" aria-label="Voice state">
           <div id="orbMount" class="orbMount"></div>
           <div id="glassReply" class="glassReply" aria-live="polite" aria-hidden="true">
