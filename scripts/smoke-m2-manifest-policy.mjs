@@ -20,6 +20,7 @@ const {
 const { ApprovalPolicy } = require("../electron/dist/main/policy/approval-policy.js");
 const { ConfirmationQueue } = require("../electron/dist/main/tools/confirmation.js");
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
+const { ToolRuntime } = require("../electron/dist/main/tools/runtime.js");
 const { domainManifests } = require("../electron/dist/main/tools/domain-manifests.js");
 const { toolHandlerNames } = require("../electron/dist/main/tools/handlers.js");
 const { toolSchemas } = require("../electron/dist/main/tools/schemas.js");
@@ -53,10 +54,19 @@ for (const marker of [
 const metadataSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/metadata.ts"), "utf8");
 const schemasSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/schemas.ts"), "utf8").trim();
 const manifestSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/manifest.ts"), "utf8");
+const registrySource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/registry.ts"), "utf8");
+const runtimeSource = fs.readFileSync(path.join(process.cwd(), "src/main/tools/runtime.ts"), "utf8");
 if (!metadataSource.includes("export const toolSchemas")) fail("Tool schemas must live in the main tool metadata source.");
 if (!metadataSource.includes("export const toolRiskOverrides")) fail("Tool risk metadata must live in the main tool metadata source.");
 if (schemasSource !== 'export { toolSchemas } from "./metadata";') fail("schemas.ts must be a compatibility re-export, not a duplicate schema manifest.");
 if (manifestSource.includes('from "./schemas"')) fail("manifest.ts must not import schemas from a duplicate schema manifest.");
+if (typeof ToolRuntime !== "function") fail("ToolRuntime must be exported as the shared tool execution pipeline.");
+if (!runtimeSource.includes("class ToolRuntime")) fail("ToolRuntime source is missing the runtime class.");
+if (!runtimeSource.includes("ApprovalPolicy")) fail("ToolRuntime must own ApprovalPolicy usage.");
+if (registrySource.includes("new ApprovalPolicy") || registrySource.includes("approvalPolicy.decide")) {
+  fail("ToolRegistry must delegate approval decisions to ToolRuntime.");
+}
+if (registrySource.includes("const withTimeout")) fail("ToolRegistry must not retain duplicate timeout execution pipeline.");
 
 for (const name of definitionNames) {
   const entry = toolManifest[name];
@@ -264,6 +274,7 @@ console.log(JSON.stringify({
     explicitHandlerNames: toolHandlerNames.length,
     manifestHandlerExecution: true,
     highRiskRuntimeConfirmation: true,
+    toolRuntimeExtracted: true,
     disabledCapabilityDenied: true,
     unauthorizedAppDenied: true,
   },

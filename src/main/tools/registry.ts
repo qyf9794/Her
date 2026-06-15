@@ -5,10 +5,11 @@ import type { ToolCallRequest, ToolCallResult } from "../../shared/tools";
 import { toolGroups, type ToolGroup, type ToolName } from "./metadata";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../../shared/app-settings";
 import { ConfirmationQueue } from "./confirmation";
-import { ApprovalPolicy, type ActionPlan } from "../policy/approval-policy";
+import type { ActionPlan } from "../policy/approval-policy";
 import { attachToolHandlers, toolManifest, toolRequiresConfirmation } from "./manifest";
 import { createToolHandlers } from "./handlers";
 import { summarizeToolCall } from "./summaries";
+import { isManifestToolName, ToolRuntime, type ToolRuntimePreflightResult } from "./runtime";
 import { LocalStore } from "./local-store";
 import { FileManager } from "./file-manager";
 import { DocumentAssistant } from "./document-assistant";
@@ -40,9 +41,6 @@ import { AliasValidationError, validateAliasTarget } from "../memory/alias-valid
 const TOOL_OUTPUT_INLINE_LIMIT = 3500;
 const REALTIME_TOOL_OUTPUT_INLINE_LIMIT = 1000;
 const TOOL_RESULT_CACHE_TTL_MS = 10 * 60 * 1000;
-
-const isManifestToolName = (name: string): name is ToolName =>
-  Object.prototype.hasOwnProperty.call(toolManifest, name);
 
 type PermissionManager = {
   listApps: (refresh?: boolean) => Promise<InstalledApp[]>;
@@ -146,8 +144,6 @@ const toolGroupLookup = Object.fromEntries(
     .filter((entry) => Boolean(entry.group))
     .map((entry) => [entry.name, entry.group]),
 ) as Partial<Record<ToolName, ToolGroup>>;
-const approvalPolicy = new ApprovalPolicy();
-
 const runCommand = (command: string, args: string[]) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: "ignore" });
@@ -191,6 +187,7 @@ export class ToolRegistry {
   private herTaskQueue: TaskQueue;
   private memory: MemoryStore;
   private aliases: AliasStore;
+  private runtime: ToolRuntime;
   private confirmationTaskIds = new Map<string, string>();
   private resultCache = new Map<string, { value: string; createdAt: number; name: ToolName }>();
   private tasks = new Map<string, QueuedTask>();
@@ -221,6 +218,17 @@ export class ToolRegistry {
     this.herTaskQueue = taskQueue ?? new TaskQueue(this.herTasks);
     this.memory = memory ?? new MemoryStore();
     this.aliases = aliasStore ?? new AliasStore();
+    this.runtime = new ToolRuntime({
+      audit: this.audit,
+      confirmations: this.confirmations,
+      gate: this.gate,
+      timeoutMs: config.toolQueueTaskTimeoutMs,
+      isYoloMode: () => this.isYoloMode(),
+      summarize: (name, args) => this.summarize(name, args),
+      compactResult: (name, result, source) => this.compactResult(name, result, source),
+      executeManifestHandler: (name, args, source) => this.executeManifestHandler(name, args, source),
+      preflight: (name, args, summary) => this.preflightTool(name, args, summary),
+    });
     this.bindManifestRuntime();
   }
 
@@ -327,20 +335,9 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     source: "realtime" | "local",
   ): Promise<ToolCallResult> {
-    if (name === "codex_task_run" || name === "confirmation_decide") {
-      return this.executeValidatedTool(name, args, source);
-    }
-    try {
-      return await withTimeout(
-        this.executeValidatedTool(name, args, source),
-        config.toolQueueTaskTimeoutMs,
-        `${name} timed out after ${config.toolQueueTaskTimeoutMs}ms`,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.audit.write({ action: name, summary: message, status: "error" });
-      return { ok: false, name, error: message, code: "tool_timeout" };
-    }
+    return this.runtime.executeWithTimeout(name, args, source, {
+      skipTimeout: name === "codex_task_run" || name === "confirmation_decide",
+    });
   }
 
   private async executeValidatedTool(
@@ -348,85 +345,7 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     source: "realtime" | "local" = "local",
   ): Promise<ToolCallResult> {
-    const run = () => this.executeManifestHandler(name, args, source);
-    let summary = this.summarize(name, args);
-    let preview: unknown;
-
-    if (this.gate) {
-      try {
-        await this.gate.assertToolAllowed(name, args);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.audit.write({ action: name, summary: message, status: "error" });
-        return { ok: false, name, error: message, code: "capability_denied" };
-      }
-    }
-
-    if (name === "document_prepare_edit") {
-      try {
-        const editPreview = await this.documents.prepareEdit(args.path as string, args.newContent as string);
-        summary = `Edit document ${editPreview.path}\nDiff preview:\n${editPreview.diffPreview}`;
-        preview = { path: editPreview.path, diffPreview: editPreview.diffPreview };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.audit.write({ action: name, summary: message, status: "error" });
-        return { ok: false, name, error: message };
-      }
-    }
-
-    if (name === "advanced_shell_command") {
-      try {
-        this.shell.validate(args.command as string);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.audit.write({ action: name, summary: message, status: "error" });
-        return { ok: false, name, error: message, code: "blocked_shell_command" };
-      }
-    }
-
-    if (name === "alias_create") {
-      try {
-        this.validateAliasCreateRequest(args);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.audit.write({ action: name, summary: message, status: "error" });
-        return { ok: false, name, error: message, code: error instanceof AliasValidationError ? error.code : "alias_invalid" };
-      }
-    }
-
-    const approval = approvalPolicy.decide({
-      toolName: name,
-      args,
-      summary,
-      preview,
-      yoloMode: this.isYoloMode(),
-    });
-    if (approval.type === "deny") {
-      this.audit.write({ action: name, summary: approval.reason, status: "error" });
-      return { ok: false, name, error: approval.reason, code: approval.code };
-    }
-    if (approval.type === "require_confirmation") {
-      const confirmation = this.confirmations.add(approval.plan);
-      this.audit.write({ action: name, summary, status: "needs_confirmation" });
-      return {
-        ok: true,
-        name,
-        requiresConfirmation: true,
-        confirmationId: confirmation.id,
-        summary,
-        expiresAt: new Date(confirmation.expiresAt).toISOString(),
-      };
-    }
-
-    try {
-      const result = await run();
-      this.audit.write({ action: name, summary, status: "ok" });
-      return { ok: true, name, result: this.compactResult(name, result, source) };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.audit.write({ action: name, summary: message, status: "error" });
-      return { ok: false, name, error: message };
-    }
+    return this.runtime.executeValidated(name, args, source);
   }
 
   private async executeTaskControlTool(
@@ -434,40 +353,10 @@ export class ToolRegistry {
     args: Record<string, unknown>,
     source: "realtime" | "local",
   ): Promise<ToolCallResult> {
-    if (toolRequiresConfirmation(name)) {
-      const summary = this.summarize(name, args);
-      const approval = approvalPolicy.decide({
-        toolName: name,
-        args,
-        summary,
-        yoloMode: this.isYoloMode(),
-      });
-      if (approval.type === "deny") {
-        this.audit.write({ action: name, summary: approval.reason, status: "error" });
-        return { ok: false, name, error: approval.reason, code: approval.code };
-      }
-      if (approval.type === "require_confirmation") {
-        const confirmation = this.confirmations.add(approval.plan);
-        this.audit.write({ action: name, summary, status: "needs_confirmation" });
-        return {
-          ok: true,
-          name,
-          requiresConfirmation: true,
-          confirmationId: confirmation.id,
-          summary,
-          expiresAt: new Date(confirmation.expiresAt).toISOString(),
-        };
-      }
-    }
-    try {
-      const result = await this.runTaskControlTool(name, args, source);
-      this.audit.write({ action: name, summary: this.summarize(name, args), status: "ok" });
-      return { ok: true, name, result: this.compactResult(name, result, source) };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.audit.write({ action: name, summary: message, status: "error" });
-      return { ok: false, name, error: message };
-    }
+    return this.runtime.executeControl(name, args, source, () => this.runTaskControlTool(name, args, source), {
+      skipCapabilityGate: true,
+      skipPreflight: true,
+    });
   }
 
   private runTaskControlTool(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local") {
@@ -553,8 +442,7 @@ export class ToolRegistry {
   }
 
   private async executeActionPlan(plan: ActionPlan): Promise<unknown> {
-    const result: unknown = await this.executeManifestHandler(plan.toolName, plan.args, "local");
-    return this.compactResult(plan.toolName, result);
+    return this.runtime.executeActionPlan(plan);
   }
 
   private async completeHerTaskAfterCodingAgent(herTaskId: string, codingTaskId: string) {
@@ -586,6 +474,43 @@ export class ToolRegistry {
 
   private summarize(name: ToolName, args: Record<string, unknown>) {
     return toolManifest[name].summarize?.(args) ?? summarizeToolCall(name, args);
+  }
+
+  private async preflightTool(name: ToolName, args: Record<string, unknown>, summary: string): Promise<ToolRuntimePreflightResult> {
+    if (name === "document_prepare_edit") {
+      try {
+        const editPreview = await this.documents.prepareEdit(args.path as string, args.newContent as string);
+        return {
+          ok: true,
+          summary: `Edit document ${editPreview.path}\nDiff preview:\n${editPreview.diffPreview}`,
+          preview: { path: editPreview.path, diffPreview: editPreview.diffPreview },
+        };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+
+    if (name === "advanced_shell_command") {
+      try {
+        this.shell.validate(args.command as string);
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error), code: "blocked_shell_command" };
+      }
+    }
+
+    if (name === "alias_create") {
+      try {
+        this.validateAliasCreateRequest(args);
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          code: error instanceof AliasValidationError ? error.code : "alias_invalid",
+        };
+      }
+    }
+
+    return { ok: true, summary };
   }
 
   private invokeLegacyToolImplementation(name: ToolName, args: Record<string, unknown>, source: "realtime" | "local") {
@@ -1833,47 +1758,16 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
         code: "provider_disabled",
       };
     }
-    if (this.gate) {
-      try {
-        await this.gate.assertToolAllowed(task.toolName, task.arguments);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { ok: false, name: task.toolName, error: message, code: "capability_denied" };
-      }
-    }
-
-    const summary = this.summarize(task.toolName, task.arguments);
-    const approval = approvalPolicy.decide({
-      toolName: task.toolName,
-      args: task.arguments,
-      summary,
-      yoloMode: this.isYoloMode(),
-    });
-    if (approval.type === "deny") {
-      return { ok: false, name: task.toolName, error: approval.reason, code: approval.code };
-    }
-    if (approval.type === "require_confirmation") {
-      const confirmation = this.confirmations.add(approval.plan);
-      return {
-        ok: true,
-        name: task.toolName,
-        requiresConfirmation: true,
-        confirmationId: confirmation.id,
-        summary,
-        expiresAt: new Date(confirmation.expiresAt).toISOString(),
-      };
-    }
-
-    try {
-      const result = await this.runCodexTaskThroughGateway({
+    return this.runtime.executeControl(
+      task.toolName,
+      task.arguments,
+      task.source,
+      () => this.runCodexTaskThroughGateway({
         ...this.enrichCodexTaskWithMemory(task.arguments as CodexTaskInput & { memoryIds?: string[] }),
         onProgress: (event) => this.addTaskProgress(task, event.status, event.summary, event.method),
-      }, task.source);
-      return { ok: true, name: task.toolName, result: this.compactResult(task.toolName, result, task.source) };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { ok: false, name: task.toolName, error: message };
-    }
+      }, task.source),
+      { skipPreflight: true },
+    );
   }
 
   private assertTaskCreateRateLimit() {
@@ -2360,21 +2254,6 @@ const extractHerGatewayRequests = (text: string): HerGatewayRequest[] => {
     return [];
   }
 };
-
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string) =>
-  new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timeout);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      },
-    );
-  });
 
 const compactJsonSchema = (schema: unknown) => {
   if (!schema || typeof schema !== "object") return { required: [], optional: [] };

@@ -14,6 +14,7 @@ git checkout -b codex/her-agent-runtime-m0-m10
 
 0. `milestone-0-baseline-quality-gate.md`
 1. `milestone-1-renderer-decomposition.md`
+2. `milestone-2-tool-runtime-decomposition.md`
 
 原产品化路线历史顺序：
 
