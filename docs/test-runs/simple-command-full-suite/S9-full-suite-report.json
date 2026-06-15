@@ -1,0 +1,392 @@
+{
+  "milestone": "S9",
+  "title": "Full Suite Report and Cleanup",
+  "generatedAt": "2026-06-15T17:08:27.201Z",
+  "realtime2Connected": false,
+  "totals": {
+    "total": 141,
+    "passed": 140,
+    "failed": 0,
+    "skipped": 1,
+    "blocked": 0,
+    "unsupported": 0
+  },
+  "milestones": [
+    {
+      "milestone": "S0",
+      "title": "Simple Command Intent Card Harness",
+      "reportPath": "docs/test-runs/simple-command-intent-cards/S0-intent-card-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 62,
+        "passed": 62,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "media": 7,
+          "desktop": 8,
+          "files": 11,
+          "browser": 4,
+          "productivity": 5,
+          "system": 7,
+          "alias": 5,
+          "task": 7,
+          "clarification": 5,
+          "safety": 3
+        },
+        "byRisk": {
+          "local_open": 21,
+          "system_change": 9,
+          "read": 12,
+          "local_write": 9,
+          "browser_submit": 2,
+          "external_send": 3,
+          "shell": 3,
+          "coding_agent": 3
+        },
+        "byCommandType": {
+          "music_play_song": 5,
+          "music_open": 1,
+          "video_play": 1,
+          "app_open": 3,
+          "app_focus": 1,
+          "window_auto_arrange": 1,
+          "window_minimize_unrelated": 1,
+          "window_close_all": 1,
+          "desktop_show": 1,
+          "ambiguous": 1,
+          "file_list": 1,
+          "file_search": 3,
+          "file_create_folder": 1,
+          "file_rename": 1,
+          "file_move": 1,
+          "file_trash": 1,
+          "file_read": 1,
+          "document_extract": 2,
+          "document_folder_digest": 1,
+          "document_prepare_edit": 1,
+          "browser_open_url": 1,
+          "browser_isolated_open_url": 1,
+          "browser_fill_form": 1,
+          "browser_click": 1,
+          "email_search": 1,
+          "email_draft": 1,
+          "email_send": 1,
+          "calendar_create": 1,
+          "calendar_search": 1,
+          "system_set_volume": 2,
+          "system_set_brightness": 1,
+          "system_set_dark_mode": 1,
+          "system_open_settings": 1,
+          "advanced_shell_command": 3,
+          "alias_create": 3,
+          "alias_list": 1,
+          "alias_delete": 1,
+          "task_list": 1,
+          "task_status": 1,
+          "task_cancel": 1,
+          "coding_agent_start": 4,
+          "thing": 1,
+          "delete": 1,
+          "send": 1,
+          "music": 1
+        },
+        "byExecutionMode": {
+          "dry_run": 33,
+          "confirmation_only": 22,
+          "denial_only": 7
+        }
+      }
+    },
+    {
+      "milestone": "S1",
+      "title": "Desktop App and Window Real Simulation",
+      "reportPath": "docs/test-runs/simple-command-desktop/S1-desktop-window-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 9,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 1,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S1": 9
+        },
+        "byRisk": {
+          "unknown": 9
+        },
+        "byCommandType": {
+          "preflight": 1,
+          "protection": 1,
+          "app": 1,
+          "window": 4,
+          "desktop": 1,
+          "excluded": 1
+        },
+        "byExecutionMode": {
+          "safe_real": 9
+        }
+      }
+    },
+    {
+      "milestone": "S2",
+      "title": "Files and Documents",
+      "reportPath": "docs/test-runs/simple-command-files/S2-files-documents-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 13,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S2": 13
+        },
+        "byRisk": {
+          "unknown": 12,
+          "local_write": 1
+        },
+        "byCommandType": {
+          "file": 10,
+          "document": 3
+        },
+        "byExecutionMode": {
+          "safe_real": 13
+        }
+      }
+    },
+    {
+      "milestone": "S3",
+      "title": "Browser and Page Commands",
+      "reportPath": "docs/test-runs/simple-command-browser/S3-browser-page-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 10,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S3": 10
+        },
+        "byRisk": {
+          "unknown": 9,
+          "browser_submit": 1
+        },
+        "byCommandType": {
+          "browser": 9,
+          "local-api-origin-protection": 1
+        },
+        "byExecutionMode": {
+          "safe_real": 10
+        }
+      }
+    },
+    {
+      "milestone": "S4",
+      "title": "Music, Media, and Video",
+      "reportPath": "docs/test-runs/simple-command-media/S4-media-video-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S4": 11
+        },
+        "byRisk": {
+          "unknown": 11
+        },
+        "byCommandType": {
+          "music": 3,
+          "spotify": 3,
+          "netease": 1,
+          "qq": 1,
+          "media-key": 1,
+          "video": 2
+        },
+        "byExecutionMode": {
+          "safe_real": 11
+        }
+      }
+    },
+    {
+      "milestone": "S5",
+      "title": "System, Clipboard, Notification, Speech, and Screenshot",
+      "reportPath": "docs/test-runs/simple-command-system/S5-system-desktop-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 12,
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S5": 12
+        },
+        "byRisk": {
+          "unknown": 11,
+          "system_change": 1
+        },
+        "byCommandType": {
+          "system": 8,
+          "clipboard": 1,
+          "screenshot": 1,
+          "keyboard": 1,
+          "safety": 1
+        },
+        "byExecutionMode": {
+          "safe_real": 12
+        }
+      }
+    },
+    {
+      "milestone": "S6",
+      "title": "Mail, Calendar, Reminders, Notes, and Copy Drafts",
+      "reportPath": "docs/test-runs/simple-command-productivity/S6-productivity-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 11,
+        "passed": 11,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S6": 11
+        },
+        "byRisk": {
+          "unknown": 7,
+          "external_send": 4
+        },
+        "byCommandType": {
+          "email": 4,
+          "mac-mail-draft-confirmation": 1,
+          "calendar": 1,
+          "mac-calendar-confirmation": 1,
+          "mac-reminder": 1,
+          "mac-note": 1,
+          "copy": 2
+        },
+        "byExecutionMode": {
+          "safe_real": 11
+        }
+      }
+    },
+    {
+      "milestone": "S7",
+      "title": "Task, Confirmation, and Low-Risk Shell",
+      "reportPath": "docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 8,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S7": 8
+        },
+        "byRisk": {
+          "unknown": 8
+        },
+        "byCommandType": {
+          "shell": 3,
+          "task": 2,
+          "confirmation": 2,
+          "coding-agent": 1
+        },
+        "byExecutionMode": {
+          "safe_real": 8
+        }
+      }
+    },
+    {
+      "milestone": "S8",
+      "title": "Negative, Safety, and Clarification",
+      "reportPath": "docs/test-runs/simple-command-safety/S8-negative-safety-report.json",
+      "realtime2Connected": false,
+      "summary": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "blocked": 0,
+        "unsupported": 0
+      },
+      "failures": [],
+      "coverage": {
+        "byDomain": {
+          "S8": 5
+        },
+        "byRisk": {
+          "unknown": 4,
+          "browser_submit": 1
+        },
+        "byCommandType": {
+          "intent-cards": 1,
+          "document": 1,
+          "file": 1,
+          "browser": 1,
+          "shell": 1
+        },
+        "byExecutionMode": {
+          "safe_real": 5
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "noS3ChromeProfiles": true,
+    "noS4ChromeProfiles": true,
+    "screenshotArtifactsIgnored": true,
+    "ignoredLargeScreenshotCount": 1,
+    "dataDirectoryIgnored": true
+  },
+  "reportScan": {
+    "ok": true,
+    "matches": []
+  },
+  "acceptance": {
+    "suiteReportsPassFailSkippedUnsupportedBlocked": true,
+    "everyFailedCommandIncludesDetails": true,
+    "coverageReportedByDomainRiskCommandType": true,
+    "cleanupVerified": true,
+    "noReportArtifactContainsSecrets": true,
+    "markdownReportGenerated": true
+  }
+}

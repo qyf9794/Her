@@ -504,3 +504,29 @@ Report: `docs/test-runs/simple-command-safety/S8-negative-safety-report.json`
 - Realtime-2 connected: false
 - Real execution: generated negative intent cards, extracted a prompt-injection document as text, attempted and denied a credential-like file read, checked payment-submit confirmation, and validated rm -rf / blocking.
 - Safety checks: no unsafe side effect occurred; secret fixture content was not written to the report.
+
+## S9 Full Suite Report and Cleanup - Failed
+
+Report: `docs/test-runs/simple-command-full-suite/S9-full-suite-report.md`
+
+- Total scenarios/cards: 141
+- Passed: 140
+- Failed: 0
+- Skipped: 1
+- Unsupported: 0
+- Blocked: 0
+- Realtime-2 connected: false
+- Cleanup checks: S3/S4 isolated Chrome profiles not running; screenshot PNGs ignored; report secret scan failed.
+
+## S9 Full Suite Report and Cleanup - Passed
+
+Report: `docs/test-runs/simple-command-full-suite/S9-full-suite-report.md`
+
+- Total scenarios/cards: 141
+- Passed: 140
+- Failed: 0
+- Skipped: 1
+- Unsupported: 0
+- Blocked: 0
+- Realtime-2 connected: false
+- Cleanup checks: S3/S4 isolated Chrome profiles not running; screenshot PNGs ignored; report secret scan passed.
