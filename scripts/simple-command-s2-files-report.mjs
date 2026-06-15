@@ -166,6 +166,7 @@ await runScenario("S2.file.open.pdf", "Open PDF fixture through Finder", async (
   assertValidPdfFixture(fixture.pdf);
   const result = await files.open(fixture.pdf, "Finder");
   assert(result.opened === fixture.pdf, "Open result should identify the PDF path.");
+  assert(result.action === "reveal", "Finder PDF scenario should reveal the file instead of launching Preview.");
   return { ...result, pdfFixtureValidated: true };
 });
 

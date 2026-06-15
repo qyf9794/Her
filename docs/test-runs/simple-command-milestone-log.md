@@ -273,3 +273,14 @@ Report: `docs/test-runs/simple-command-files/S2-files-documents-report.json`
 - Sandbox root: `/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540704084` (removed after run)
 - Real execution: file list/search/read/open/create/rename/copy/move/trash plus document extract/folder digest/prepare edit.
 - Safety checks: write operations stayed under the disposable Desktop sandbox; `file_trash` required confirmation before the script executed the sandbox trash; fake `.p8`, API key, bearer token, and private key contents were denied or redacted.
+
+## S2 Files and Documents - Passed
+
+Report: `docs/test-runs/simple-command-files/S2-files-documents-report.json`
+
+- Total scenarios: 13
+- Passed: 13
+- Failed: 0
+- Sandbox root: `/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807` (removed after run)
+- Real execution: file list/search/read/open/create/rename/copy/move/trash plus document extract/folder digest/prepare edit.
+- Safety checks: write operations stayed under the disposable Desktop sandbox; `file_trash` required confirmation before the script executed the sandbox trash; fake `.p8`, API key, bearer token, and private key contents were denied or redacted.

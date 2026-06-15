@@ -128,8 +128,12 @@ export class FileManager {
     const filePath = this.resolveAllowed(inputPath);
     const stat = await fs.stat(filePath);
     if (!stat.isFile()) throw new Error(`Not a file: ${inputPath}`);
+    if (appName?.trim().toLowerCase() === "finder") {
+      await runOpen(["-R", filePath]);
+      return { opened: filePath, appName: "Finder", action: "reveal" };
+    }
     await runOpen(appName ? ["-a", appName, filePath] : [filePath]);
-    return { opened: filePath, appName: appName || undefined };
+    return { opened: filePath, appName: appName || undefined, action: "open" };
   }
 
   async rename(inputPath: string, newName: string) {
