@@ -5,10 +5,16 @@
 推荐分支：
 
 ```bash
-git checkout -b productize/m1-local-api-security
+git checkout -b codex/her-agent-runtime-m0-m10
 ```
 
 建议顺序：
+
+新版 Her Agent Runtime 路线从 M0 开始：
+
+0. `milestone-0-baseline-quality-gate.md`
+
+原产品化路线历史顺序：
 
 1. `milestone-1-local-api-security.md`
 2. `milestone-2-tool-manifest-policy.md`

@@ -172,7 +172,23 @@ const highRiskConfirmation = await highRiskRegistry.execute({
   arguments: { path: "/tmp/example.txt" },
   source: "local",
 });
-if (!highRiskConfirmation.ok || !highRiskConfirmation.requiresConfirmation || !highRiskConfirmation.confirmationId) {
+if (!highRiskConfirmation.ok) {
+  fail(`High-risk manifest-bound handler did not require confirmation: ${JSON.stringify(highRiskConfirmation)}`);
+} else if (highRiskConfirmation.requiresConfirmation && highRiskConfirmation.confirmationId) {
+  // Direct high-risk tools may return confirmation immediately.
+} else if (highRiskConfirmation.result?.mode === "task_runtime" && highRiskConfirmation.result?.task?.id) {
+  // M4.5 wraps selected high-risk tools in TaskRuntime first; they still must bind to confirmation before side effects.
+  const taskId = highRiskConfirmation.result.task.id;
+  try {
+    await waitFor(async () => {
+      const status = await highRiskRegistry.execute({ name: "task_status", arguments: { taskId }, source: "local" });
+      return status.ok && status.result?.task?.status === "awaiting_confirmation" && Boolean(status.result?.task?.confirmationId);
+    }, 3000);
+  } catch (error) {
+    const status = await highRiskRegistry.execute({ name: "task_status", arguments: { taskId }, source: "local" });
+    fail(`Task-wrapped high-risk handler did not reach awaiting confirmation: ${JSON.stringify({ error: String(error), status })}`);
+  }
+} else {
   fail(`High-risk manifest-bound handler did not require confirmation: ${JSON.stringify(highRiskConfirmation)}`);
 }
 
@@ -252,3 +268,12 @@ console.log(JSON.stringify({
     unauthorizedAppDenied: true,
   },
 }, null, 2));
+
+async function waitFor(predicate, timeoutMs) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Timed out waiting for condition.");
+}
