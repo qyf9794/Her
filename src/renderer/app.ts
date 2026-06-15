@@ -9,6 +9,7 @@ import {
 } from "@openai/agents/realtime";
 import type { CapabilityKey, CapabilitySettings, InstalledApp, UserSettings } from "../shared/app-settings";
 import type { CodingAgentTaskView } from "../shared/agents/coding-agent";
+import type { HerArtifact, HerArtifactListResponse } from "../shared/artifacts";
 import type { DesktopContextSnapshot } from "../shared/context";
 import type { HerTaskView } from "../shared/tasks";
 import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
@@ -105,6 +106,8 @@ const {
   codexModelStatus,
   refreshTasksBtn,
   taskRuns,
+  refreshArtifactsBtn,
+  artifactList,
   refreshAgentRunsBtn,
   agentRuns,
   microphoneSelect,
@@ -148,6 +151,7 @@ let musicPlaybackPoll: number | undefined;
 let contextPoll: number | undefined;
 let currentMiniPlayerTrack: MiniPlayerTrack | undefined;
 let taskRunsPoll: number | undefined;
+let artifactsPoll: number | undefined;
 let agentRunsPoll: number | undefined;
 
 type MiniPlayerTrack = {
@@ -216,6 +220,8 @@ const initialize = async () => {
     startContextPolling();
     await loadTaskRuns();
     startTaskRunsPolling();
+    await loadArtifacts();
+    startArtifactsPolling();
     await loadAgentRuns();
     startAgentRunsPolling();
     await refreshMicrophoneDevices();
@@ -682,6 +688,119 @@ const loadTaskRuns = async () => {
   } catch (error) {
     taskRuns.textContent = `Tasks unavailable: ${errorMessage(error)}`;
     taskRuns.classList.add("empty");
+  }
+};
+
+const startArtifactsPolling = () => {
+  if (artifactsPoll) return;
+  artifactsPoll = window.setInterval(() => void loadArtifacts(), 3000);
+};
+
+const loadArtifacts = async () => {
+  try {
+    const response = await getJson<HerArtifactListResponse>("/api/artifacts?limit=8");
+    renderArtifacts(response.artifacts);
+  } catch (error) {
+    artifactList.textContent = `Artifacts unavailable: ${errorMessage(error)}`;
+    artifactList.classList.add("empty");
+  }
+};
+
+const renderArtifacts = (artifacts: HerArtifact[]) => {
+  artifactList.textContent = "";
+  artifactList.classList.toggle("empty", artifacts.length === 0);
+  if (!artifacts.length) {
+    artifactList.textContent = "No artifacts yet";
+    return;
+  }
+
+  for (const artifact of artifacts) {
+    const item = document.createElement("article");
+    item.className = `artifactItem ${artifact.type}`;
+    item.dataset.artifactId = artifact.id;
+    item.innerHTML = `
+      <div class="artifactHeader">
+        <strong>${escapeHtml(artifact.title)}</strong>
+        <span>${escapeHtml(artifact.type.replaceAll("_", " "))}</span>
+      </div>
+      <p>${escapeHtml(truncateText(artifact.summary, 180))}</p>
+      <div class="artifactMeta">
+        <span>${escapeHtml(artifact.id.slice(0, 8))}</span>
+        ${artifact.sourceTaskId ? `<span>task ${escapeHtml(artifact.sourceTaskId.slice(0, 8))}</span>` : ""}
+        ${artifact.sourceTool ? `<span>${escapeHtml(artifact.sourceTool)}</span>` : ""}
+        ${artifact.truncated ? "<span>truncated</span>" : ""}
+      </div>
+      <div class="artifactActions">
+        <button type="button" data-artifact-action="show">Show</button>
+        <button type="button" data-artifact-action="copy-summary">Copy Summary</button>
+      </div>
+    `;
+    artifactList.append(item);
+  }
+};
+
+const showArtifact = async (artifactId: string) => {
+  const response = await getJson<{ artifact: HerArtifact }>(`/api/artifacts/${encodeURIComponent(artifactId)}`);
+  renderArtifactWindow(response.artifact);
+};
+
+const copyArtifactSummary = async (artifactId: string) => {
+  const response = await getJson<{ artifact: HerArtifact }>(`/api/artifacts/${encodeURIComponent(artifactId)}`);
+  await navigator.clipboard.writeText(response.artifact.summary);
+  addActivity(`Copied artifact summary ${artifactId}`, "ok");
+};
+
+const renderArtifactWindow = (artifact: HerArtifact) => {
+  resultWindowTitle.textContent = artifact.title;
+  resultWindowSubtitle.textContent = [artifact.type.replaceAll("_", " "), artifact.sourceTool, new Date(artifact.createdAt).toLocaleString()]
+    .filter(Boolean)
+    .join(" · ");
+  resultWindowBody.innerHTML = renderArtifactBody(artifact);
+  resultWindow.classList.remove("hidden");
+};
+
+const renderArtifactBody = (artifact: HerArtifact) => {
+  const summary = `<p class="resultNote">${escapeHtml(artifact.summary)}</p>`;
+  if (artifact.type === "table") return `${summary}${renderArtifactTable(artifact.payload)}`;
+  if (artifact.type === "diff") return `${summary}<pre class="artifactPre diff">${escapeHtml(payloadToText(artifact.payload))}</pre>`;
+  if (artifact.type === "command_output") return `${summary}<pre class="artifactPre command">${escapeHtml(commandOutputToText(artifact.payload))}</pre>`;
+  return `${summary}<pre class="artifactPre">${escapeHtml(payloadToText(artifact.payload))}</pre>`;
+};
+
+const renderArtifactTable = (payload: unknown) => {
+  const rows = Array.isArray(payload) ? payload.slice(0, 40) : [];
+  if (!rows.length) return `<p class="resultEmpty">No table rows.</p>`;
+  const columns = Object.keys(rows.find((row) => row && typeof row === "object" && !Array.isArray(row)) ?? {}).slice(0, 6);
+  if (!columns.length) return `<pre class="artifactPre">${escapeHtml(payloadToText(rows))}</pre>`;
+  return `
+    <table class="artifactTable">
+      <thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>${columns.map((column) => `<td>${escapeHtml(String((row as Record<string, unknown>)[column] ?? ""))}</td>`).join("")}</tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+};
+
+const commandOutputToText = (payload: unknown) => {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payloadToText(payload);
+  const value = payload as Record<string, unknown>;
+  return [
+    `$ ${String(value.command ?? "")}`,
+    `exitCode: ${String(value.exitCode ?? "")}`,
+    value.stdout ? `\nstdout:\n${String(value.stdout)}` : "",
+    value.stderr ? `\nstderr:\n${String(value.stderr)}` : "",
+  ].filter(Boolean).join("\n");
+};
+
+const payloadToText = (payload: unknown) => {
+  if (typeof payload === "string") return payload;
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return String(payload);
   }
 };
 
@@ -1499,6 +1618,7 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
     if (name === "confirmation_decide") {
       await reloadPendingConfirmations();
     }
+    await loadArtifacts();
   } else {
     setVisualState("error");
     addActivity(`${name} failed: ${result.error}`, "error");
@@ -2073,6 +2193,7 @@ refreshCodexLoginBtn.addEventListener("click", () => void loadCodexLoginStatus()
 startCodexLoginBtn.addEventListener("click", () => void startCodexLogin());
 codexModelSelect.addEventListener("change", () => void saveCodexModel());
 refreshTasksBtn.addEventListener("click", () => void loadTaskRuns());
+refreshArtifactsBtn.addEventListener("click", () => void loadArtifacts());
 refreshAgentRunsBtn.addEventListener("click", () => void loadAgentRuns());
 realtimeVoiceSelect.addEventListener("change", () => void saveRealtimeVoice());
 openaiKeyInput.addEventListener("keydown", (event) => {
@@ -2121,6 +2242,18 @@ taskRuns.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-task-cancel]");
   if (!button?.dataset.taskCancel) return;
   void cancelTaskRun(button.dataset.taskCancel);
+});
+artifactList.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-artifact-action]");
+  const item = (event.target as HTMLElement).closest<HTMLElement>("[data-artifact-id]");
+  if (!button?.dataset.artifactAction || !item?.dataset.artifactId) return;
+  if (button.dataset.artifactAction === "show") {
+    void showArtifact(item.dataset.artifactId);
+    return;
+  }
+  if (button.dataset.artifactAction === "copy-summary") {
+    void copyArtifactSummary(item.dataset.artifactId).catch((error) => addActivity(`Copy artifact summary failed: ${errorMessage(error)}`, "error"));
+  }
 });
 agentRuns.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-agent-cancel]");

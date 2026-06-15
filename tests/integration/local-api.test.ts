@@ -29,6 +29,7 @@ describe("local API auth and confirmation flow", () => {
     expect((await apiFetch("/api/tools/execute", {}, null)).status).toBe(401);
     expect((await apiFetch("/api/tools/execute", {}, "bad-token")).status).toBe(401);
     expect((await apiGetJson("/api/context/snapshot", null)).status).toBe(401);
+    expect((await apiGetJson("/api/artifacts", null)).status).toBe(401);
   });
 
   it("returns an auth-gated compact desktop context snapshot", async () => {
@@ -44,6 +45,26 @@ describe("local API auth and confirmation flow", () => {
       failures: expect.any(Array),
     });
     expect(JSON.stringify(response.body)).not.toContain("full file content should not appear");
+  });
+
+  it("creates a table artifact for file search results", async () => {
+    fs.writeFileSync(path.join(allowedDir, "artifact-search-target.txt"), "artifact table payload");
+    const search = await apiJson("/api/tools/execute", {
+      name: "file_search",
+      source: "local",
+      arguments: { root: allowedDir, query: "artifact-search", maxDepth: 1, limit: 5 },
+    });
+    expect(search.body.ok).toBe(true);
+
+    const artifacts = await apiGetJson("/api/artifacts?limit=5");
+    expect(artifacts.body.artifacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "table",
+        title: "File Search Results",
+        sourceTool: "file_search",
+        createdAt: expect.any(String),
+      }),
+    ]));
   });
 
   it("returns invalid_arguments for malformed tool args", async () => {

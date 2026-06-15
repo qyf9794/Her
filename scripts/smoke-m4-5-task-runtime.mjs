@@ -18,6 +18,7 @@ process.env.HER_ALLOWED_DIRECTORIES = tmpRoot;
 const require = createRequire(import.meta.url);
 const { TaskStore } = require("../electron/dist/main/tasks/task-store.js");
 const { TaskQueue } = require("../electron/dist/main/tasks/task-queue.js");
+const { ArtifactStore } = require("../electron/dist/main/tasks/artifact-store.js");
 const { ResourceLockManager } = require("../electron/dist/main/tasks/resource-lock-manager.js");
 const { classifyTaskExecution } = require("../electron/dist/main/tasks/task-classifier.js");
 const { ToolRegistry } = require("../electron/dist/main/tools/registry.js");
@@ -30,6 +31,7 @@ try {
   testClassifier();
   await testQueueConcurrency();
   await testPilotConfirmationBinding();
+  await testTaskLinkedCommandArtifact();
   await testImmediateToolWhileTaskRunning();
   console.log(JSON.stringify({
     ok: true,
@@ -39,6 +41,7 @@ try {
       "TaskClassifier maps pilot tools to locks",
       "TaskQueue runs non-conflicting work concurrently and conflicting work serially",
       "pilot high-risk tool binds confirmation to taskId",
+      "approved shell task creates command artifact event",
       "immediate system_status is not blocked by running queued work",
     ],
   }, null, 2));
@@ -139,6 +142,30 @@ async function testPilotConfirmationBinding() {
     return next.ok && next.result?.task?.status === "completed";
   }, 3000);
   assert.equal(fs.existsSync(renamed), true);
+}
+
+async function testTaskLinkedCommandArtifact() {
+  const store = new TaskStore();
+  const queue = new TaskQueue(store);
+  const artifacts = new ArtifactStore();
+  const registry = new ToolRegistry(new ConfirmationQueue(), new AuditLog(), undefined, undefined, undefined, undefined, store, queue, undefined, artifacts);
+  const created = await registry.execute({ name: "advanced_shell_command", source: "local", arguments: { command: "pwd", reason: "artifact smoke", timeoutMs: 1000 } });
+  const taskId = created.result.task.id;
+  await waitFor(async () => {
+    const status = await registry.execute({ name: "task_status", source: "local", arguments: { taskId } });
+    return status.result.task.status === "awaiting_confirmation";
+  }, 3000);
+  const status = await registry.execute({ name: "task_status", source: "local", arguments: { taskId } });
+  await registry.confirm(status.result.task.confirmationId, true);
+  await waitFor(async () => {
+    const next = await registry.execute({ name: "task_status", source: "local", arguments: { taskId } });
+    return next.ok && next.result?.task?.status === "completed";
+  }, 3000);
+  const artifact = artifacts.list(1)[0];
+  assert.equal(artifact.type, "command_output");
+  assert.equal(artifact.sourceTaskId, taskId);
+  const events = await registry.execute({ name: "task_events", source: "local", arguments: { taskId } });
+  assert.ok(events.result.events.some((event) => event.type === "artifact_created" && event.artifactId === artifact.id));
 }
 
 async function testImmediateToolWhileTaskRunning() {

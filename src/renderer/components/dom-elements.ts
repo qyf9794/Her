@@ -1,143 +1,81 @@
-const onboarding = document.querySelector<HTMLDivElement>("#onboarding")!;
-const appView = document.querySelector<HTMLDivElement>("#appView")!;
-const onboardingStatus = document.querySelector<HTMLParagraphElement>("#onboardingStatus")!;
-const appGrid = document.querySelector<HTMLDivElement>("#appGrid")!;
-const onboardingCapabilities = document.querySelector<HTMLDivElement>("#onboardingCapabilities")!;
-const runtimeCapabilities = document.querySelector<HTMLDivElement>("#runtimeCapabilities")!;
-const authorizedApps = document.querySelector<HTMLDivElement>("#authorizedApps")!;
-const statusText = document.querySelector<HTMLParagraphElement>("#statusText")!;
-const contextApp = document.querySelector<HTMLElement>("#contextApp")!;
-const contextWindow = document.querySelector<HTMLElement>("#contextWindow")!;
-const contextClipboard = document.querySelector<HTMLElement>("#contextClipboard")!;
-const contextRecentFiles = document.querySelector<HTMLElement>("#contextRecentFiles")!;
-const connectBtn = document.querySelector<HTMLButtonElement>("#connectBtn")!;
-const disconnectBtn = document.querySelector<HTMLButtonElement>("#disconnectBtn")!;
-const orbOnlyBtn = document.querySelector<HTMLButtonElement>("#orbOnlyBtn")!;
-const restorePanelBtn = document.querySelector<HTMLButtonElement>("#restorePanelBtn")!;
-const sendTextBtn = document.querySelector<HTMLButtonElement>("#sendTextBtn")!;
-const textInput = document.querySelector<HTMLInputElement>("#textInput")!;
-const transcript = document.querySelector<HTMLDivElement>("#transcript")!;
-const miniPlayer = document.querySelector<HTMLDivElement>("#miniPlayer")!;
-const miniPlayerArtwork = document.querySelector<HTMLImageElement>("#miniPlayerArtwork")!;
-const miniPlayerTitle = document.querySelector<HTMLElement>("#miniPlayerTitle")!;
-const miniPlayerArtist = document.querySelector<HTMLSpanElement>("#miniPlayerArtist")!;
-const miniPlayerPlayBtn = document.querySelector<HTMLButtonElement>("#miniPlayerPlayBtn")!;
-const miniPlayerPauseBtn = document.querySelector<HTMLButtonElement>("#miniPlayerPauseBtn")!;
-const confirmations = document.querySelector<HTMLDivElement>("#confirmations")!;
-const activity = document.querySelector<HTMLDivElement>("#activity")!;
-const resultWindow = document.querySelector<HTMLDivElement>("#resultWindow")!;
-const resultWindowTitle = document.querySelector<HTMLHeadingElement>("#resultWindowTitle")!;
-const resultWindowSubtitle = document.querySelector<HTMLParagraphElement>("#resultWindowSubtitle")!;
-const resultWindowBody = document.querySelector<HTMLDivElement>("#resultWindowBody")!;
-const resultWindowCloseBtn = document.querySelector<HTMLButtonElement>("#resultWindowCloseBtn")!;
-const orbMount = document.querySelector<HTMLDivElement>("#orbMount")!;
-const glassReply = document.querySelector<HTMLDivElement>("#glassReply")!;
-const glassReplyText = document.querySelector<HTMLSpanElement>("#glassReplyText")!;
-const userMeter = document.querySelector<HTMLSpanElement>("#userMeter")!;
-const aiMeter = document.querySelector<HTMLSpanElement>("#aiMeter")!;
-const finishOnboardingBtn = document.querySelector<HTMLButtonElement>("#finishOnboardingBtn")!;
-const onboardingYoloBtn = document.querySelector<HTMLButtonElement>("#onboardingYoloBtn")!;
-const refreshAppsBtn = document.querySelector<HTMLButtonElement>("#refreshAppsBtn")!;
-const openPermissionsBtn = document.querySelector<HTMLButtonElement>("#openPermissionsBtn")!;
-const manageAppsBtn = document.querySelector<HTMLButtonElement>("#manageAppsBtn")!;
-const yoloModeBtn = document.querySelector<HTMLButtonElement>("#yoloModeBtn")!;
-const yoloModeStatus = document.querySelector<HTMLParagraphElement>("#yoloModeStatus")!;
-const openaiKeyInput = document.querySelector<HTMLInputElement>("#openaiKeyInput")!;
-const saveOpenaiKeyBtn = document.querySelector<HTMLButtonElement>("#saveOpenaiKeyBtn")!;
-const openaiKeyStatus = document.querySelector<HTMLParagraphElement>("#openaiKeyStatus")!;
-const openaiKeyBadge = document.querySelector<HTMLSpanElement>("#openaiKeyBadge")!;
-const realtimeVoiceSelect = document.querySelector<HTMLSelectElement>("#realtimeVoiceSelect")!;
-const realtimeVoiceStatus = document.querySelector<HTMLParagraphElement>("#realtimeVoiceStatus")!;
-const realtimeVoiceBadge = document.querySelector<HTMLSpanElement>("#realtimeVoiceBadge")!;
-const musicKitBadge = document.querySelector<HTMLSpanElement>("#musicKitBadge")!;
-const musicKitStatus = document.querySelector<HTMLParagraphElement>("#musicKitStatus")!;
-const authorizeMusicKitBtn = document.querySelector<HTMLButtonElement>("#authorizeMusicKitBtn")!;
-const codexLoginBadge = document.querySelector<HTMLSpanElement>("#codexLoginBadge")!;
-const codexLoginStatus = document.querySelector<HTMLParagraphElement>("#codexLoginStatus")!;
-const refreshCodexLoginBtn = document.querySelector<HTMLButtonElement>("#refreshCodexLoginBtn")!;
-const startCodexLoginBtn = document.querySelector<HTMLButtonElement>("#startCodexLoginBtn")!;
-const codexLoginOutput = document.querySelector<HTMLPreElement>("#codexLoginOutput")!;
-const codexModelSelect = document.querySelector<HTMLSelectElement>("#codexModelSelect")!;
-const codexModelStatus = document.querySelector<HTMLParagraphElement>("#codexModelStatus")!;
-const refreshTasksBtn = document.querySelector<HTMLButtonElement>("#refreshTasksBtn")!;
-const taskRuns = document.querySelector<HTMLDivElement>("#taskRuns")!;
-const refreshAgentRunsBtn = document.querySelector<HTMLButtonElement>("#refreshAgentRunsBtn")!;
-const agentRuns = document.querySelector<HTMLDivElement>("#agentRuns")!;
-const microphoneSelect = document.querySelector<HTMLSelectElement>("#microphoneSelect")!;
-const refreshMicrophonesBtn = document.querySelector<HTMLButtonElement>("#refreshMicrophonesBtn")!;
-const microphoneStatus = document.querySelector<HTMLParagraphElement>("#microphoneStatus")!;
-const realtimeUsage = document.querySelector<HTMLDivElement>("#realtimeUsage")!;
+const requireElement = <T extends Element>(selector: string) => {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing renderer element: ${selector}`);
+  return element;
+};
 
 export const getRendererElements = () => ({
-  onboarding,
-  appView,
-  onboardingStatus,
-  appGrid,
-  onboardingCapabilities,
-  runtimeCapabilities,
-  authorizedApps,
-  statusText,
-  contextApp,
-  contextWindow,
-  contextClipboard,
-  contextRecentFiles,
-  connectBtn,
-  disconnectBtn,
-  orbOnlyBtn,
-  restorePanelBtn,
-  sendTextBtn,
-  textInput,
-  transcript,
-  miniPlayer,
-  miniPlayerArtwork,
-  miniPlayerTitle,
-  miniPlayerArtist,
-  miniPlayerPlayBtn,
-  miniPlayerPauseBtn,
-  confirmations,
-  activity,
-  resultWindow,
-  resultWindowTitle,
-  resultWindowSubtitle,
-  resultWindowBody,
-  resultWindowCloseBtn,
-  orbMount,
-  glassReply,
-  glassReplyText,
-  userMeter,
-  aiMeter,
-  finishOnboardingBtn,
-  onboardingYoloBtn,
-  refreshAppsBtn,
-  openPermissionsBtn,
-  manageAppsBtn,
-  yoloModeBtn,
-  yoloModeStatus,
-  openaiKeyInput,
-  saveOpenaiKeyBtn,
-  openaiKeyStatus,
-  openaiKeyBadge,
-  realtimeVoiceSelect,
-  realtimeVoiceStatus,
-  realtimeVoiceBadge,
-  musicKitBadge,
-  musicKitStatus,
-  authorizeMusicKitBtn,
-  codexLoginBadge,
-  codexLoginStatus,
-  refreshCodexLoginBtn,
-  startCodexLoginBtn,
-  codexLoginOutput,
-  codexModelSelect,
-  codexModelStatus,
-  refreshTasksBtn,
-  taskRuns,
-  refreshAgentRunsBtn,
-  agentRuns,
-  microphoneSelect,
-  refreshMicrophonesBtn,
-  microphoneStatus,
-  realtimeUsage,
+  onboarding: requireElement<HTMLDivElement>("#onboarding"),
+  appView: requireElement<HTMLDivElement>("#appView"),
+  onboardingStatus: requireElement<HTMLParagraphElement>("#onboardingStatus"),
+  appGrid: requireElement<HTMLDivElement>("#appGrid"),
+  onboardingCapabilities: requireElement<HTMLDivElement>("#onboardingCapabilities"),
+  runtimeCapabilities: requireElement<HTMLDivElement>("#runtimeCapabilities"),
+  authorizedApps: requireElement<HTMLDivElement>("#authorizedApps"),
+  statusText: requireElement<HTMLParagraphElement>("#statusText"),
+  contextApp: requireElement<HTMLElement>("#contextApp"),
+  contextWindow: requireElement<HTMLElement>("#contextWindow"),
+  contextClipboard: requireElement<HTMLElement>("#contextClipboard"),
+  contextRecentFiles: requireElement<HTMLElement>("#contextRecentFiles"),
+  connectBtn: requireElement<HTMLButtonElement>("#connectBtn"),
+  disconnectBtn: requireElement<HTMLButtonElement>("#disconnectBtn"),
+  orbOnlyBtn: requireElement<HTMLButtonElement>("#orbOnlyBtn"),
+  restorePanelBtn: requireElement<HTMLButtonElement>("#restorePanelBtn"),
+  sendTextBtn: requireElement<HTMLButtonElement>("#sendTextBtn"),
+  textInput: requireElement<HTMLInputElement>("#textInput"),
+  transcript: requireElement<HTMLDivElement>("#transcript"),
+  miniPlayer: requireElement<HTMLDivElement>("#miniPlayer"),
+  miniPlayerArtwork: requireElement<HTMLImageElement>("#miniPlayerArtwork"),
+  miniPlayerTitle: requireElement<HTMLElement>("#miniPlayerTitle"),
+  miniPlayerArtist: requireElement<HTMLSpanElement>("#miniPlayerArtist"),
+  miniPlayerPlayBtn: requireElement<HTMLButtonElement>("#miniPlayerPlayBtn"),
+  miniPlayerPauseBtn: requireElement<HTMLButtonElement>("#miniPlayerPauseBtn"),
+  confirmations: requireElement<HTMLDivElement>("#confirmations"),
+  activity: requireElement<HTMLDivElement>("#activity"),
+  resultWindow: requireElement<HTMLDivElement>("#resultWindow"),
+  resultWindowTitle: requireElement<HTMLHeadingElement>("#resultWindowTitle"),
+  resultWindowSubtitle: requireElement<HTMLParagraphElement>("#resultWindowSubtitle"),
+  resultWindowBody: requireElement<HTMLDivElement>("#resultWindowBody"),
+  resultWindowCloseBtn: requireElement<HTMLButtonElement>("#resultWindowCloseBtn"),
+  orbMount: requireElement<HTMLDivElement>("#orbMount"),
+  glassReply: requireElement<HTMLDivElement>("#glassReply"),
+  glassReplyText: requireElement<HTMLSpanElement>("#glassReplyText"),
+  userMeter: requireElement<HTMLSpanElement>("#userMeter"),
+  aiMeter: requireElement<HTMLSpanElement>("#aiMeter"),
+  finishOnboardingBtn: requireElement<HTMLButtonElement>("#finishOnboardingBtn"),
+  onboardingYoloBtn: requireElement<HTMLButtonElement>("#onboardingYoloBtn"),
+  refreshAppsBtn: requireElement<HTMLButtonElement>("#refreshAppsBtn"),
+  openPermissionsBtn: requireElement<HTMLButtonElement>("#openPermissionsBtn"),
+  manageAppsBtn: requireElement<HTMLButtonElement>("#manageAppsBtn"),
+  yoloModeBtn: requireElement<HTMLButtonElement>("#yoloModeBtn"),
+  yoloModeStatus: requireElement<HTMLParagraphElement>("#yoloModeStatus"),
+  openaiKeyInput: requireElement<HTMLInputElement>("#openaiKeyInput"),
+  saveOpenaiKeyBtn: requireElement<HTMLButtonElement>("#saveOpenaiKeyBtn"),
+  openaiKeyStatus: requireElement<HTMLParagraphElement>("#openaiKeyStatus"),
+  openaiKeyBadge: requireElement<HTMLSpanElement>("#openaiKeyBadge"),
+  realtimeVoiceSelect: requireElement<HTMLSelectElement>("#realtimeVoiceSelect"),
+  realtimeVoiceStatus: requireElement<HTMLParagraphElement>("#realtimeVoiceStatus"),
+  realtimeVoiceBadge: requireElement<HTMLSpanElement>("#realtimeVoiceBadge"),
+  musicKitBadge: requireElement<HTMLSpanElement>("#musicKitBadge"),
+  musicKitStatus: requireElement<HTMLParagraphElement>("#musicKitStatus"),
+  authorizeMusicKitBtn: requireElement<HTMLButtonElement>("#authorizeMusicKitBtn"),
+  codexLoginBadge: requireElement<HTMLSpanElement>("#codexLoginBadge"),
+  codexLoginStatus: requireElement<HTMLParagraphElement>("#codexLoginStatus"),
+  refreshCodexLoginBtn: requireElement<HTMLButtonElement>("#refreshCodexLoginBtn"),
+  startCodexLoginBtn: requireElement<HTMLButtonElement>("#startCodexLoginBtn"),
+  codexLoginOutput: requireElement<HTMLPreElement>("#codexLoginOutput"),
+  codexModelSelect: requireElement<HTMLSelectElement>("#codexModelSelect"),
+  codexModelStatus: requireElement<HTMLParagraphElement>("#codexModelStatus"),
+  refreshTasksBtn: requireElement<HTMLButtonElement>("#refreshTasksBtn"),
+  taskRuns: requireElement<HTMLDivElement>("#taskRuns"),
+  refreshArtifactsBtn: requireElement<HTMLButtonElement>("#refreshArtifactsBtn"),
+  artifactList: requireElement<HTMLDivElement>("#artifactList"),
+  refreshAgentRunsBtn: requireElement<HTMLButtonElement>("#refreshAgentRunsBtn"),
+  agentRuns: requireElement<HTMLDivElement>("#agentRuns"),
+  microphoneSelect: requireElement<HTMLSelectElement>("#microphoneSelect"),
+  refreshMicrophonesBtn: requireElement<HTMLButtonElement>("#refreshMicrophonesBtn"),
+  microphoneStatus: requireElement<HTMLParagraphElement>("#microphoneStatus"),
+  realtimeUsage: requireElement<HTMLDivElement>("#realtimeUsage"),
 });
 
 export type RendererElements = ReturnType<typeof getRendererElements>;

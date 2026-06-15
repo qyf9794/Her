@@ -62,7 +62,8 @@ export type HerTaskEvent =
     }
   | { type: "task_completed"; taskId: string; timestamp: string; result?: unknown }
   | { type: "task_failed"; taskId: string; timestamp: string; error: HerTask["error"] }
-  | { type: "task_cancelled"; taskId: string; timestamp: string; reason?: string };
+  | { type: "task_cancelled"; taskId: string; timestamp: string; reason?: string }
+  | { type: "artifact_created"; taskId: string; timestamp: string; artifactId: string; artifactType: string; title: string };
 
 export type HerTaskView = HerTask & {
   events: HerTaskEvent[];

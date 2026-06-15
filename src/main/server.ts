@@ -11,6 +11,7 @@ import { DesktopContextService } from "./context/desktop-snapshot";
 import { readCodexModel, readOpenaiApiKey, readRealtimeVoice, saveCodexModel, saveOpenaiApiKey, saveRealtimeVoice } from "./config";
 import { getAppleMusicDeveloperToken } from "./music/apple-music-token";
 import { CodingAgentRuntime } from "./agents/coding-agent/runtime";
+import { ArtifactStore } from "./tasks/artifact-store";
 import { TaskQueue } from "./tasks/task-queue";
 import { TaskStore } from "./tasks/task-store";
 import { AliasStore } from "./memory/alias-store";
@@ -45,6 +46,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   const settings = new SettingsStore(userDataDir);
   const memory = new MemoryStore(userDataDir);
   const codingAgent = new CodingAgentRuntime();
+  const artifacts = new ArtifactStore(userDataDir);
   const taskStore = new TaskStore(userDataDir);
   const taskQueue = new TaskQueue(taskStore);
   const aliasStore = new AliasStore(userDataDir);
@@ -58,7 +60,7 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
     setAppPermissions: (appPermissions) => settings.setAppPermissions(appPermissions),
     setCapabilities: (capabilities) => settings.setCapabilities(capabilities),
     setYoloMode: (enabled, appPermissions) => settings.setYoloMode(enabled, appPermissions),
-  }, memory, codingAgent, taskStore, taskQueue, aliasStore);
+  }, memory, codingAgent, taskStore, taskQueue, aliasStore, artifacts);
 
   const safetyIdentifier = crypto.createHash("sha256").update(`her:${userDataDir}`).digest("hex");
 
@@ -237,6 +239,20 @@ export const startLocalServer = async (port: number, userDataDir: string, isPack
   app.get("/api/tasks/:taskId/events", requireAuth, (req, res) => {
     const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
     res.json({ taskId: req.params.taskId, events: taskStore.listEvents(String(req.params.taskId), Number.isFinite(limit) ? limit : 50) });
+  });
+
+  app.get("/api/artifacts", requireAuth, (req, res) => {
+    const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 20;
+    res.json({ artifacts: artifacts.list(Number.isFinite(limit) ? limit : 20) });
+  });
+
+  app.get("/api/artifacts/:artifactId", requireAuth, (req, res) => {
+    const artifact = artifacts.get(String(req.params.artifactId));
+    if (!artifact) {
+      res.status(404).json({ error: "Artifact not found." });
+      return;
+    }
+    res.json({ artifact });
   });
 
   app.post("/api/tasks/:taskId/cancel", requireAuth, (req, res) => {

@@ -270,6 +270,41 @@ h2 {
   border-top: 1px solid #dfe3e6;
 }
 
+.artifactPre {
+  max-height: 460px;
+  overflow: auto;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #d8dee2;
+  border-radius: 6px;
+  background: #f3f5f6;
+  color: #1d2428;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.artifactTable {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.artifactTable th,
+.artifactTable td {
+  max-width: 220px;
+  padding: 8px;
+  border: 1px solid #d8dee2;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.artifactTable th {
+  background: #eef1f2;
+  color: #20272b;
+}
+
 .productShell {
   height: 100vh;
   overflow: hidden;
@@ -730,6 +765,57 @@ body.orbOnlyActive .productShell {
   border-radius: 8px;
   padding: 12px;
   background: #666b70;
+}
+
+.artifactPanel {
+  border: 1px solid #7b8586;
+  border-radius: 8px;
+  padding: 12px;
+  background: #676d6f;
+}
+
+.artifactList,
+.artifactActions,
+.artifactMeta {
+  display: grid;
+  gap: 8px;
+}
+
+.artifactItem {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #7d8788;
+  border-radius: 8px;
+  background: #5e6467;
+  color: #eef3ef;
+}
+
+.artifactHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.artifactHeader strong,
+.artifactItem p {
+  overflow-wrap: anywhere;
+}
+
+.artifactHeader span,
+.artifactMeta {
+  color: #cbd4d2;
+  font-size: 0.76rem;
+}
+
+.artifactMeta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.artifactActions {
+  grid-template-columns: 1fr 1fr;
+  margin-top: 10px;
 }
 
 .devicePanel {

@@ -35,6 +35,8 @@ import { classifyTaskExecution } from "../tasks/task-classifier";
 import { TaskQueue } from "../tasks/task-queue";
 import { TaskStore } from "../tasks/task-store";
 import type { HerTaskStatus, HerTaskView } from "../../shared/tasks";
+import type { HerArtifact, HerArtifactType } from "../../shared/artifacts";
+import { ArtifactStore } from "../tasks/artifact-store";
 import { AliasStore } from "../memory/alias-store";
 import { AliasValidationError, validateAliasTarget } from "../memory/alias-validation";
 
@@ -211,6 +213,7 @@ export class ToolRegistry {
     taskStore?: TaskStore,
     taskQueue?: TaskQueue,
     aliasStore?: AliasStore,
+    private artifacts: ArtifactStore = new ArtifactStore(),
   ) {
     this.codex = new CodexAppServerHarness(audit);
     this.codingAgent = codingAgent ?? new CodingAgentRuntime();
@@ -319,6 +322,7 @@ export class ToolRegistry {
           };
         }
         if (!result.ok) throw new Error(result.error);
+        this.createArtifactForTool(name, result.result, taskId);
         return result.result;
       },
     });
@@ -423,6 +427,7 @@ export class ToolRegistry {
             void this.completeHerTaskAfterCodingAgent(herTaskId, codingTaskId);
           } else {
             this.herTaskQueue.completeAwaitingConfirmation(herTaskId, execution);
+            this.createArtifactForTool(decision.plan.toolName, execution, herTaskId);
           }
         }
       } catch (error) {
@@ -453,6 +458,7 @@ export class ToolRegistry {
     try {
       const task = await this.codingAgent.waitForTerminal(codingTaskId);
       if (task.status === "completed") {
+        this.createArtifactForTool("coding_agent_start", { task }, herTaskId);
         this.herTaskQueue.completeAwaitingConfirmation(herTaskId, { task });
       } else if (task.status === "cancelled") {
         this.herTaskQueue.cancel(herTaskId, "Coding agent task was cancelled.");
@@ -1963,6 +1969,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
 
   private compactResult(name: ToolName, result: unknown, source: "realtime" | "local" = "local") {
     if (name === "tool_result_read") return result;
+    this.createArtifactForTool(name, result);
     this.pruneResultCache();
     const serialized = stableSerialize(result);
     const inlineLimit = source === "realtime" ? REALTIME_TOOL_OUTPUT_INLINE_LIMIT : TOOL_OUTPUT_INLINE_LIMIT;
@@ -1978,6 +1985,37 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
       preview: serialized.slice(0, inlineLimit),
       nextAction: "Use tool_result_read with this handle only if more detail is required.",
     };
+  }
+
+  listArtifacts(limit = 20) {
+    return this.artifacts.list(limit);
+  }
+
+  getArtifact(id: string) {
+    return this.artifacts.get(id);
+  }
+
+  private createArtifactForTool(name: ToolName, result: unknown, sourceTaskId?: string): HerArtifact | undefined {
+    if (!sourceTaskId && taskManagedArtifactTools.has(name)) return undefined;
+    const descriptor = artifactDescriptorForTool(name, result);
+    if (!descriptor) return undefined;
+    const artifact = this.artifacts.create({
+      ...descriptor,
+      sourceTool: name,
+      sourceTaskId,
+      payload: result,
+    });
+    if (sourceTaskId) {
+      this.herTasks.appendEvent({
+        type: "artifact_created",
+        taskId: sourceTaskId,
+        timestamp: artifact.createdAt,
+        artifactId: artifact.id,
+        artifactType: artifact.type,
+        title: artifact.title,
+      });
+    }
+    return artifact;
   }
 
   private readCachedToolResult(handle: string, offset: number, maxChars: number) {
@@ -3367,6 +3405,71 @@ const extractCodingAgentTaskId = (result: unknown) => {
   if (!task || typeof task !== "object" || Array.isArray(task)) return undefined;
   const id = (task as { id?: unknown }).id;
   return typeof id === "string" ? id : undefined;
+};
+
+const taskManagedArtifactTools = new Set<ToolName>(["advanced_shell_command", "coding_agent_start"]);
+
+const artifactDescriptorForTool = (
+  name: ToolName,
+  result: unknown,
+): { type: HerArtifactType; title: string; summary: string } | undefined => {
+  switch (name) {
+    case "file_search": {
+      const count = Array.isArray(result) ? result.length : 0;
+      return { type: "table", title: "File Search Results", summary: `${count} matching file or folder result${count === 1 ? "" : "s"}.` };
+    }
+    case "document_extract":
+      return { type: "document_summary", title: "Document Extract", summary: summaryFromObject(result, "chars", "Extracted document text.") };
+    case "document_folder_digest":
+      return { type: "document_summary", title: "Document Folder Digest", summary: summaryFromObject(result, "count", "Created document digest.") };
+    case "document_prepare_edit":
+      return { type: "diff", title: "Document Edit Preview", summary: "Prepared a diff preview for a document edit." };
+    case "browser_read_page":
+      return { type: "browser_research", title: "Browser Page Snapshot", summary: browserSummary(result) };
+    case "advanced_shell_command":
+      return { type: "command_output", title: "Shell Command Output", summary: commandSummary(result) };
+    case "codex_task_run":
+    case "coding_agent_start":
+    case "coding_agent_get_result":
+      return { type: "coding_result", title: "Coding Agent Result", summary: codingSummary(result) };
+    default:
+      return undefined;
+  }
+};
+
+const summaryFromObject = (result: unknown, key: string, fallback: string) => {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return fallback;
+  const value = (result as Record<string, unknown>)[key];
+  return typeof value === "number" ? `${value} ${key}.` : fallback;
+};
+
+const browserSummary = (result: unknown) => {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return "Captured browser page state.";
+  const value = result as Record<string, unknown>;
+  const title = typeof value.title === "string" ? value.title : "browser page";
+  const url = typeof value.url === "string" ? value.url : "";
+  return [title, url].filter(Boolean).join(" - ");
+};
+
+const commandSummary = (result: unknown) => {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return "Captured shell command output.";
+  const value = result as Record<string, unknown>;
+  const command = typeof value.command === "string" ? value.command : "shell command";
+  const exitCode = typeof value.exitCode === "number" || value.exitCode === null ? `exit ${value.exitCode}` : "completed";
+  return `${command} (${exitCode}).`;
+};
+
+const codingSummary = (result: unknown) => {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return "Captured coding agent result.";
+  const task = (result as { task?: unknown }).task;
+  if (task && typeof task === "object" && !Array.isArray(task)) {
+    const status = (task as { status?: unknown }).status;
+    const prompt = (task as { prompt?: unknown }).prompt;
+    return [typeof status === "string" ? status : undefined, typeof prompt === "string" ? prompt.slice(0, 120) : undefined]
+      .filter(Boolean)
+      .join(" - ") || "Captured coding agent result.";
+  }
+  return "Captured coding agent result.";
 };
 
 const herTaskStatuses = new Set(["queued", "running", "awaiting_confirmation", "completed", "failed", "cancelled", "blocked"]);

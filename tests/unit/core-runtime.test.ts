@@ -9,6 +9,7 @@ import { CapabilityGate } from "../../src/main/capability-gate";
 import { summarizeText } from "../../src/main/context/desktop-snapshot";
 import { createActionPlan, ApprovalPolicy } from "../../src/main/policy/approval-policy";
 import { SettingsStore } from "../../src/main/settings-store";
+import { ArtifactStore } from "../../src/main/tasks/artifact-store";
 import { parseCodexJsonLine, parseCodexJsonLines } from "../../src/main/agents/coding-agent/jsonl-parser";
 import { isSecretEnvKey, sanitizeCodexEnv } from "../../src/main/agents/coding-agent/env-sanitizer";
 import { ConfirmationQueue } from "../../src/main/tools/confirmation";
@@ -216,6 +217,32 @@ describe("auth, confirmation, parser, and redaction utilities", () => {
     expect(summarizeText("A short harmless clipboard note")).toMatchObject({
       status: "available",
       preview: "A short harmless clipboard note",
+    });
+  });
+
+  it("persists redacted artifacts and marks large payloads truncated", () => {
+    const userData = makeTmpDir();
+    const store = new ArtifactStore(userData);
+    const artifact = store.create({
+      type: "command_output",
+      title: "Command",
+      summary: "Ran command",
+      sourceTool: "advanced_shell_command",
+      sourceTaskId: "task-1",
+      payload: {
+        command: "echo ok",
+        token: "secret",
+        ...Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`field${index}`, "x".repeat(800)])),
+      },
+    });
+    expect(artifact.truncated).toBe(true);
+    expect(JSON.stringify(artifact.payload)).not.toContain("secret");
+
+    const reloaded = new ArtifactStore(userData);
+    expect(reloaded.list(1)[0]).toMatchObject({
+      id: artifact.id,
+      type: "command_output",
+      sourceTaskId: "task-1",
     });
   });
 
