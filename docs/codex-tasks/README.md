@@ -13,6 +13,7 @@ git checkout -b codex/her-agent-runtime-m0-m10
 新版 Her Agent Runtime 路线从 M0 开始：
 
 0. `milestone-0-baseline-quality-gate.md`
+1. `milestone-1-renderer-decomposition.md`
 
 原产品化路线历史顺序：
 
