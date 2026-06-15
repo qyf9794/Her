@@ -350,3 +350,14 @@ Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
 - Realtime-2 connected: false
 - Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
 - Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S4 Music, Media, and Video - Passed
+
+Report: `docs/test-runs/simple-command-media/S4-media-video-report.json`
+
+- Total scenarios: 11
+- Passed: 11
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: Music app open/search/state, Spotify missing-config handling, NetEase and QQ Music search opening, media-key safety preflight, YouTube isolated search, and controlled local video state.
+- Safety checks: Spotify tokens were blanked for fixture testing; media keys were not sent without a visible target app; MusicKit private key material was not read into the report.

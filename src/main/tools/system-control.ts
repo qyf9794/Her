@@ -741,9 +741,25 @@ export class SystemControl {
       };
     }
 
-    const targetAppName = appName ? normalizeMediaAppName(appName) : undefined;
+    const targetAppName = appName ? normalizeMediaAppName(appName) : await visibleMediaAppName();
+    const targetVisible = targetAppName ? await isVisibleAppProcess(targetAppName) : false;
+    if (!targetAppName || !targetVisible) {
+      return {
+        status: "unavailable",
+        reasonCode: "no_visible_media_target",
+        action,
+        appName: targetAppName,
+        requestedAppName: appName,
+        attempted: false,
+        note: appName
+          ? "The requested media app is not visible, so Her did not send a playback key."
+          : "No visible media app was detected, so Her did not send a playback key to the current focus.",
+      };
+    }
+
     const script = `
-      ${targetAppName ? `tell application ${JSON.stringify(targetAppName)} to activate\n      delay 0.2` : ""}
+      tell application ${JSON.stringify(targetAppName)} to activate
+      delay 0.2
       tell application "System Events"
         ${mediaKeyAppleScript(action)}
       end tell
@@ -819,6 +835,41 @@ const normalizeMediaAppName = (appName: string) => {
     return "NeteaseMusic";
   }
   return appName;
+};
+
+const knownMediaAppNames = ["Music", "Spotify", "QQMusic", "NeteaseMusic", "TV"];
+const knownMediaAppNamesAppleScript = `{${knownMediaAppNames.map((name) => JSON.stringify(name)).join(", ")}}`;
+
+const visibleMediaAppName = async () => {
+  const script = `
+    tell application "System Events"
+      repeat with mediaAppName in ${knownMediaAppNamesAppleScript}
+        set candidateName to mediaAppName as text
+        if exists process candidateName then
+          tell process candidateName
+            if visible is true then return candidateName
+          end tell
+        end if
+      end repeat
+    end tell
+    return ""
+  `;
+  const output = await run("osascript", ["-e", script], undefined, 5000).catch(() => "");
+  return output || undefined;
+};
+
+const isVisibleAppProcess = async (appName: string) => {
+  const script = `
+    tell application "System Events"
+      if not (exists process ${JSON.stringify(appName)}) then return "false"
+      tell process ${JSON.stringify(appName)}
+        if visible is true then return "true"
+      end tell
+    end tell
+    return "false"
+  `;
+  const output = await run("osascript", ["-e", script], undefined, 5000).catch(() => "false");
+  return output === "true";
 };
 
 const closeWindowScript = (appName: string) => `

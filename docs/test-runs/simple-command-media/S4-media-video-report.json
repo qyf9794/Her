@@ -1,0 +1,197 @@
+{
+  "milestone": "S4",
+  "title": "Music, Media, and Video",
+  "generatedAt": "2026-06-15T16:42:14.671Z",
+  "realtime2Connected": false,
+  "fixtureOrigin": "http://127.0.0.1:52165",
+  "debugPort": 52164,
+  "summary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "S4.music.open",
+      "title": "Open the Music app",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:08.087Z",
+      "completedAt": "2026-06-15T16:42:08.141Z",
+      "payload": {
+        "opened": "Music",
+        "service": "apple_music",
+        "actionSummary": "Opened the macOS Music app."
+      }
+    },
+    {
+      "id": "S4.music.play-song-search",
+      "title": "Open Apple Music search for Taylor Swift Cruel Summer",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:08.141Z",
+      "completedAt": "2026-06-15T16:42:08.192Z",
+      "payload": {
+        "status": "opened_search",
+        "query": "Taylor Swift Cruel Summer",
+        "url": "https://music.apple.com/search?term=Taylor%20Swift%20Cruel%20Summer",
+        "note": "Opened Apple Music search results in Music so you can choose the song.",
+        "service": "apple_music",
+        "actionSummary": "Opened Music search results without claiming playback."
+      }
+    },
+    {
+      "id": "S4.music.playback-state",
+      "title": "Read Music playback state",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:08.192Z",
+      "completedAt": "2026-06-15T16:42:10.212Z",
+      "payload": {
+        "app": "Music",
+        "running": true,
+        "state": "stopped",
+        "service": "apple_music",
+        "actionSummary": "Read Music playback state."
+      }
+    },
+    {
+      "id": "S4.spotify.search-missing-config",
+      "title": "Return missing Spotify config for search",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:10.212Z",
+      "completedAt": "2026-06-15T16:42:10.212Z",
+      "payload": {
+        "status": "missing_config",
+        "service": "spotify",
+        "missing": [
+          "HER_SPOTIFY_ACCESS_TOKEN"
+        ],
+        "note": "Spotify official API support needs an OAuth access token with user-read-playback-state, user-modify-playback-state, and streaming scopes.",
+        "actionSummary": "Reported missing Spotify API configuration instead of fake search success."
+      }
+    },
+    {
+      "id": "S4.spotify.play-missing-config",
+      "title": "Return missing Spotify config for playback",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:10.212Z",
+      "completedAt": "2026-06-15T16:42:10.212Z",
+      "payload": {
+        "status": "missing_config",
+        "service": "spotify",
+        "missing": [
+          "HER_SPOTIFY_ACCESS_TOKEN"
+        ],
+        "note": "Spotify official API support needs an OAuth access token with user-read-playback-state, user-modify-playback-state, and streaming scopes.",
+        "actionSummary": "Reported missing Spotify API configuration instead of fake playback success."
+      }
+    },
+    {
+      "id": "S4.spotify.state-missing-config",
+      "title": "Return missing Spotify config for playback state",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:10.212Z",
+      "completedAt": "2026-06-15T16:42:10.212Z",
+      "payload": {
+        "status": "missing_config",
+        "service": "spotify",
+        "missing": [
+          "HER_SPOTIFY_ACCESS_TOKEN"
+        ],
+        "note": "Spotify official API support needs an OAuth access token with user-read-playback-state, user-modify-playback-state, and streaming scopes.",
+        "actionSummary": "Reported missing Spotify API configuration instead of fake playback state."
+      }
+    },
+    {
+      "id": "S4.netease.open-search",
+      "title": "Open NetEase Cloud Music search",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:10.212Z",
+      "completedAt": "2026-06-15T16:42:10.292Z",
+      "payload": {
+        "status": "opened",
+        "service": "netease_cloud_music",
+        "query": "晴天 周杰伦",
+        "url": "https://music.163.com/#/search/m/?s=%E6%99%B4%E5%A4%A9%20%E5%91%A8%E6%9D%B0%E4%BC%A6",
+        "target": "web",
+        "note": "NetEase Cloud Music app was not available, so opened the official web page. Direct playback is not claimed.",
+        "actionSummary": "Opened NetEase Cloud Music app or official search page without claiming playback."
+      }
+    },
+    {
+      "id": "S4.qq.open-web-search",
+      "title": "Open QQ Music web search",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:10.292Z",
+      "completedAt": "2026-06-15T16:42:10.388Z",
+      "payload": {
+        "status": "opened_search",
+        "service": "qq_music",
+        "target": "web",
+        "query": "晴天 周杰伦",
+        "url": "https://y.qq.com/n/ryqq/search?w=%E6%99%B4%E5%A4%A9%20%E5%91%A8%E6%9D%B0%E4%BC%A6",
+        "note": "Opened QQ Music official web page only. Direct playback is not claimed.",
+        "actionSummary": "Opened QQ Music official search page without claiming playback."
+      }
+    },
+    {
+      "id": "S4.media-key.no-visible-target",
+      "title": "Do not send media key without a visible target app",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:10.388Z",
+      "completedAt": "2026-06-15T16:42:12.167Z",
+      "payload": {
+        "status": "unavailable",
+        "reasonCode": "no_visible_media_target",
+        "action": "play_pause",
+        "appName": "Her S4 Missing Player",
+        "requestedAppName": "Her S4 Missing Player",
+        "attempted": false,
+        "note": "The requested media app is not visible, so Her did not send a playback key.",
+        "actionSummary": "Returned unavailable instead of sending play/pause to an unknown target."
+      }
+    },
+    {
+      "id": "S4.video.youtube-search",
+      "title": "Open YouTube search in isolated Chrome",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:12.167Z",
+      "completedAt": "2026-06-15T16:42:13.208Z",
+      "payload": {
+        "status": "opened_search",
+        "service": "youtube",
+        "query": "lofi hip hop radio",
+        "url": "https://www.youtube.com/results?search_query=lofi%20hip%20hop%20radio",
+        "resolved": false,
+        "browser": "isolated_chrome",
+        "note": "Opened YouTube search results in isolated Chrome.",
+        "actionSummary": "Opened YouTube search in isolated Chrome without claiming playback."
+      }
+    },
+    {
+      "id": "S4.video.controlled-state",
+      "title": "Read video state from controlled test page",
+      "status": "passed",
+      "startedAt": "2026-06-15T16:42:13.208Z",
+      "completedAt": "2026-06-15T16:42:13.303Z",
+      "payload": {
+        "ok": true,
+        "action": "state",
+        "url": "http://127.0.0.1:52165/",
+        "title": "Her S4 Video Fixture",
+        "paused": true,
+        "currentTime": 0,
+        "duration": null,
+        "readyState": 0,
+        "muted": true,
+        "volume": 1,
+        "actionSummary": "Read video playback state from a controlled local fixture."
+      }
+    }
+  ],
+  "acceptance": {
+    "playbackCommandsNameTargetServiceQueryFallback": true,
+    "missingSetupDoesNotProduceFakeSuccess": true,
+    "mediaKeyRequiresVisibleTarget": true,
+    "noMusicKitPrivateKeyMaterialInReport": true,
+    "controlledVideoStateWorks": true
+  }
+}
