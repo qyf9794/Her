@@ -142,6 +142,7 @@ export const createContentSecurityPolicy = (options: RendererSecurityOptions) =>
       "ws://127.0.0.1:*",
       "https://api.openai.com",
       "wss://api.openai.com",
+      "https://api.music.apple.com",
       "https://js-cdn.music.apple.com",
       "https://amp-api.music.apple.com",
       "https://play.itunes.apple.com",

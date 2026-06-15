@@ -58,6 +58,18 @@ describe("Apple Music config", () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it("uses HER MusicKit metadata when legacy Apple env vars are empty", async () => {
+    process.env.APPLE_TEAM_ID = "";
+    process.env.APPLE_MUSICKIT_KEY_ID = "";
+    process.env.HER_APPLE_MUSIC_TEAM_ID = "ABCDE12345";
+    process.env.HER_APPLE_MUSIC_KEY_ID = "XZD9PPKW2J";
+    vi.resetModules();
+
+    const { config } = await import("../../src/main/config");
+    expect(config.appleMusicTeamId).toBe("ABCDE12345");
+    expect(config.appleMusicKeyId).toBe("XZD9PPKW2J");
+  });
+
   it("rejects invalid MusicKit key metadata", async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "her-apple-music-config-invalid-"));
     process.chdir(tempDir);

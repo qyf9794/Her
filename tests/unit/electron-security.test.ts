@@ -72,6 +72,7 @@ describe("Electron production security", () => {
     expect(prodCsp).toContain("object-src 'none'");
     expect(prodCsp).toContain("frame-ancestors 'none'");
     expect(prodCsp).toContain("https://api.openai.com");
+    expect(prodCsp).toContain("https://api.music.apple.com");
     expect(prodCsp).not.toContain("'unsafe-eval'");
 
     const devCsp = createContentSecurityPolicy(devOptions);
