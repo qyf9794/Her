@@ -1269,7 +1269,8 @@ const applyAgentRun = async (taskId: string) => {
     });
     if (result.ok && "requiresConfirmation" in result && result.requiresConfirmation) {
       addActivity(`Codex apply requires confirmation: ${result.summary}`, "pending");
-      await reloadPendingConfirmations();
+      renderConfirmationWindow([result]);
+      await reloadPendingConfirmations({ showWindow: true });
       return;
     }
     if (result.ok) {
@@ -2141,6 +2142,7 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
   if (result.ok && result.requiresConfirmation) {
     setVisualState("confirming");
     addActivity(result.summary, "pending");
+    renderConfirmationWindow([result]);
     renderConfirmation(result);
   } else if (result.ok) {
     setVisualState("listening");
@@ -2183,6 +2185,11 @@ const pollQueuedToolDisplay = async (taskId: string) => {
     });
     maybeShowToolDisplay(status);
     const task = readTaskStatusPayload(status);
+    if (task?.status === "awaiting_confirmation" || task?.status === "needs_confirmation") {
+      await reloadPendingConfirmations({ showWindow: true });
+      setVisualState("confirming");
+      return;
+    }
     if (task?.status && !["queued", "running"].includes(task.status)) return;
   }
 };
@@ -2195,6 +2202,12 @@ const findQueuedTasks = (value: unknown): Array<{ taskId?: string }> => {
     return queuedTasks
       .map((item) => (item && typeof item === "object" ? { taskId: String((item as Record<string, unknown>).taskId ?? "") } : {}))
       .filter((item) => item.taskId);
+  }
+  const task = objectValue.task;
+  if (task && typeof task === "object" && !Array.isArray(task)) {
+    const taskRecord = task as Record<string, unknown>;
+    const taskId = typeof taskRecord.taskId === "string" ? taskRecord.taskId : typeof taskRecord.id === "string" ? taskRecord.id : undefined;
+    if (taskId) return [{ taskId }];
   }
   return Object.values(objectValue).flatMap((nested) => findQueuedTasks(nested));
 };
@@ -2406,6 +2419,33 @@ const renderConfirmation = (result: Extract<ToolCallResult, { requiresConfirmati
   confirmations.prepend(item);
 };
 
+const renderConfirmationWindow = (results: Array<Extract<ToolCallResult, { requiresConfirmation: true }>>) => {
+  if (!results.length) return;
+  resultWindowTitle.textContent = results.length === 1 ? "需要确认" : `需要确认 (${results.length})`;
+  resultWindowSubtitle.textContent = results.length === 1
+    ? [results[0].riskLabel ?? results[0].risk, formatExpiry(results[0].expiresAt)].filter(Boolean).join(" · ")
+    : "请逐项批准或拒绝";
+  resultWindowBody.innerHTML = `
+    <section class="confirmationDialogList">
+      ${results.map((result) => `
+        <article class="confirmation confirmationDialog" data-id="${escapeHtml(result.confirmationId)}">
+          <div class="confirmationHeader">
+            <span class="riskBadge">${escapeHtml(result.riskLabel ?? result.risk ?? "Action")}</span>
+            <span>${escapeHtml(formatExpiry(result.expiresAt))}</span>
+          </div>
+          <p>${escapeHtml(result.summary)}</p>
+          ${renderConfirmationDetails(result)}
+          <div class="confirmActions">
+            <button type="button" data-decision="approve">Approve</button>
+            <button type="button" data-decision="reject">Reject</button>
+          </div>
+        </article>
+      `).join("")}
+    </section>
+  `;
+  resultWindow.classList.remove("hidden");
+};
+
 const renderConfirmationDetails = (result: Extract<ToolCallResult, { requiresConfirmation: true }>) => {
   const rows = [
     result.target ? ["Target", result.target] : undefined,
@@ -2463,37 +2503,43 @@ type PendingConfirmation = {
   expiresAt: string;
 };
 
-const reloadPendingConfirmations = async () => {
+const reloadPendingConfirmations = async (options: { showWindow?: boolean } = {}) => {
   const pending = await getJson<PendingConfirmation[]>("/api/tools/pending");
   confirmations.textContent = "";
   confirmations.classList.toggle("empty", pending.length === 0);
   if (!pending.length) {
     confirmations.textContent = "No pending actions";
-    return;
+    if (options.showWindow && resultWindowBody.querySelector(".confirmation")) resultWindow.classList.add("hidden");
+    return pending;
   }
 
   for (const item of pending) {
-    renderConfirmation({
-      ok: true,
-      name: item.name,
-      requiresConfirmation: true,
-      confirmationId: item.confirmationId,
-      summary: item.summary,
-      risk: item.risk,
-      riskLabel: item.riskLabel,
-      target: item.target,
-      preview: item.preview,
-      reversible: item.reversible,
-      policyRationale: item.policyRationale,
-      taskId: item.taskId,
-      expiresAt: item.expiresAt,
-    });
+    renderConfirmation(toConfirmationResult(item));
   }
+  if (options.showWindow) renderConfirmationWindow(pending.map(toConfirmationResult));
+  return pending;
 };
+
+const toConfirmationResult = (item: PendingConfirmation): Extract<ToolCallResult, { requiresConfirmation: true }> => ({
+  ok: true,
+  name: item.name,
+  requiresConfirmation: true,
+  confirmationId: item.confirmationId,
+  summary: item.summary,
+  risk: item.risk,
+  riskLabel: item.riskLabel,
+  target: item.target,
+  preview: item.preview,
+  reversible: item.reversible,
+  policyRationale: item.policyRationale,
+  taskId: item.taskId,
+  expiresAt: item.expiresAt,
+});
 
 const decideConfirmation = async (confirmationId: string, approved: boolean) => {
   const result = await postJson<ConfirmationResult>("/api/tools/confirm", { confirmationId, approved });
-  document.querySelector(`[data-id="${confirmationId}"]`)?.remove();
+  document.querySelectorAll(`[data-id="${confirmationId}"]`).forEach((item) => item.remove());
+  if (!resultWindowBody.querySelector(".confirmation")) resultWindow.classList.add("hidden");
   if (!confirmations.children.length) {
     confirmations.textContent = "No pending actions";
     confirmations.classList.add("empty");
@@ -2501,7 +2547,16 @@ const decideConfirmation = async (confirmationId: string, approved: boolean) => 
   }
 
   addActivity(approved ? `Approved ${confirmationId}` : `Rejected ${confirmationId}`, approved ? "ok" : "error");
+  await reloadPendingConfirmations({ showWindow: true });
   sendUserText(`Local confirmation result: ${JSON.stringify(result)}`);
+};
+
+const handleConfirmationClick = (event: Event) => {
+  const target = event.target as HTMLElement;
+  const button = target.closest<HTMLButtonElement>("button[data-decision]");
+  const item = target.closest<HTMLElement>(".confirmation");
+  if (!button || !item?.dataset.id) return;
+  void decideConfirmation(item.dataset.id, button.dataset.decision === "approve");
 };
 
 const setupInputAnalyser = (stream: MediaStream) => {
@@ -2965,11 +3020,10 @@ orbMount.addEventListener("pointerdown", startOrbMicPreview);
 orbMount.addEventListener("pointerup", endOrbMicPreview);
 orbMount.addEventListener("pointercancel", endOrbMicPreview);
 confirmations.addEventListener("click", (event) => {
-  const target = event.target as HTMLElement;
-  const button = target.closest<HTMLButtonElement>("button[data-decision]");
-  const item = target.closest<HTMLElement>(".confirmation");
-  if (!button || !item?.dataset.id) return;
-  void decideConfirmation(item.dataset.id, button.dataset.decision === "approve");
+  handleConfirmationClick(event);
+});
+resultWindowBody.addEventListener("click", (event) => {
+  handleConfirmationClick(event);
 });
 taskRuns.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-task-cancel]");

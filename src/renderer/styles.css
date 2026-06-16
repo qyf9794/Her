@@ -1197,6 +1197,13 @@ body.orbOnlyActive .productShell {
   font-size: 13px;
 }
 
+#confirmations {
+  max-height: min(320px, 36vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
 .usagePanel {
   display: grid;
   gap: 8px;
@@ -1244,6 +1251,11 @@ body.orbOnlyActive .productShell {
   background: #686c70;
   color: #edf2ef;
   overflow-wrap: anywhere;
+}
+
+.confirmationDialogList {
+  display: grid;
+  gap: 12px;
 }
 
 .activity.pending {
