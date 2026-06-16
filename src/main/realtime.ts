@@ -23,26 +23,31 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
-  const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      ...(safetyIdentifier ? { "OpenAI-Safety-Identifier": safetyIdentifier } : {}),
-    },
-    body: JSON.stringify({
-      expires_after: {
-        anchor: "created_at",
-        seconds: 600,
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(safetyIdentifier ? { "OpenAI-Safety-Identifier": safetyIdentifier } : {}),
       },
-      session: createRealtimeClientSecretSession({
-        model: config.realtimeModel,
-        voice: config.realtimeVoice,
-        instructions: buildRealtimeAgentInstructions(),
-        options: realtimeRuntimeOptions(),
+      body: JSON.stringify({
+        expires_after: {
+          anchor: "created_at",
+          seconds: 600,
+        },
+        session: createRealtimeClientSecretSession({
+          model: config.realtimeModel,
+          voice: config.realtimeVoice,
+          instructions: buildRealtimeAgentInstructions(),
+          options: realtimeRuntimeOptions(),
+        }),
       }),
-    }),
-  });
+    });
+  } catch (error) {
+    throw new Error(`OpenAI Realtime network request failed: ${networkErrorMessage(error)}`);
+  }
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
@@ -76,4 +81,17 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
       },
     },
   };
+};
+
+const networkErrorMessage = (error: unknown) => {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause;
+  if (cause instanceof Error) return `${error.message} (${cause.message})`;
+  if (cause && typeof cause === "object") {
+    const details = cause as { code?: unknown; message?: unknown };
+    const code = typeof details.code === "string" ? `${details.code}: ` : "";
+    const message = typeof details.message === "string" ? details.message : "";
+    if (code || message) return `${error.message} (${code}${message})`;
+  }
+  return error.message;
 };

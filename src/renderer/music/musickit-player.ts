@@ -111,7 +111,10 @@ export const resumeAppleMusic = async () => {
 
 const getMusicKitInstance = async () => {
   if (instancePromise) return instancePromise;
-  instancePromise = configureMusicKit();
+  instancePromise = configureMusicKit().catch((error) => {
+    instancePromise = undefined;
+    throw error;
+  });
   return instancePromise;
 };
 
