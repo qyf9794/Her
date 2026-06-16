@@ -197,14 +197,17 @@ export class FileManager {
     return { from, to, note: "Moved to Trash; not permanently deleted." };
   }
 
-  async writeText(inputPath: string, content: string) {
+  async writeText(inputPath: string, content: string, overwrite = false) {
     const filePath = this.resolveAllowed(inputPath);
     const ext = path.extname(filePath).toLowerCase();
     if (!new Set([".txt", ".md", ".markdown"]).has(ext)) {
       throw new Error("Only .txt and .md files can be edited by this tool.");
     }
+    if (!overwrite && await exists(filePath)) {
+      throw new Error(`File already exists: ${filePath}`);
+    }
     await fs.writeFile(filePath, content, "utf8");
-    return { path: filePath, chars: content.length };
+    return { path: filePath, chars: content.length, overwritten: overwrite };
   }
 }
 

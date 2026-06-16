@@ -24,7 +24,7 @@ import {
 } from "../shared/realtime-config";
 import type { ConfirmationResult, ToolCallRequest, ToolCallResult, ToolName } from "../shared/tools";
 import { getJson, localApiUrl, postJson, writeAudit } from "./api/local-client";
-import { authorizeMusicKit, getMusicKitStatus, pauseAppleMusic, playAppleMusicSong, resumeAppleMusic } from "./music/musickit-player";
+import { authorizeMusicKit, getMusicKitStatus } from "./music/musickit-player";
 import { RealtimeSessionService, type RealtimeToolDefinition } from "./realtime/realtime-session-service";
 import { renderAppShell } from "./components/app-shell";
 import { getRendererElements } from "./components/dom-elements";
@@ -169,7 +169,6 @@ let aiLevel = 0;
 let hasOpenaiApiKey = false;
 let selectedMicrophoneId = window.localStorage.getItem("her:selectedMicrophoneId") ?? "";
 let isOrbOnly = window.localStorage.getItem("her:orbOnly") === "true";
-let musicPlaybackPoll: number | undefined;
 let contextPoll: number | undefined;
 let currentMiniPlayerTrack: MiniPlayerTrack | undefined;
 let taskRunsPoll: number | undefined;
@@ -284,7 +283,6 @@ const loadStartupData = async () => {
   startWorkflowRunsPolling();
   startArtifactsPolling();
   startAgentRunsPolling();
-  startMusicPlaybackRequestPolling();
 };
 
 const loadInstalledApps = async () => {
@@ -1489,11 +1487,14 @@ const pauseMiniPlayer = async () => {
   if (!currentMiniPlayerTrack) return;
   miniPlayerPauseBtn.disabled = true;
   try {
-    await pauseAppleMusic();
+    await postJson<ToolCallResult>("/api/tools/execute", {
+      name: "media_key_control",
+      source: "local",
+      arguments: { action: "play_pause", appName: "Music" },
+    });
     renderMiniPlayer({ ...currentMiniPlayerTrack, state: "paused" });
-    await postJson("/api/music/playback-status", { status: "paused", songId: currentMiniPlayerTrack.id });
   } catch (error) {
-    addActivity(`Apple Music pause failed: ${errorMessage(error)}`, "error");
+    addActivity(`Music pause failed: ${errorMessage(error)}`, "error");
   }
 };
 
@@ -1501,11 +1502,14 @@ const resumeMiniPlayer = async () => {
   if (!currentMiniPlayerTrack) return;
   miniPlayerPlayBtn.disabled = true;
   try {
-    await resumeAppleMusic();
+    await postJson<ToolCallResult>("/api/tools/execute", {
+      name: "media_key_control",
+      source: "local",
+      arguments: { action: "play_pause", appName: "Music" },
+    });
     renderMiniPlayer({ ...currentMiniPlayerTrack, state: "playing" });
-    await postJson("/api/music/playback-status", { status: "playing_requested", songId: currentMiniPlayerTrack.id });
   } catch (error) {
-    addActivity(`Apple Music resume failed: ${errorMessage(error)}`, "error");
+    addActivity(`Music resume failed: ${errorMessage(error)}`, "error");
   }
 };
 
@@ -2119,16 +2123,6 @@ const coerceToolArguments = (input: unknown): Record<string, unknown> => {
   return {};
 };
 
-type AppleMusicToolPayload = {
-  status?: string;
-  source?: string;
-  id?: string;
-  title?: string;
-  artist?: string;
-  album?: string;
-  artworkUrl?: string;
-};
-
 const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: string) => {
   setVisualState("tool");
   const args = await enrichToolArgumentsWithContext(name, coerceToolArguments(input));
@@ -2144,13 +2138,12 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
     addActivity(result.summary, "pending");
     renderConfirmationWindow([result]);
     renderConfirmation(result);
+    await loadTaskRuns();
   } else if (result.ok) {
     setVisualState("listening");
     maybeShowToolDisplay(result);
     maybeWatchQueuedToolDisplays(result);
-    if (name === "music_play_song") {
-      await maybePlayAppleMusicCatalogResult(result.result);
-    }
+    await loadTaskRuns();
     if (name === "app_permission_set" || name === "capability_set" || name === "yolo_mode_set") {
       await reloadSettingsAndApps();
     }
@@ -2176,8 +2169,9 @@ const maybeWatchQueuedToolDisplays = (result: ToolCallResult) => {
 };
 
 const pollQueuedToolDisplay = async (taskId: string) => {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
     await sleep(1000);
+    await loadTaskRuns();
     const status = await postJson<ToolCallResult>("/api/tools/execute", {
       name: "task_status",
       source: "local",
@@ -2190,7 +2184,10 @@ const pollQueuedToolDisplay = async (taskId: string) => {
       setVisualState("confirming");
       return;
     }
-    if (task?.status && !["queued", "running"].includes(task.status)) return;
+    if (task?.status && !["queued", "running"].includes(task.status)) {
+      await loadArtifacts();
+      return;
+    }
   }
 };
 
@@ -2238,120 +2235,6 @@ const enrichToolArgumentsWithContext = async (name: ToolName, args: Record<strin
     };
   } catch {
     return args;
-  }
-};
-
-const maybePlayAppleMusicCatalogResult = async (payload: unknown) => {
-  if (!isAppleMusicCatalogPayload(payload)) return;
-  if (payload.status === "playing" || payload.source !== "apple_music_api" || !payload.id) return;
-
-  try {
-    const playback = await playAppleMusicSong(payload.id);
-    if (playback.status === "needs_authorization") {
-      renderMusicKitStatus(false, "Click Authorize to stream Apple Music catalog songs.");
-      renderMiniPlayer({ ...payload, id: payload.id, state: "paused" });
-      addActivity("Apple Music authorization required", "pending");
-      return;
-    }
-    if (playback.status === "electron_playback_unsupported") {
-      renderMusicKitStatus(true, playback.note);
-      addActivity("Apple Music playback is using native Music fallback", "pending");
-      return;
-    }
-    renderMiniPlayer({
-      id: payload.id,
-      title: payload.title,
-      artist: payload.artist,
-      album: payload.album,
-      artworkUrl: payload.artworkUrl,
-      state: "playing",
-    });
-    renderMusicKitStatus(true, `Requested Apple Music playback: ${[payload.title, payload.artist].filter(Boolean).join(" - ") || payload.id}`);
-    addActivity(`Apple Music playback requested: ${payload.title ?? payload.id}`, "ok");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    renderMusicKitStatus(false, message);
-    addActivity(`MusicKit playback failed: ${message}`, "error");
-  }
-};
-
-const isAppleMusicCatalogPayload = (payload: unknown): payload is AppleMusicToolPayload =>
-  Boolean(payload && typeof payload === "object" && !Array.isArray(payload));
-
-type QueuedMusicPlaybackRequest = {
-  action?: "play" | "pause" | "stop";
-  id: string;
-  title?: string;
-  artist?: string;
-  album?: string;
-  artworkUrl?: string;
-};
-
-const startMusicPlaybackRequestPolling = () => {
-  if (musicPlaybackPoll) return;
-  musicPlaybackPoll = window.setInterval(() => void pollMusicPlaybackRequest(), 1000);
-  void pollMusicPlaybackRequest();
-};
-
-const pollMusicPlaybackRequest = async () => {
-  try {
-    const response = await getJson<{ request?: QueuedMusicPlaybackRequest }>("/api/music/playback-requests/next");
-    if (!response.request) return;
-    const request = response.request;
-    if (request.action === "pause" || request.action === "stop") {
-      await pauseAppleMusic();
-      if (currentMiniPlayerTrack) renderMiniPlayer({ ...currentMiniPlayerTrack, state: "paused" });
-      addActivity("Apple Music playback paused", "ok");
-      await postJson("/api/music/playback-status", { status: "paused" });
-      return;
-    }
-
-    const playback = await playAppleMusicSong(request.id);
-    if (playback.status === "needs_authorization") {
-      renderMusicKitStatus(false, "Click Authorize to stream Apple Music catalog songs.");
-      renderMiniPlayer({ ...request, id: request.id, state: "paused" });
-      addActivity("Apple Music authorization required", "pending");
-      await postJson("/api/music/playback-status", {
-        status: "needs_authorization",
-        songId: request.id,
-        title: request.title,
-        artist: request.artist,
-      });
-      return;
-    }
-    if (playback.status === "electron_playback_unsupported") {
-      renderMusicKitStatus(true, playback.note);
-      addActivity("Apple Music playback is using native Music fallback", "pending");
-      await postJson("/api/music/playback-status", {
-        status: "electron_playback_unsupported",
-        songId: request.id,
-        title: request.title,
-        artist: request.artist,
-        album: request.album,
-        artworkUrl: request.artworkUrl,
-      });
-      return;
-    }
-    renderMiniPlayer({
-      id: request.id,
-      title: request.title,
-      artist: request.artist,
-      album: request.album,
-      artworkUrl: request.artworkUrl,
-      state: "playing",
-    });
-    renderMusicKitStatus(true, `Requested Apple Music playback: ${[request.title, request.artist].filter(Boolean).join(" - ") || request.id}`);
-    addActivity(`Apple Music playback requested: ${request.title ?? request.id}`, "ok");
-    await postJson("/api/music/playback-status", {
-      status: "playing_requested",
-      songId: request.id,
-      title: request.title,
-      artist: request.artist,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    addActivity(`MusicKit playback request failed: ${message}`, "error");
-    await postJson("/api/music/playback-status", { status: "error", error: message });
   }
 };
 

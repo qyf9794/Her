@@ -100,6 +100,7 @@ const resolveUpdateChannel = (value: string | undefined): UpdateChannel => {
 
 export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  openaiProxyUrl: process.env.HER_OPENAI_PROXY_URL ?? "",
   realtimeMode,
   realtimeModel: process.env.HER_REALTIME_MODEL ?? (realtimeMode === "economy" ? "gpt-realtime-mini" : "gpt-realtime-2"),
   realtimeEconomyModel: process.env.HER_REALTIME_ECONOMY_MODEL ?? "gpt-realtime-mini",

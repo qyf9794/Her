@@ -16,7 +16,7 @@ import { parseCodexJsonLine, parseCodexJsonLines } from "../../src/main/agents/c
 import { isSecretEnvKey, sanitizeCodexEnv } from "../../src/main/agents/coding-agent/env-sanitizer";
 import { ConfirmationQueue } from "../../src/main/tools/confirmation";
 import { allToolDefinitions } from "../../src/main/tools/metadata";
-import { manifestRealtimeToolDefinitionsForBundles, toolManifest, toolRequiresConfirmation } from "../../src/main/tools/manifest";
+import { manifestRealtimeToolDefinitionsForBundles, toolManifest, toolRequiresConfirmation, toolRiskByName } from "../../src/main/tools/manifest";
 import { redactTaskValue } from "../../src/main/tasks/task-redaction";
 import type { CodingAgentTaskView } from "../../src/shared/agents/coding-agent";
 
@@ -107,6 +107,18 @@ describe("approval policy", () => {
     }
   });
 
+  it("allows ordinary window operations without confirmation while keeping close-all protected", () => {
+    expect(toolRiskByName.window_auto_arrange).toBe("local_open");
+    expect(toolRequiresConfirmation("window_auto_arrange")).toBe(false);
+    expect(toolRiskByName.window_minimize_unrelated).toBe("local_open");
+    expect(toolRequiresConfirmation("window_minimize_unrelated")).toBe(false);
+    expect(toolRiskByName.desktop_show).toBe("local_open");
+    expect(toolRequiresConfirmation("desktop_show")).toBe(false);
+
+    expect(toolRiskByName.window_close_all).toBe("system_change");
+    expect(toolRequiresConfirmation("window_close_all")).toBe(true);
+  });
+
   it("lets active YOLO bypass low-risk local writes but not expired YOLO", () => {
     const policy = new ApprovalPolicy();
     const active = policy.decide({
@@ -152,6 +164,30 @@ describe("capability gate and path allowlist", () => {
 
     expect(manager.resolveAllowed(path.join(allowed, "ok.txt"))).toBe(path.join(allowed, "ok.txt"));
     expect(() => manager.resolveAllowed(path.join(outside, "no.txt"))).toThrow("Path is outside allowed directories");
+
+    if (typeof previous === "string") process.env.HER_ALLOWED_DIRECTORIES = previous;
+    else delete process.env.HER_ALLOWED_DIRECTORIES;
+  });
+
+  it("writes text files only inside allowlisted folders and refuses accidental overwrite", async () => {
+    const allowed = makeTmpDir();
+    const outside = makeTmpDir();
+    const previous = process.env.HER_ALLOWED_DIRECTORIES;
+    process.env.HER_ALLOWED_DIRECTORIES = allowed;
+    vi.resetModules();
+    const { FileManager } = await import("../../src/main/tools/file-manager");
+    const manager = new FileManager();
+    const target = path.join(allowed, "summary.md");
+
+    await expect(manager.writeText(target, "# Summary\n")).resolves.toMatchObject({
+      path: target,
+      chars: 10,
+      overwritten: false,
+    });
+    expect(fs.readFileSync(target, "utf8")).toBe("# Summary\n");
+    await expect(manager.writeText(target, "replace")).rejects.toThrow("File already exists");
+    await expect(manager.writeText(target, "replace", true)).resolves.toMatchObject({ overwritten: true });
+    await expect(manager.writeText(path.join(outside, "summary.md"), "no")).rejects.toThrow("Path is outside allowed directories");
 
     if (typeof previous === "string") process.env.HER_ALLOWED_DIRECTORIES = previous;
     else delete process.env.HER_ALLOWED_DIRECTORIES;

@@ -1,10 +1,12 @@
 import dotenv from "dotenv";
 import crypto from "node:crypto";
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config({ path: ".env" });
 
 const apiKey = process.env.OPENAI_API_KEY;
+const openaiProxyUrl = process.env.HER_OPENAI_PROXY_URL?.trim() ?? "";
 const model = process.env.HER_REALTIME_MODEL ?? "gpt-realtime-2";
 const voice = process.env.HER_REALTIME_VOICE ?? "marin";
 const postInstructions = Number(process.env.HER_REALTIME_POST_INSTRUCTIONS_TOKENS ?? "6000");
@@ -22,7 +24,7 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+const response = await fetchOpenai("https://api.openai.com/v1/realtime/client_secrets", {
   method: "POST",
   headers: {
     Authorization: `Bearer ${apiKey}`,
@@ -84,3 +86,11 @@ console.log(JSON.stringify({
   vad_threshold: vadThreshold,
   has_client_secret: hasSecret,
 }));
+
+function fetchOpenai(url, init) {
+  if (!openaiProxyUrl) return fetch(url, init);
+  return undiciFetch(url, {
+    ...init,
+    dispatcher: new ProxyAgent(openaiProxyUrl),
+  });
+}

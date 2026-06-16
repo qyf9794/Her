@@ -8,6 +8,7 @@ const capabilityByTool: Partial<Record<ToolName, CapabilityKey>> = {
   file_read: "fileManagement",
   file_open: "fileManagement",
   file_create_folder: "fileManagement",
+  file_write_text: "fileManagement",
   file_rename: "fileManagement",
   file_move: "fileManagement",
   file_copy: "fileManagement",

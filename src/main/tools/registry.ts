@@ -348,7 +348,7 @@ export class ToolRegistry {
         task,
         mode: "task_runtime",
         locks: resourceLocks,
-        nextAction: "Use task_status, task_list, or the Task Panel to monitor this task.",
+        nextAction: "The task has only been queued. Use task_status, task_list, or the Task Panel to monitor it before telling the user it is complete.",
       },
     };
   }
@@ -721,6 +721,8 @@ export class ToolRegistry {
         return this.files.open(args.path as string, args.appName as string | undefined);
       case "file_create_folder":
         return this.files.createFolder(args.parentPath as string, args.folderName as string);
+      case "file_write_text":
+        return this.files.writeText(args.path as string, args.content as string, args.overwrite as boolean);
       case "file_rename":
         return this.files.rename(args.path as string, args.newName as string);
       case "file_move":
@@ -1552,7 +1554,7 @@ export class ToolRegistry {
       herToolGateway: {
         requests: gatewayRequests,
         results: gatewayResults,
-        note: "HER validated and queued accepted tool requests through the local Tool Gateway.",
+        note: "HER validated and queued accepted tool requests through the local Tool Gateway. These follow-up local actions are not complete until their HER tasks report success.",
       },
     };
   }
@@ -1604,6 +1606,8 @@ export class ToolRegistry {
 - To request HER local execution, include exactly one final block:
   <her_tool_gateway>{"requests":[{"toolName":"mac_calendar_create","arguments":{"title":"...","start":"...","end":"...","attendees":[]},"priority":"normal","reason":"..."}]}</her_tool_gateway>
 - HER will validate, queue, and confirm these requests after Codex completes. Do not claim the HER tools have already run.
+- If HER Tool Gateway requests are queued, the Codex portion completed but local side effects are still pending. Do not claim desktop files, notes, emails, or other local outputs exist until the HER tool task reports success.
+- To create a requested Desktop/Documents/Downloads text or markdown file, request file_write_text with an allowlisted path such as ~/Desktop/summary.md. Use overwrite false unless the user explicitly asks to replace an existing file.
 - For pure repo/file/code work, complete the Codex task normally without a gateway block.
 
 ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
@@ -2541,7 +2545,7 @@ const buildSearchUrl = (query: string, engine: BrowserSearchEngine) => {
 const selectCodexToolGroups = (prompt: string) => {
   const groups = new Set<ToolGroup>();
   const add = (group: ToolGroup) => groups.add(group);
-  if (/(文件|文件夹|目录|文档|资料|周报|月报|日报|表格|word|excel|csv|docx?|pdf|xlsx?|pptx?|folder|file|directory|report|spreadsheet)/i.test(prompt)) {
+  if (/(文件|文件夹|目录|文档|资料|周报|月报|日报|总结|写到桌面|保存到桌面|表格|word|excel|csv|docx?|pdf|xlsx?|pptx?|folder|file|directory|report|summary|spreadsheet)/i.test(prompt)) {
     add("files");
     add("documents");
   }
@@ -3367,6 +3371,7 @@ For relative dates such as "tomorrow", prefer the parsed date/time in StandardIn
 If HER exposes a tool that can materially advance this complex intent, your final answer must include a HER Tool Gateway request instead of only a prose plan. For travel arrangement intents with a destination and date, at minimum request weather_lookup for the destination/date. Request Calendar, Reminders, or Notes only when the StandardIntent or original request contains enough concrete details for that write; otherwise ask for clarification for missing details.
 When the original request includes reminder language such as "提醒", "remind", "记得", or "todo" and the reminder title/content is clear, request mac_reminder_create. The dueAt field is optional; do not omit a reminder just because the user did not give a precise reminder time.
 When the original request asks to write/create/save a note or "写到Notes/笔记", request mac_note_create if the note title and body can be derived from the request and available context.
+When the original request asks to write, create, save, or export a text/markdown file to Desktop, Documents, or Downloads, request file_write_text with a concrete allowlisted path and full content.
 When the original request asks to create/schedule a calendar event and includes a title plus start time, request mac_calendar_create. If end time is missing, default to one hour after start. Do not ask for location, notes, attendees, or calendar name unless the user explicitly cares.
 When the original request says the sound is too loud/noisy, asks to be quieter, or asks to lower volume, request system_set_volume. If no exact percentage is supplied, choose a conservative value between 20 and 30.
 When the original request asks to draft an email for the user to see in the mail app, request mac_mail_draft_create if a concrete recipient email address is present. Use email_draft only for local HER draft-record tests or when the user explicitly asks for a local HER draft record. If the user only names a person/title without an address, ask for the recipient email address and do not request either draft tool.

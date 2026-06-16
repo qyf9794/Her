@@ -1,6 +1,16 @@
+import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { config, readOpenaiApiKey } from "./config";
 import { buildRealtimeAgentInstructions } from "../shared/realtime-agent";
 import { createRealtimeClientSecretSession } from "../shared/realtime-config";
+
+let openaiProxyAgent: ProxyAgent | undefined;
+let openaiProxyAgentUrl = "";
+
+type OpenaiFetchInit = {
+  method: "POST";
+  headers: Record<string, string>;
+  body: string;
+};
 
 const realtimeRuntimeOptions = () => ({
   budget: {
@@ -25,7 +35,7 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
 
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+    response = await fetchOpenai("https://api.openai.com/v1/realtime/client_secrets", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -81,6 +91,39 @@ export const createRealtimeClientSecret = async (safetyIdentifier?: string) => {
       },
     },
   };
+};
+
+const fetchOpenai = async (url: string, init: OpenaiFetchInit) => {
+  const proxyUrl = config.openaiProxyUrl.trim();
+  if (!proxyUrl) return fetch(url, init);
+
+  const proxyAgent = openaiProxyAgentFor(proxyUrl);
+  return undiciFetch(url, {
+    ...init,
+    dispatcher: proxyAgent,
+  }) as unknown as Promise<Response>;
+};
+
+const openaiProxyAgentFor = (proxyUrl: string) => {
+  validateProxyUrl(proxyUrl);
+  if (!openaiProxyAgent || openaiProxyAgentUrl !== proxyUrl) {
+    void openaiProxyAgent?.close();
+    openaiProxyAgent = new ProxyAgent(proxyUrl);
+    openaiProxyAgentUrl = proxyUrl;
+  }
+  return openaiProxyAgent;
+};
+
+const validateProxyUrl = (proxyUrl: string) => {
+  try {
+    const url = new URL(proxyUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("Proxy URL must use http or https.");
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "Proxy URL must use http or https.") throw error;
+    throw new Error("HER_OPENAI_PROXY_URL must be a valid URL.");
+  }
 };
 
 const networkErrorMessage = (error: unknown) => {

@@ -100,6 +100,8 @@ export const summarizeToolCall = (name: ToolName, args: Record<string, unknown>)
         return `Rename ${args.path} to ${args.newName}`;
       case "file_create_folder":
         return `Create folder ${args.folderName} in ${args.parentPath}`;
+      case "file_write_text":
+        return `${args.overwrite ? "Overwrite" : "Create"} text file ${args.path}`;
       case "file_move":
         return `Move ${args.from} to ${args.to}`;
       case "file_copy":
