@@ -36,7 +36,15 @@ export const run = (command: string, args: string[], timeoutMs = 8000) =>
 export class MacMusicPlayer {
   async open() {
     await run("open", ["-a", "Music"]);
-    return { opened: "Music" };
+    return withMediaDisplay(
+      { status: "opened", opened: "Music" },
+      mediaDisplay({
+        title: "Music 已打开",
+        subtitle: "Apple Music",
+        status: "opened",
+        note: "Music app 已请求打开。播放状态请使用 music_playback_state 或歌曲播放命令确认。",
+      }),
+    );
   }
 
   async playbackState() {
@@ -47,6 +55,14 @@ export class MacMusicPlayer {
       running: snapshot.state !== "not_running",
       state: snapshot.state,
       currentTrack: snapshot.title ? { title: snapshot.title, artist: snapshot.artist } : undefined,
+      display: mediaDisplay({
+        title: snapshot.title ? "Music 当前播放状态" : "Music 播放状态",
+        subtitle: snapshot.state,
+        status: snapshot.state,
+        itemTitle: snapshot.title,
+        itemSubtitle: snapshot.artist,
+        note: snapshot.state === "playing" ? "Music 报告正在播放。" : "Music 当前没有确认播放中的歌曲。",
+      }),
     };
   }
 
@@ -61,6 +77,14 @@ export class MacMusicPlayer {
           artist: artist || undefined,
           source: "local_music_library",
           query: localSearchText,
+          display: mediaDisplay({
+            title: "已开始播放",
+            subtitle: "本地 Music 资料库",
+            status: "playing",
+            itemTitle: title,
+            itemSubtitle: artist || undefined,
+            note: "Music 已确认播放这首本地资料库歌曲。",
+          }),
         };
       }
     }
@@ -70,12 +94,22 @@ export class MacMusicPlayer {
   async openSearch(searchText: string) {
     const searchUrl = `https://music.apple.com/search?term=${encodeURIComponent(searchText)}`;
     await run("open", ["-a", "Music", searchUrl]);
-    return {
+    return withMediaDisplay(
+      {
       status: "opened_search",
       query: searchText,
       url: searchUrl,
       note: "Opened Apple Music search results in Music so you can choose the song.",
-    };
+      },
+      mediaDisplay({
+        title: "已打开 Apple Music 搜索",
+        subtitle: searchText,
+        status: "opened_search",
+        itemTitle: searchText,
+        itemUrl: searchUrl,
+        note: "已打开搜索页，但没有确认开始播放。",
+      }),
+    );
   }
 
   async playCatalogSong(song: AppleMusicCatalogSong) {
@@ -86,6 +120,14 @@ export class MacMusicPlayer {
         title: song.title,
         artist: song.artist,
         note: "Apple Music catalog search found a song but did not provide a playable catalog URL.",
+        display: mediaDisplay({
+          title: "未找到可播放链接",
+          subtitle: song.source,
+          status: "not_found",
+          itemTitle: song.title,
+          itemSubtitle: song.artist,
+          note: "Apple Music 找到歌曲信息，但没有返回可打开的歌曲链接。",
+        }),
       };
     }
 
@@ -126,6 +168,15 @@ export class MacMusicPlayer {
         playerState: snapshot.state,
         currentTrack: { title: snapshot.title, artist: snapshot.artist },
         note: "Music is playing the requested catalog track.",
+        display: mediaDisplay({
+          title: "已开始播放",
+          subtitle: "Apple Music",
+          status: "playing",
+          itemTitle: song.title,
+          itemSubtitle: song.artist,
+          itemUrl: song.url,
+          note: "Music 已确认正在播放请求的歌曲。",
+        }),
       };
     }
 
@@ -143,9 +194,50 @@ export class MacMusicPlayer {
       playerState: snapshot.state,
       currentTrack: snapshot.title ? { title: snapshot.title, artist: snapshot.artist } : undefined,
       note: "Opened the Apple Music catalog track in Music, but playback was not confirmed. Please click Play if the track page is visible.",
+      display: mediaDisplay({
+        title: "已打开歌曲页，未确认播放",
+        subtitle: song.artist,
+        status: "opened_track",
+        itemTitle: song.title,
+        itemSubtitle: song.album,
+        itemUrl: song.url,
+        note: "Music 已打开歌曲页，但当前播放状态没有匹配到这首歌。需要在 Music 中点播放或重新授权。",
+      }),
     };
   }
 }
+
+type MediaDisplayInput = {
+  title: string;
+  subtitle?: string;
+  status?: string;
+  itemTitle?: string;
+  itemSubtitle?: string;
+  itemUrl?: string;
+  note?: string;
+};
+
+const withMediaDisplay = <T extends Record<string, unknown>>(result: T, display: ReturnType<typeof mediaDisplay>) => ({
+  ...result,
+  display,
+});
+
+const mediaDisplay = (input: MediaDisplayInput) => ({
+  title: input.title,
+  subtitle: input.subtitle,
+  kind: "media",
+  generatedAt: new Date().toISOString(),
+  source: "Music",
+  metrics: input.status ? [{ label: "状态", value: input.status }] : undefined,
+  items: [
+    {
+      title: input.itemTitle ?? input.title,
+      subtitle: input.itemSubtitle,
+      url: input.itemUrl,
+    },
+  ],
+  note: input.note,
+});
 
 export const parsePlaybackSnapshot = (output: string): MusicPlaybackSnapshot => {
   if (output.startsWith("error|")) return {};
@@ -189,19 +281,34 @@ const isExpectedTrackPlaying = (snapshot: MusicPlaybackSnapshot, expected: Apple
   const expectedTitle = normalizeMatchText(expected.title);
   const currentArtist = normalizeMatchText(snapshot.artist);
   const expectedArtist = normalizeMatchText(expected.artist);
-  return Boolean(
+  const titleMatches = Boolean(
     currentTitle &&
       expectedTitle &&
-      currentTitle === expectedTitle &&
-      (!expectedArtist || !currentArtist || currentArtist.includes(expectedArtist) || expectedArtist.includes(currentArtist)),
+      (currentTitle === expectedTitle || currentTitle.includes(expectedTitle) || expectedTitle.includes(currentTitle)),
+  );
+  return Boolean(
+    titleMatches &&
+      (!expectedArtist || !currentArtist || currentArtist.includes(expectedArtist) || expectedArtist.includes(currentArtist) || isKnownArtistAlias(currentArtist, expectedArtist)),
   );
 };
 
 const normalizeMatchText = (value: string | undefined) =>
-  (value ?? "")
+  normalizeChineseVariants(value ?? "")
     .toLocaleLowerCase()
     .replace(/[^\p{Letter}\p{Number}]+/gu, "")
     .trim();
+
+const normalizeChineseVariants = (value: string) =>
+  value
+    .replace(/經/g, "经")
+    .replace(/歷/g, "历");
+
+const isKnownArtistAlias = (left: string, right: string) => {
+  const aliases = [
+    ["王菲", "fayewong"],
+  ];
+  return aliases.some(([a, b]) => (left === a && right === b) || (left === b && right === a));
+};
 
 const musicPlaybackStateScript = () => `
   tell application "System Events"

@@ -2106,6 +2106,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
 
     const payload = result.result;
     if (payload && typeof payload === "object" && "truncated" in payload && "handle" in payload) {
+      const display = readToolDisplay(payload);
       const truncated = payload as {
         truncated?: unknown;
         handle?: unknown;
@@ -2117,6 +2118,7 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
         ok: true,
         name: result.name,
         result: {
+          ...(display ? { display } : {}),
           truncated: Boolean(truncated.truncated),
           handle: typeof truncated.handle === "string" ? truncated.handle : undefined,
           originalChars: typeof truncated.originalChars === "number" ? truncated.originalChars : undefined,
@@ -2128,10 +2130,12 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
 
     const serialized = stableSerialize(payload);
     if (serialized.length <= 1200) return result;
+    const display = readToolDisplay(payload);
     return {
       ok: true,
       name: result.name,
       result: {
+        ...(display ? { display } : {}),
         truncated: true,
         originalChars: serialized.length,
         preview: serialized.slice(0, 1200),
@@ -2161,7 +2165,9 @@ ${JSON.stringify({ groups, detailedTools }, null, 2)}`;
 
     const handle = crypto.randomUUID();
     this.resultCache.set(handle, { value: serialized, createdAt: Date.now(), name });
+    const display = readToolDisplay(result);
     return {
+      ...(display ? { display } : {}),
       truncated: true,
       handle,
       originalChars: serialized.length,
@@ -2430,6 +2436,22 @@ const stableSerialize = (value: unknown) => {
   } catch {
     return String(value);
   }
+};
+
+const readToolDisplay = (value: unknown, depth = 0): Record<string, unknown> | undefined => {
+  if (depth > 6) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const objectValue = value as Record<string, unknown>;
+  const display = objectValue.display;
+  if (display && typeof display === "object" && !Array.isArray(display)) {
+    const candidate = display as Record<string, unknown>;
+    if (typeof candidate.title === "string" && Array.isArray(candidate.items)) return candidate;
+  }
+  for (const nested of Object.values(objectValue)) {
+    const found = readToolDisplay(nested, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
 };
 
 type HerGatewayRequest = {
@@ -2776,6 +2798,24 @@ const buildNativeRouteStep = (request: string, input: TaskRouteInput): RouteStep
       "News requests should return structured article results and display them in HER.",
     );
   }
+  if (isWeatherRequest(request)) {
+    const location = extractWeatherLocation(request);
+    if (!location) {
+      return {
+        provider: "native",
+        status: "needs_clarification",
+        title: "Weather lookup needs a location",
+        reason: "The request asks for weather, but HER could not infer a city or place.",
+      };
+    }
+    return readyRouteStep(
+      "native",
+      "Look up weather",
+      "weather_lookup",
+      { location },
+      "Weather requests should display a HER weather result card instead of opening an unrelated app.",
+    );
+  }
   if (isNeteaseRequest(request)) {
     const query = extractMusicServiceQuery(request, "netease");
     return readyRouteStep(
@@ -2995,6 +3035,7 @@ const isXiaohongshuRequest = (request: string) => /(小红书|xiaohongshu|xhs)/i
 const isXSearchRequest = (request: string) => /(\bX\b|twitter|tweet|推特)/i.test(request) && /(搜索|搜|查|找|search|find|read|看)/i.test(request) && !isXPostRequest(request);
 const isXPostRequest = (request: string) => /(\bX\b|twitter|tweet|推特)/i.test(request) && /(发|发布|发帖|post|tweet|publish)/i.test(request);
 const isNewsRequest = (request: string) => /(新闻|资讯|头条|报道|news|headline)/i.test(request);
+const isWeatherRequest = (request: string) => /(天气|气温|温度|下雨|降雨|weather|temperature|rain)/i.test(request);
 const isMarketQuoteRequest = (request: string) => /(股价|行情|报价|股票|ticker|quote|price|market)/i.test(request) && !isNewsRequest(request);
 const isSecFilingRequest = (request: string) => /(sec|edgar|10-k|10-q|8-k|form\s*4|公告|财报|filing|年报|季报)/i.test(request);
 const isMacroSeriesRequest = (request: string) => /(bls|cpi|通胀|失业率|非农|宏观|macro|inflation|unemployment|payroll|series)/i.test(request);
@@ -3520,8 +3561,33 @@ const nextRouteAction = (plan: RouteStep[]) => {
 };
 
 const extractKnownAppName = (request: string) => {
-  const knownApps = ["Google Chrome", "Chrome", "Safari", "Music", "Mail", "Calendar", "Notes", "Finder", "Terminal", "TV"];
-  return knownApps.find((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(request));
+  const aliases: Array<{ pattern: RegExp; appName: string }> = [
+    { pattern: /apple\s*tv|苹果\s*tv|苹果电视|电视\s*app|\btv\s*app\b|\bTV\b/i, appName: "TV" },
+    { pattern: /apple\s*music|音乐\s*app|音乐软件|\bMusic\b/i, appName: "Music" },
+    { pattern: /微信|wechat/i, appName: "WeChat" },
+    { pattern: /google\s*chrome|\bchrome\b/i, appName: "Google Chrome" },
+    { pattern: /safari|Safari浏览器/i, appName: "Safari" },
+    { pattern: /mail|邮件/i, appName: "Mail" },
+    { pattern: /calendar|日历/i, appName: "Calendar" },
+    { pattern: /notes?|备忘录/i, appName: "Notes" },
+    { pattern: /finder|访达/i, appName: "Finder" },
+    { pattern: /terminal|终端/i, appName: "Terminal" },
+  ];
+  return aliases.find((alias) => alias.pattern.test(request))?.appName;
+};
+
+const extractWeatherLocation = (request: string) => {
+  const patterns = [
+    /(?:查看|查一下|查|看看|告诉我)?\s*(.+?)(?:的)?(?:天气|气温|温度|下雨|降雨)/u,
+    /(?:weather|temperature|rain)\s+(?:in|for)\s+(.+)/i,
+    /(.+?)\s+(?:weather|temperature|rain)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = request.match(pattern);
+    const value = match?.[1]?.trim().replace(/^(今天|明天|后天|现在|当前)\s*/u, "").replace(/[，。,.!?！？].*$/u, "");
+    if (value) return value;
+  }
+  return undefined;
 };
 
 const extractPercent = (request: string) => {

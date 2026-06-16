@@ -1,5 +1,79 @@
 [
   {
+    "id": "conversation.greeting.zh.001",
+    "utterance": "在吗",
+    "locale": "zh-CN",
+    "category": "conversation",
+    "strictness": "negative",
+    "expected": {
+      "tool": null,
+      "requiresConfirmation": false,
+      "mustNotCall": [
+        "app_open",
+        "browser_open_url",
+        "browser_isolated_open_url",
+        "music_play_song"
+      ]
+    }
+  },
+  {
+    "id": "weather.lookup.shanghai.zh.001",
+    "utterance": "查看上海的天气",
+    "locale": "zh-CN",
+    "category": "weather",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "comms"
+      ],
+      "tool": "weather_lookup",
+      "args": {
+        "location": "上海"
+      },
+      "risk": "text",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "weather_lookup"
+      ],
+      "argContains": {
+        "location": [
+          "上海"
+        ]
+      }
+    }
+  },
+  {
+    "id": "desktop.open_apple_tv.zh.001",
+    "utterance": "打开 Apple TV",
+    "locale": "zh-CN",
+    "category": "desktop",
+    "strictness": "strict",
+    "expected": {
+      "bundles": [
+        "desktop",
+        "media"
+      ],
+      "tool": "app_open",
+      "args": {
+        "appName": "TV"
+      },
+      "risk": "local_open",
+      "requiresConfirmation": false
+    },
+    "accept": {
+      "toolAnyOf": [
+        "app_open"
+      ],
+      "argContains": {
+        "appName": [
+          "TV"
+        ]
+      }
+    }
+  },
+  {
     "id": "media.play_song.zh.001",
     "utterance": "播放周杰伦的晴天",
     "locale": "zh-CN",

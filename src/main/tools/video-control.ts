@@ -173,36 +173,40 @@ export class VideoControl {
   private async playAppleTv(query: string, mode: VideoMode) {
     if (mode === "search" && !isHttpUrl(query)) {
       const searchUrl = `https://tv.apple.com/search?term=${encodeURIComponent(query)}`;
-      await openAppleTvUrl(searchUrl);
-      return {
+      const result = await openAppleTvUrl(searchUrl);
+      return withDisplay({
         status: "opened_search",
         service: "apple_tv",
         query,
         url: searchUrl,
         resolved: false,
         retryRecommended: false,
+        verified: result.verified,
+        playerState: result.snapshot.state,
         note: "Opened Apple TV search results so you can choose the show, movie, or episode.",
-      };
+      }, appleTvDisplay("已打开 Apple TV 搜索", query, "opened_search", searchUrl, result));
     }
 
     const direct = isHttpUrl(query) ? query : undefined;
     const resolved = direct ? { trackViewUrl: direct } : await findAppleTvVideo(query);
     if (!resolved?.trackViewUrl) {
       const searchUrl = `https://tv.apple.com/search?term=${encodeURIComponent(query)}`;
-      await openAppleTvUrl(searchUrl);
-      return {
+      const result = await openAppleTvUrl(searchUrl);
+      return withDisplay({
         status: "opened_search",
         service: "apple_tv",
         query,
         url: searchUrl,
         resolved: false,
         retryRecommended: false,
+        verified: result.verified,
+        playerState: result.snapshot.state,
         note: "Could not resolve a specific Apple TV catalog item, so opened TV search directly in the macOS TV app.",
-      };
+      }, appleTvDisplay("已打开 Apple TV 搜索", query, "opened_search", searchUrl, result));
     }
 
     const result = await openAppleTvUrl(resolved.trackViewUrl);
-    return {
+    return withDisplay({
       status: "opened_video",
       service: "apple_tv",
       query,
@@ -215,7 +219,7 @@ export class VideoControl {
       currentItem: result.snapshot.title ? { title: result.snapshot.title } : undefined,
       reasonCode: result.reasonCode,
       note: "Opened the Apple TV item directly in the macOS TV app with open -a TV. Playback is not claimed because Apple TV may require sign-in, subscription, purchase, or manual play.",
-    };
+    }, appleTvDisplay("已打开 Apple TV 项目", resolved.trackName ?? resolved.collectionName ?? query, "opened_video", resolved.trackViewUrl, result));
   }
 }
 
@@ -376,8 +380,11 @@ const titleFromAppleTvUrl = (url: string) => {
 
 const openAppleTvUrl = async (url: string) => {
   await run("open", ["-a", "TV", url]);
+  await delay(700);
   const snapshot = await readAppleTvPlaybackState().catch(() => ({ state: undefined, currentItem: undefined }));
+  const verified = snapshot.state !== "not_running" && snapshot.state !== "error";
   return {
+    verified,
     snapshot: {
       state: snapshot.state,
       title: snapshot.currentItem?.title,
@@ -385,6 +392,40 @@ const openAppleTvUrl = async (url: string) => {
     reasonCode: "apple_tv_opened_direct",
   };
 };
+
+const withDisplay = <T extends Record<string, unknown>>(result: T, display: ReturnType<typeof appleTvDisplay>) => ({
+  ...result,
+  display,
+});
+
+const appleTvDisplay = (
+  title: string,
+  itemTitle: string,
+  status: string,
+  url: string,
+  result: Awaited<ReturnType<typeof openAppleTvUrl>>,
+) => ({
+  title,
+  subtitle: result.verified ? "TV app 已响应" : "TV app 未确认响应",
+  kind: "media",
+  generatedAt: new Date().toISOString(),
+  source: "TV",
+  metrics: [
+    { label: "状态", value: status },
+    { label: "TV", value: result.verified ? "已确认打开" : "未确认打开" },
+    { label: "播放", value: result.snapshot.state ?? "未知" },
+  ],
+  items: [
+    {
+      title: itemTitle,
+      subtitle: result.snapshot.title ? `当前项目: ${result.snapshot.title}` : undefined,
+      url,
+    },
+  ],
+  note: result.verified
+    ? "Apple TV 已交给 macOS TV app，但播放可能仍需要登录、订阅、购买或手动点击播放。"
+    : "HER 已尝试打开 TV app，但没有确认到 TV 进程状态。",
+});
 
 const readAppleTvPlaybackState = async () => {
   const output = await run("osascript", ["-e", appleTvPlaybackStateScript()], 5000);

@@ -153,7 +153,10 @@ const dryRunNativeIntent = (utterance: string): Pick<DryRun, "tool" | "tools" | 
   if (/删除.*快捷指令/.test(utterance)) return { tool: "alias_delete", args: { phrase: extractBetween(utterance, "删除", "这个快捷指令") ?? "打开 VPN" }, requiresClarification: false };
   if (/api key|password/.test(text) && /记住|以后/.test(utterance)) return { tool: "alias_create", args: { phrase: "登录", toolName: "app_open", arguments: { value: "sk-123" } }, requiresClarification: false };
   if (/同时播放.*周杰伦/.test(utterance) && /codex|修复/i.test(utterance)) return { tool: null, tools: ["coding_agent_start", "music_play_song"], requiresClarification: false };
+  if (/^(在吗|你在吗|醒了吗|听得到吗|hello|hi|are you there)[。.!！?？\s]*$/i.test(utterance.trim())) return { tool: null, requiresClarification: false };
 
+  if (/(天气|气温|weather|temperature)/i.test(utterance)) return { tool: "weather_lookup", args: { location: "上海" }, requiresClarification: false };
+  if (/打开\s*(apple\s*tv|苹果\s*tv|苹果电视)/i.test(utterance)) return { tool: "app_open", args: { appName: "TV" }, requiresClarification: false };
   if (/youtube|视频/.test(text)) return { tool: "video_play", args: { service: "youtube", query: "苹果发布会视频" }, requiresClarification: false };
   if (/打开音乐软件/.test(utterance)) return { tool: "music_open", args: {}, requiresClarification: false };
   if (/播放|play|放点/.test(text) && /歌|music|taylor|周杰伦|陈奕迅|专注|cruel summer/.test(text)) return dryRunMusic(utterance);

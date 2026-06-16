@@ -1,14 +1,14 @@
 {
   "milestone": "S9",
   "title": "Full Suite Report and Cleanup",
-  "generatedAt": "2026-06-15T17:08:27.201Z",
+  "generatedAt": "2026-06-15T17:37:36.093Z",
   "realtime2Connected": false,
   "totals": {
-    "total": 141,
-    "passed": 140,
+    "total": 138,
+    "passed": 134,
     "failed": 0,
     "skipped": 1,
-    "blocked": 0,
+    "blocked": 3,
     "unsupported": 0
   },
   "milestones": [
@@ -109,31 +109,30 @@
       "reportPath": "docs/test-runs/simple-command-desktop/S1-desktop-window-report.json",
       "realtime2Connected": false,
       "summary": {
-        "total": 9,
-        "passed": 8,
+        "total": 6,
+        "passed": 3,
         "failed": 0,
         "skipped": 1,
-        "blocked": 0,
+        "blocked": 2,
         "unsupported": 0
       },
       "failures": [],
       "coverage": {
         "byDomain": {
-          "S1": 9
+          "S1": 6
         },
         "byRisk": {
-          "unknown": 9
+          "unknown": 6
         },
         "byCommandType": {
-          "preflight": 1,
+          "preflight": 2,
           "protection": 1,
           "app": 1,
-          "window": 4,
           "desktop": 1,
           "excluded": 1
         },
         "byExecutionMode": {
-          "safe_real": 9
+          "safe_real": 6
         }
       }
     },
@@ -175,10 +174,10 @@
       "realtime2Connected": false,
       "summary": {
         "total": 10,
-        "passed": 10,
+        "passed": 9,
         "failed": 0,
         "skipped": 0,
-        "blocked": 0,
+        "blocked": 1,
         "unsupported": 0
       },
       "failures": [],

@@ -77,6 +77,11 @@ const {
   resultWindowBody,
   resultWindowCloseBtn,
   orbMount,
+  siriInfoPanel,
+  siriModeLabel,
+  siriVoiceLevel,
+  siriUserText,
+  siriReplyText,
   glassReply,
   glassReplyText,
   userMeter,
@@ -153,6 +158,9 @@ let realtimeSession: RealtimeSession | null = null;
 let realtimeTransport: OpenAIRealtimeWebRTC | null = null;
 let realtimeSessionService: RealtimeSessionService | null = null;
 let localStream: MediaStream | null = null;
+let micPreviewStream: MediaStream | null = null;
+let micPreviewPointerId: number | null = null;
+let micPreviewHoldTimer: number | undefined;
 let audioContext: AudioContext | null = null;
 let inputAnalyser: AnalyserNode | null = null;
 let outputAnalyser: AnalyserNode | null = null;
@@ -170,6 +178,8 @@ let artifactsPoll: number | undefined;
 let agentRunsPoll: number | undefined;
 let codexLoginConfigured = false;
 let workflowPackCount = 0;
+const displayedTaskResultKeys = new Set<string>();
+const watchedQueuedTaskIds = new Set<string>();
 let microphoneCheckStatus: "unknown" | "available" | "unavailable" =
   typeof navigator.mediaDevices?.getUserMedia === "function" ? "available" : "unavailable";
 
@@ -795,10 +805,25 @@ const startTaskRunsPolling = () => {
 const loadTaskRuns = async () => {
   try {
     const response = await getJson<{ tasks: HerTaskView[] }>("/api/tasks?limit=10");
+    maybeShowCompletedTaskDisplay(response.tasks);
     renderTaskRuns(response.tasks);
   } catch (error) {
     taskRuns.textContent = `Tasks unavailable: ${errorMessage(error)}`;
     taskRuns.classList.add("empty");
+  }
+};
+
+const maybeShowCompletedTaskDisplay = (tasks: HerTaskView[]) => {
+  for (const task of tasks) {
+    if (task.status !== "completed" || !task.result) continue;
+    const display = findToolDisplay(task.result);
+    if (!display) continue;
+    const resultKey = `${task.id}:${task.updatedAt}`;
+    if (displayedTaskResultKeys.has(resultKey)) continue;
+    displayedTaskResultKeys.add(resultKey);
+    renderToolDisplay(display);
+    addActivity(`${task.toolName ?? task.title} result displayed`, "ok");
+    return;
   }
 };
 
@@ -1510,9 +1535,36 @@ const setState = (next: SessionState, detail?: string) => {
   if (next === "error") setVisualState("error");
 };
 
+const visualStateLabels: Record<VisualState, string> = {
+  idle: "Idle",
+  listening: "Listening",
+  thinking: "Thinking",
+  speaking: "Speaking",
+  tool: "Working",
+  confirming: "Confirming",
+  error: "Needs attention",
+};
+
+let lastUserPanelText = "Waiting for your voice.";
+let lastReplyPanelText = "Her is ready.";
+
+const renderSiriInfoPanel = () => {
+  siriModeLabel.textContent = visualStateLabels[visualState];
+  siriUserText.textContent = lastUserPanelText;
+  siriReplyText.textContent = lastReplyPanelText;
+  siriInfoPanel.dataset.state = visualState;
+};
+
+const setSiriVoiceLevel = (level: number) => {
+  const normalized = Math.max(0, Math.min(1, level));
+  siriVoiceLevel.textContent = `${Math.round(normalized * 100)}%`;
+  siriInfoPanel.style.setProperty("--voice-intensity", normalized.toFixed(3));
+};
+
 const setVisualState = (next: VisualState) => {
   visualState = next;
   orbMount.dataset.state = next;
+  renderSiriInfoPanel();
 };
 
 const addLine = (kind: "user" | "assistant" | "system" | "tool", text: string) => {
@@ -1521,6 +1573,13 @@ const addLine = (kind: "user" | "assistant" | "system" | "tool", text: string) =
   row.textContent = text;
   transcript.append(row);
   transcript.scrollTop = transcript.scrollHeight;
+  if (kind === "user") {
+    lastUserPanelText = truncateText(text, 120);
+    renderSiriInfoPanel();
+  } else if (kind === "assistant") {
+    lastReplyPanelText = truncateText(text, 150);
+    renderSiriInfoPanel();
+  }
 };
 
 const setGlassReplyText = (text: string) => {
@@ -1529,6 +1588,10 @@ const setGlassReplyText = (text: string) => {
   glassReply.classList.toggle("on", hasText);
   glassReply.setAttribute("aria-hidden", String(!hasText));
   glassReply.scrollTop = glassReply.scrollHeight;
+  if (hasText) {
+    lastReplyPanelText = truncateText(text, 150);
+    renderSiriInfoPanel();
+  }
 };
 
 const clearGlassReply = () => setGlassReplyText("");
@@ -1536,6 +1599,8 @@ const clearGlassReply = () => setGlassReplyText("");
 const beginFreshAssistantReply = () => {
   activeAssistantLine = null;
   clearGlassReply();
+  lastReplyPanelText = "Thinking...";
+  renderSiriInfoPanel();
 };
 
 const addActivity = (text: string, status: "ok" | "pending" | "error" = "ok") => {
@@ -2080,6 +2145,7 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
   } else if (result.ok) {
     setVisualState("listening");
     maybeShowToolDisplay(result);
+    maybeWatchQueuedToolDisplays(result);
     if (name === "music_play_song") {
       await maybePlayAppleMusicCatalogResult(result.result);
     }
@@ -2097,6 +2163,51 @@ const executeLocalToolForSdk = async (name: ToolName, input: unknown, callId?: s
 
   return result;
 };
+
+const maybeWatchQueuedToolDisplays = (result: ToolCallResult) => {
+  const queuedTasks = findQueuedTasks(result);
+  for (const task of queuedTasks) {
+    if (!task.taskId || watchedQueuedTaskIds.has(task.taskId)) continue;
+    watchedQueuedTaskIds.add(task.taskId);
+    void pollQueuedToolDisplay(task.taskId);
+  }
+};
+
+const pollQueuedToolDisplay = async (taskId: string) => {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await sleep(1000);
+    const status = await postJson<ToolCallResult>("/api/tools/execute", {
+      name: "task_status",
+      source: "local",
+      arguments: { taskId },
+    });
+    maybeShowToolDisplay(status);
+    const task = readTaskStatusPayload(status);
+    if (task?.status && !["queued", "running"].includes(task.status)) return;
+  }
+};
+
+const findQueuedTasks = (value: unknown): Array<{ taskId?: string }> => {
+  if (!value || typeof value !== "object") return [];
+  const objectValue = value as Record<string, unknown>;
+  const queuedTasks = objectValue.queuedTasks;
+  if (Array.isArray(queuedTasks)) {
+    return queuedTasks
+      .map((item) => (item && typeof item === "object" ? { taskId: String((item as Record<string, unknown>).taskId ?? "") } : {}))
+      .filter((item) => item.taskId);
+  }
+  return Object.values(objectValue).flatMap((nested) => findQueuedTasks(nested));
+};
+
+const readTaskStatusPayload = (value: unknown): { status?: string } | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const result = (value as Record<string, unknown>).result;
+  if (!result || typeof result !== "object") return undefined;
+  const task = (result as Record<string, unknown>).task;
+  return task && typeof task === "object" ? (task as { status?: string }) : undefined;
+};
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const enrichToolArgumentsWithContext = async (name: ToolName, args: Record<string, unknown>) => {
   if (name !== "intent_route") return args;
@@ -2409,7 +2520,58 @@ const setupOutputAnalyser = (stream: MediaStream) => {
   audioContext.createMediaStreamSource(stream).connect(outputAnalyser);
 };
 
+const stopMicPreview = () => {
+  window.clearTimeout(micPreviewHoldTimer);
+  micPreviewHoldTimer = undefined;
+  if (!micPreviewStream) return;
+  micPreviewStream.getTracks().forEach((track) => track.stop());
+  micPreviewStream = null;
+  if (!localStream) inputAnalyser = null;
+  lastUserPanelText = "Waiting for your voice.";
+  lastReplyPanelText = state === "error" ? "Open the Electron app window for the full local runtime." : "Her is ready.";
+  setVisualState(state === "error" ? "error" : "idle");
+  renderSiriInfoPanel();
+};
+
+const startMicPreview = async () => {
+  if (micPreviewStream || localStream || state === "connected" || state === "connecting") return;
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("This browser cannot access a microphone.");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: microphoneAudioConstraint() });
+    micPreviewStream = stream;
+    setupInputAnalyser(stream);
+    lastUserPanelText = "Listening to microphone preview.";
+    lastReplyPanelText = "Release the orb to stop.";
+    setVisualState("listening");
+    renderSiriInfoPanel();
+  } catch (error) {
+    lastUserPanelText = "Microphone unavailable.";
+    lastReplyPanelText = microphoneErrorMessage(error);
+    setVisualState("error");
+    renderSiriInfoPanel();
+    microphoneStatus.textContent = microphoneErrorMessage(error);
+  }
+};
+
+const startOrbMicPreview = (event: PointerEvent) => {
+  if (isOrbOnly || state === "connected" || state === "connecting" || event.button !== 0) return;
+  micPreviewPointerId = event.pointerId;
+  orbMount.setPointerCapture(event.pointerId);
+  window.clearTimeout(micPreviewHoldTimer);
+  micPreviewHoldTimer = window.setTimeout(() => void startMicPreview(), 180);
+};
+
+const endOrbMicPreview = (event: PointerEvent) => {
+  if (micPreviewPointerId !== event.pointerId) return;
+  if (orbMount.hasPointerCapture(event.pointerId)) orbMount.releasePointerCapture(event.pointerId);
+  micPreviewPointerId = null;
+  stopMicPreview();
+};
+
 const analyserBuffers = new WeakMap<AnalyserNode, Uint8Array<ArrayBuffer>>();
+const spectrumBuffers = new WeakMap<AnalyserNode, Uint8Array<ArrayBuffer>>();
 
 const readLevel = (analyser: AnalyserNode | null) => {
   if (!analyser) return 0;
@@ -2432,13 +2594,33 @@ const readLevel = (analyser: AnalyserNode | null) => {
   return Math.pow(Math.min(1, rmsSignal + peakSignal), 0.72);
 };
 
+const readSpectrum = (analyser: AnalyserNode | null, bins: number) => {
+  const values = new Float32Array(bins);
+  if (!analyser) return values;
+  let source = spectrumBuffers.get(analyser);
+  if (!source || source.length !== analyser.frequencyBinCount) {
+    source = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
+    spectrumBuffers.set(analyser, source);
+  }
+  analyser.getByteFrequencyData(source);
+  for (let bin = 0; bin < bins; bin += 1) {
+    const start = Math.floor((bin / bins) * source.length);
+    const end = Math.max(start + 1, Math.floor(((bin + 1) / bins) * source.length));
+    let sum = 0;
+    for (let index = start; index < end; index += 1) sum += source[index] / 255;
+    const average = sum / (end - start);
+    values[bin] = Math.pow(Math.max(0, average - 0.025), 0.72);
+  }
+  return values;
+};
+
 const initOrb = () => {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  camera.position.set(0, 0, 9.5);
+  camera.position.set(0, 0, 7.6);
   let orbReadyToRender = false;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: true });
   renderer.setClearColor(0x000000, 0);
   renderer.setClearAlpha(0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -2494,13 +2676,14 @@ const initOrb = () => {
         float swirlA = sin(vPosition.x * 3.6 + vPosition.y * 5.4 + uTime * (0.7 + energy * 2.7)) * 0.5 + 0.5;
         float swirlB = sin((vPosition.x - vPosition.z) * 7.0 - uTime * (1.25 + energy * 3.2)) * 0.5 + 0.5;
         float ribbon = smoothstep(0.64, 1.0, sin(vPosition.y * 9.0 + vPosition.x * 4.0 + uTime * 2.1) * 0.5 + 0.5);
+        float caustic = smoothstep(0.72, 1.0, sin((vPosition.x * 12.0 + vPosition.y * 7.0) - uTime * 2.8) * 0.5 + 0.5);
         vec3 color = mix(cyan, blue, swirlA);
         color = mix(color, magenta, swirlB * 0.62);
         color = mix(color, amber, min(1.0, uAiLevel * 0.78));
         color = mix(color, uStateColor, 0.22 + energy * 0.16);
-        vec3 innerGlow = mix(color, white, 0.18 + fresnel * 0.42 + ribbon * 0.18);
+        vec3 innerGlow = mix(color, white, 0.18 + fresnel * 0.42 + ribbon * 0.18 + caustic * 0.10);
         float glassBand = smoothstep(0.18, 0.88, vertical) * smoothstep(1.0, 0.24, vertical);
-        float alpha = 0.38 + fresnel * 0.44 + ribbon * 0.08 + glassBand * 0.12 + energy * 0.16;
+        float alpha = 0.36 + fresnel * 0.48 + ribbon * 0.08 + caustic * 0.06 + glassBand * 0.12 + energy * 0.16;
         gl_FragColor = vec4(innerGlow * (0.8 + fresnel * 0.95 + energy * 0.65), min(0.94, alpha));
       }
     `,
@@ -2541,23 +2724,29 @@ const initOrb = () => {
   );
   scene.add(halo);
 
-  const particleGeometry = new THREE.BufferGeometry();
-  const particleCount = 420;
-  const positions = new Float32Array(particleCount * 3);
-  for (let i = 0; i < particleCount; i += 1) {
-    const radius = 2.475 + Math.random() * 1.5;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(Math.random() * 2 - 1);
-    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-    positions[i * 3 + 2] = radius * Math.cos(phi);
-  }
-  particleGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const particles = new THREE.Points(
-    particleGeometry,
-    new THREE.PointsMaterial({ color: "#d8fff7", size: 0.018, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending }),
-  );
-  scene.add(particles);
+  const wavePointCount = 128;
+  const createWaveRibbon = (color: string, yOffset: number, phase: number, opacity: number) => {
+    const positions = new Float32Array(wavePointCount * 3);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 4;
+    scene.add(line);
+    return { positions, geometry, material, yOffset, phase };
+  };
+  const waveRibbons = [
+    createWaveRibbon("#72fbff", 0, 0, 0.72),
+    createWaveRibbon("#ff69cf", 0.03, 1.7, 0.58),
+    createWaveRibbon("#ffffff", -0.045, 3.2, 0.38),
+  ];
 
   const thinkingDots = new THREE.Group();
   const dotMaterials: THREE.MeshBasicMaterial[] = [];
@@ -2573,6 +2762,7 @@ const initOrb = () => {
     const dot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 20, 20), dotMaterial);
     const angle = (i / 6) * Math.PI * 2;
     dot.position.set(Math.cos(angle) * 2.28, Math.sin(angle) * 2.28, 0.45);
+    dot.renderOrder = 5;
     thinkingDots.add(dot);
   }
   scene.add(thinkingDots);
@@ -2604,7 +2794,36 @@ const initOrb = () => {
   resize();
   window.addEventListener("resize", resize);
 
-  const clock = new THREE.Clock();
+  const startedAt = performance.now();
+  const updateWaveRibbon = (
+    ribbon: ReturnType<typeof createWaveRibbon>,
+    inputBands: Float32Array,
+    outputBands: Float32Array,
+    elapsed: number,
+    energy: number,
+    index: number,
+  ) => {
+    for (let point = 0; point < wavePointCount; point += 1) {
+      const t = point / (wavePointCount - 1);
+      const bandIndex = Math.min(inputBands.length - 1, Math.floor(t * inputBands.length));
+      const shapedX = (t - 0.5) * 3.45;
+      const edgeFade = Math.sin(Math.PI * t);
+      const inputBand = inputBands[bandIndex] ?? 0;
+      const outputBand = outputBands[bandIndex] ?? 0;
+      const idleBand = visualState === "idle"
+        ? 0.045 + Math.sin(elapsed * 1.5 + t * 9 + ribbon.phase) * 0.018
+        : 0.026 + Math.sin(elapsed * 2.2 + t * 11 + ribbon.phase) * 0.018;
+      const band = Math.max(idleBand, inputBand * (index === 1 ? 0.55 : 0.92), outputBand * (index === 0 ? 0.48 : 0.88));
+      const carrier = Math.sin(t * Math.PI * (3.5 + index * 0.75) + elapsed * (2.1 + energy * 4.2) + ribbon.phase);
+      const shimmer = Math.sin(t * Math.PI * 15 + elapsed * (3.2 + index) - ribbon.phase) * 0.035;
+      ribbon.positions[point * 3] = shapedX;
+      ribbon.positions[point * 3 + 1] = ribbon.yOffset + edgeFade * (carrier * (0.12 + band * 0.74) + shimmer * (0.5 + energy));
+      ribbon.positions[point * 3 + 2] = 1.92 - Math.abs(t - 0.5) * 0.34 + index * 0.018;
+    }
+    ribbon.geometry.attributes.position.needsUpdate = true;
+    ribbon.material.opacity = (0.22 + energy * 0.58) * (index === 2 ? 0.66 : 1);
+  };
+
   const animate = () => {
     requestAnimationFrame(animate);
     if (!orbReadyToRender) {
@@ -2613,13 +2832,16 @@ const initOrb = () => {
     }
     const nextUserLevel = readLevel(inputAnalyser);
     const nextAiLevel = readLevel(outputAnalyser);
+    const inputBands = readSpectrum(inputAnalyser, 64);
+    const outputBands = readSpectrum(outputAnalyser, 64);
     userLevel += (nextUserLevel - userLevel) * (nextUserLevel > userLevel ? 0.42 : 0.12);
     aiLevel += (nextAiLevel - aiLevel) * (nextAiLevel > aiLevel ? 0.38 : 0.1);
     const energy = Math.max(userLevel, aiLevel);
     userMeter.style.transform = `scaleX(${Math.max(0.04, userLevel)})`;
     aiMeter.style.transform = `scaleX(${Math.max(0.04, aiLevel)})`;
+    setSiriVoiceLevel(energy);
 
-    const elapsed = clock.getElapsedTime();
+    const elapsed = (performance.now() - startedAt) / 1000;
     uniforms.uTime.value = elapsed;
     uniforms.uUserLevel.value = userLevel;
     uniforms.uAiLevel.value = aiLevel;
@@ -2635,9 +2857,7 @@ const initOrb = () => {
     (rim.material as THREE.MeshBasicMaterial).opacity = 0.18 + energy * 0.32;
     halo.scale.setScalar(1 + userLevel * 0.42 + aiLevel * 0.34);
     (halo.material as THREE.MeshBasicMaterial).opacity = 0.07 + userLevel * 0.36 + aiLevel * 0.28;
-    particles.scale.setScalar(1 + energy * 0.22);
-    particles.rotation.y = elapsed * (0.025 + userLevel * 0.16);
-    particles.rotation.x = elapsed * (0.015 + aiLevel * 0.13);
+    waveRibbons.forEach((ribbon, index) => updateWaveRibbon(ribbon, inputBands, outputBands, elapsed, energy, index));
     const dotVisibility = visualState === "thinking" || visualState === "tool" || visualState === "confirming" ? 1 : 0;
     thinkingDots.rotation.z = -elapsed * (0.85 + energy * 0.7);
     thinkingDots.scale.setScalar(1 + energy * 0.1);
@@ -2741,6 +2961,9 @@ orbMount.parentElement?.addEventListener("pointerdown", startOrbDrag);
 orbMount.parentElement?.addEventListener("pointermove", moveOrbDrag);
 orbMount.parentElement?.addEventListener("pointerup", endOrbDrag);
 orbMount.parentElement?.addEventListener("pointercancel", endOrbDrag);
+orbMount.addEventListener("pointerdown", startOrbMicPreview);
+orbMount.addEventListener("pointerup", endOrbMicPreview);
+orbMount.addEventListener("pointercancel", endOrbMicPreview);
 confirmations.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
   const button = target.closest<HTMLButtonElement>("button[data-decision]");

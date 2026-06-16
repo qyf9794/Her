@@ -563,8 +563,10 @@ body.orbOnlyActive .productShell {
   overflow: hidden;
   border-bottom: 1px solid #74787d;
   background:
-    radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.16), transparent 24%),
-    linear-gradient(135deg, #101318 0%, #3e5f6c 42%, #d8b287 100%);
+    radial-gradient(circle at 50% 48%, rgba(118, 247, 255, calc(0.12 + var(--voice-intensity, 0) * 0.22)), transparent 22%),
+    radial-gradient(circle at 52% 52%, rgba(255, 84, 198, calc(0.09 + var(--voice-intensity, 0) * 0.18)), transparent 30%),
+    radial-gradient(circle at 50% 65%, rgba(255, 255, 255, 0.08), transparent 36%),
+    #000000;
 }
 
 .appView.orbOnly .orbPanel {
@@ -592,10 +594,18 @@ body.orbOnlyActive .productShell {
 }
 
 .orbMount {
-  width: min(46vw, 540px);
+  width: min(88vw, 560px);
   height: 100%;
   min-height: 0;
   z-index: 1;
+  filter:
+    drop-shadow(0 0 calc(24px + var(--voice-intensity, 0) * 34px) rgba(88, 242, 255, 0.34))
+    drop-shadow(0 0 calc(18px + var(--voice-intensity, 0) * 28px) rgba(255, 96, 199, 0.26));
+}
+
+.appView:not(.orbOnly) .orbMount {
+  cursor: pointer;
+  touch-action: none;
 }
 
 .appView.orbOnly .orbMount {
@@ -608,6 +618,72 @@ body.orbOnlyActive .productShell {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.siriInfoPanel {
+  position: absolute;
+  left: 28px;
+  bottom: 24px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  width: min(310px, calc(100% - 56px));
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.04)),
+    rgba(7, 10, 14, 0.42);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 18px 54px rgba(0, 0, 0, 0.34),
+    0 0 calc(16px + var(--voice-intensity, 0) * 30px) rgba(99, 237, 255, 0.16);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(22px) saturate(1.35);
+  pointer-events: none;
+}
+
+.siriInfoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.siriInfoHeader span,
+.siriInfoHeader strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.siriInfoHeader strong {
+  color: #77f8ff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.siriInfoPanel p {
+  margin: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.siriInfoPanel p + p {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.siriInfoPanel[data-state="speaking"] .siriInfoHeader strong,
+.siriInfoPanel[data-state="error"] .siriInfoHeader strong {
+  color: #ff84c7;
 }
 
 .glassReply {
@@ -670,9 +746,10 @@ body.orbOnlyActive .productShell {
 
 .orbTelemetry {
   position: absolute;
-  left: 28px;
+  left: auto;
   right: 28px;
-  bottom: 18px;
+  top: 24px;
+  width: min(220px, calc(100% - 56px));
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
@@ -725,6 +802,10 @@ body.orbOnlyActive .productShell {
 }
 
 .appView.orbOnly .glassReply {
+  display: none;
+}
+
+.appView.orbOnly .siriInfoPanel {
   display: none;
 }
 

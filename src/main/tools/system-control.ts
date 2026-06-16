@@ -43,24 +43,86 @@ const run = (command: string, args: string[], input?: string, timeoutMs = 8000) 
     child.stdin.end(input);
   });
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const normalizeMacAppName = (appName: string) => {
+  const trimmed = appName.trim();
+  const normalized = trimmed.toLowerCase().replace(/[\s._-]+/g, "");
+  if (["appletv", "苹果tv", "苹果电视", "tvapp", "电视app"].includes(normalized)) {
+    return { openName: "TV", processName: "TV" };
+  }
+  if (["applemusic", "musicapp", "音乐", "音乐app"].includes(normalized)) {
+    return { openName: "Music", processName: "Music" };
+  }
+  if (["safari浏览器", "浏览器safari"].includes(normalized)) {
+    return { openName: "Safari", processName: "Safari" };
+  }
+  if (["微信", "wechat"].includes(normalized)) {
+    return { openName: "WeChat", processName: "WeChat" };
+  }
+  if (normalized === "chrome") {
+    return { openName: "Google Chrome", processName: "Google Chrome" };
+  }
+  return { openName: trimmed, processName: trimmed };
+};
+
+const isAppRunning = async (processName: string) => {
+  const script = `
+    tell application "System Events"
+      return exists process ${JSON.stringify(processName)}
+    end tell
+  `;
+  const output = await run("osascript", ["-e", script], undefined, 5000);
+  return output.trim().toLowerCase() === "true";
+};
+
+const appOpenDisplay = (appName: string, requestedAppName: string, verified: boolean) => ({
+  title: verified ? `${appName} 已打开` : `${appName} 打开未确认`,
+  subtitle: requestedAppName !== appName ? `来自请求: ${requestedAppName}` : undefined,
+  kind: "apps",
+  generatedAt: new Date().toISOString(),
+  source: "macOS",
+  metrics: [
+    { label: "状态", value: verified ? "opened" : "open_requested" },
+    { label: "验证", value: verified ? "进程已运行" : "未检测到进程" },
+  ],
+  items: [
+    {
+      title: appName,
+      body: verified ? "macOS 已确认目标 app 进程存在。" : "HER 已发送打开请求，但没有确认目标 app 出现在系统进程中。",
+    },
+  ],
+  note: verified ? undefined : "如果 app 名称是别名，请在设置里确认应用授权和实际 macOS app 名称。",
+});
+
 export class SystemControl {
   async openApp(appName: string) {
-    await run("open", ["-a", appName]);
-    return { opened: appName };
+    const target = normalizeMacAppName(appName);
+    await run("open", ["-a", target.openName]);
+    await delay(700);
+    const verified = await isAppRunning(target.processName).catch(() => false);
+    return {
+      status: verified ? "opened" : "open_requested",
+      opened: target.openName,
+      requestedAppName: appName,
+      verified,
+      display: appOpenDisplay(target.openName, appName, verified),
+    };
   }
 
   async focusApp(appName: string) {
+    const target = normalizeMacAppName(appName);
     const script = `
-      tell application ${JSON.stringify(appName)} to activate
+      tell application ${JSON.stringify(target.openName)} to activate
       delay 0.2
       tell application "System Events"
         try
-          set frontmost of process ${JSON.stringify(appName)} to true
+          set frontmost of process ${JSON.stringify(target.processName)} to true
         end try
       end tell
     `;
     await run("osascript", ["-e", script], undefined, 10000);
-    return { focused: appName };
+    return { focused: target.openName, requestedAppName: appName };
   }
 
   async closeApp(appName: string) {

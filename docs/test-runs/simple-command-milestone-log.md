@@ -530,3 +530,105 @@ Report: `docs/test-runs/simple-command-full-suite/S9-full-suite-report.md`
 - Blocked: 0
 - Realtime-2 connected: false
 - Cleanup checks: S3/S4 isolated Chrome profiles not running; screenshot PNGs ignored; report secret scan passed.
+
+## S2 Files and Documents - Passed
+
+Report: `docs/test-runs/simple-command-files/S2-files-documents-report.json`
+
+- Total scenarios: 13
+- Passed: 13
+- Failed: 0
+- Sandbox root: `/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988` (removed after run)
+- Real execution: file list/search/read/open/create/rename/copy/move/trash plus document extract/folder digest/prepare edit.
+- Safety checks: write operations stayed under the disposable Desktop sandbox; `file_trash` required confirmation before the script executed the sandbox trash; fake `.p8`, API key, bearer token, and private key contents were denied or redacted.
+
+## S3 Browser and Page Commands - Failed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 9
+- Failed: 1
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S3 Browser and Page Commands - Passed
+
+Report: `docs/test-runs/simple-command-browser/S3-browser-page-report.json`
+
+- Total scenarios: 10
+- Passed: 9
+- Failed: 0
+- Blocked: 1
+- Realtime-2 connected: false
+- Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
+- Safety checks: external submit was stopped at `browser_click` confirmation; arbitrary web origins remain blocked from local tool API access.
+
+## S4 Music, Media, and Video - Passed
+
+Report: `docs/test-runs/simple-command-media/S4-media-video-report.json`
+
+- Total scenarios: 11
+- Passed: 11
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: Music app open/search/state, Spotify missing-config handling, NetEase and QQ Music search opening, media-key safety preflight, YouTube isolated search, and controlled local video state.
+- Safety checks: Spotify tokens were blanked for fixture testing; media keys were not sent without a visible target app; MusicKit private key material was not read into the report.
+
+## S5 System, Clipboard, Notification, Speech, and Screenshot - Passed
+
+Report: `docs/test-runs/simple-command-system/S5-system-desktop-report.json`
+
+- Total scenarios: 12
+- Passed: 12
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: volume read/set/mute, dark mode toggle with restore, Sound settings open, clipboard fixture write/read, speech, notification, screenshot artifact, and Escape shortcut.
+- Safety checks: brightness reports platform limitation when the CLI is unavailable; lock screen required confirmation and was not executed; original volume, mute, dark mode, and clipboard state were restored.
+
+## S6 Mail, Calendar, Reminders, Notes, and Copy Drafts - Passed
+
+Report: `docs/test-runs/simple-command-productivity/S6-productivity-report.json`
+
+- Total scenarios: 11
+- Passed: 11
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: local email draft/search/read, local calendar create/search, local copy draft save/search, and macOS Reminders/Notes create-cleanup when automation is available.
+- Safety checks: Mail draft, email send, macOS Calendar creation, and copy publish stopped at confirmation; local adapter data files were restored after the run.
+
+## S7 Task, Confirmation, and Low-Risk Shell - Passed
+
+Report: `docs/test-runs/simple-command-runtime/S7-task-confirmation-shell-report.json`
+
+- Total scenarios: 8
+- Passed: 8
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: queued task list/status/cancel, confirmation list/reject/approve, approved bounded read-only shell, approved harmless folder creation, and dangerous shell validator failure.
+- Safety checks: npm test and coding-agent start were confirmation-only and rejected; rejected confirmations produced no side effects; destructive shell did not remove the fixture folder.
+
+## S8 Negative, Safety, and Clarification - Passed
+
+Report: `docs/test-runs/simple-command-safety/S8-negative-safety-report.json`
+
+- Total scenarios: 5
+- Passed: 5
+- Failed: 0
+- Realtime-2 connected: false
+- Real execution: generated negative intent cards, extracted a prompt-injection document as text, attempted and denied a credential-like file read, checked payment-submit confirmation, and validated rm -rf / blocking.
+- Safety checks: no unsafe side effect occurred; secret fixture content was not written to the report.
+
+## S9 Full Suite Report and Cleanup - Passed
+
+Report: `docs/test-runs/simple-command-full-suite/S9-full-suite-report.md`
+
+- Total scenarios/cards: 138
+- Passed: 134
+- Failed: 0
+- Skipped: 1
+- Unsupported: 0
+- Blocked: 3
+- Realtime-2 connected: false
+- Cleanup checks: S3/S4 isolated Chrome profiles not running; screenshot PNGs ignored; report secret scan passed.

@@ -1,25 +1,25 @@
 # Simple Command Full Suite Report
 
-Generated: 2026-06-15T17:08:27.201Z
+Generated: 2026-06-15T17:37:36.093Z
 Realtime-2 connected: false
 
 ## Summary
 
-- Total scenarios/cards: 141
-- Passed: 140
+- Total scenarios/cards: 138
+- Passed: 134
 - Failed: 0
 - Skipped: 1
 - Unsupported: 0
-- Blocked: 0
+- Blocked: 3
 
 ## Milestones
 
 | Milestone | Report | Total | Passed | Failed | Skipped | Unsupported | Blocked |
 |---|---|---:|---:|---:|---:|---:|---:|
 | S0 Simple Command Intent Card Harness | docs/test-runs/simple-command-intent-cards/S0-intent-card-report.json | 62 | 62 | 0 | 0 | 0 | 0 |
-| S1 Desktop App and Window Real Simulation | docs/test-runs/simple-command-desktop/S1-desktop-window-report.json | 9 | 8 | 0 | 1 | 0 | 0 |
+| S1 Desktop App and Window Real Simulation | docs/test-runs/simple-command-desktop/S1-desktop-window-report.json | 6 | 3 | 0 | 1 | 0 | 2 |
 | S2 Files and Documents | docs/test-runs/simple-command-files/S2-files-documents-report.json | 13 | 13 | 0 | 0 | 0 | 0 |
-| S3 Browser and Page Commands | docs/test-runs/simple-command-browser/S3-browser-page-report.json | 10 | 10 | 0 | 0 | 0 | 0 |
+| S3 Browser and Page Commands | docs/test-runs/simple-command-browser/S3-browser-page-report.json | 10 | 9 | 0 | 0 | 0 | 1 |
 | S4 Music, Media, and Video | docs/test-runs/simple-command-media/S4-media-video-report.json | 11 | 11 | 0 | 0 | 0 | 0 |
 | S5 System, Clipboard, Notification, Speech, and Screenshot | docs/test-runs/simple-command-system/S5-system-desktop-report.json | 12 | 12 | 0 | 0 | 0 | 0 |
 | S6 Mail, Calendar, Reminders, Notes, and Copy Drafts | docs/test-runs/simple-command-productivity/S6-productivity-report.json | 11 | 11 | 0 | 0 | 0 | 0 |
@@ -37,10 +37,10 @@ Realtime-2 connected: false
 
 ### S1
 
-- By domain: {"S1":9}
-- By risk: {"unknown":9}
-- By command type: {"preflight":1,"protection":1,"app":1,"window":4,"desktop":1,"excluded":1}
-- By execution mode: {"safe_real":9}
+- By domain: {"S1":6}
+- By risk: {"unknown":6}
+- By command type: {"preflight":2,"protection":1,"app":1,"desktop":1,"excluded":1}
+- By execution mode: {"safe_real":6}
 
 ### S2
 

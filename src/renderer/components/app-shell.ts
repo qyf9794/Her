@@ -73,6 +73,14 @@ export const renderAppShell = () => {
 
         <section class="orbPanel" aria-label="Voice state">
           <div id="orbMount" class="orbMount"></div>
+          <div id="siriInfoPanel" class="siriInfoPanel" aria-live="polite">
+            <div class="siriInfoHeader">
+              <span id="siriModeLabel">Idle</span>
+              <strong id="siriVoiceLevel">0%</strong>
+            </div>
+            <p id="siriUserText">Waiting for your voice.</p>
+            <p id="siriReplyText">Her is ready.</p>
+          </div>
           <div id="glassReply" class="glassReply" aria-live="polite" aria-hidden="true">
             <div class="glassReplyBody">
               <span id="glassReplyText"></span>

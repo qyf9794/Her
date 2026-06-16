@@ -127,6 +127,14 @@ const main = async () => {
         await system.openApp("TextEdit");
         await system.focusApp("TextEdit");
         const frontmostApp = await frontmostProcess();
+        if (frontmostApp !== "TextEdit" && (await visibleAxWindowCount()) === 0) {
+          return {
+            status: "blocked",
+            expected: "TextEdit becomes the frontmost app.",
+            actual: { frontmostApp, anyVisibleAxWindows: 0 },
+            blocker: "macOS System Events can inspect processes but currently exposes no visible AX windows.",
+          };
+        }
         return {
           passed: frontmostApp === "TextEdit",
           expected: "TextEdit becomes the frontmost app.",
@@ -134,58 +142,84 @@ const main = async () => {
         };
       });
 
-      await createTextEditFixtureWindows(tempRoot, 10);
-      createdTextEditWindows = true;
-
-      await record("S1.window.list", "List visible TextEdit test windows", async () => {
-        const windows = (await system.listWindows(["TextEdit"])).filter((item) => item.appName === "TextEdit");
-        const testWindows = windows.filter((item) => item.title.includes(testPrefix));
-        return {
-          passed: testWindows.length >= 10,
-          expected: "At least 10 disposable TextEdit windows are visible and listed.",
-          actual: { listedTextEditWindows: windows.length, listedTestWindows: testWindows.length, sampleTitles: testWindows.slice(0, 5).map((item) => item.title) },
-        };
+      await record("S1.preflight.fixture-windows", "Create disposable TextEdit windows for geometry checks", async () => {
+        try {
+          await createTextEditFixtureWindows(tempRoot, 10);
+          createdTextEditWindows = true;
+          return {
+            passed: true,
+            expected: "10 disposable TextEdit windows are available to System Events.",
+            actual: { textEditWindows: await textEditWindowCount() },
+          };
+        } catch (error) {
+          return {
+            status: "blocked",
+            expected: "10 disposable TextEdit windows are available to System Events.",
+            actual: {
+              textEditWindows: await textEditWindowCount(),
+              anyVisibleAxWindows: await visibleAxWindowCount(),
+            },
+            blocker:
+              error instanceof Error
+                ? error.message
+                : String(error),
+            note:
+              "The S1 geometry scenarios require macOS Accessibility window access. Her/Codex windows were not touched.",
+          };
+        }
       });
 
-      await record("S1.window.move-resize", "Move and resize the front TextEdit window", async () => {
-        await system.focusApp("TextEdit");
-        await system.moveResizeWindow("TextEdit", 80, 80, 800, 600);
-        const windows = (await system.listWindows(["TextEdit"])).filter((item) => item.appName === "TextEdit");
-        const matched = windows.some((item) =>
-          Math.abs(item.x - 80) <= tolerancePx &&
-          Math.abs(item.y - 80) <= tolerancePx &&
-          Math.abs(item.width - 800) <= tolerancePx &&
-          Math.abs(item.height - 600) <= tolerancePx
-        );
-        return {
-          passed: matched,
-          expected: `A TextEdit window is moved near 80,80 and resized near 800x600 within ${tolerancePx}px.`,
-          actual: { matched, windows: windows.map(compactWindow).slice(0, 10) },
-        };
-      });
-
-      await record("S1.window.auto-arrange-10", "Arrange 10 disposable TextEdit windows into a grid", async () => {
-        const result = await system.autoArrangeWindows(["TextEdit"]);
-        return {
-          passed: result.verified && result.targetWindows >= 10 && result.windowsArranged === result.targetWindows,
-          expected: "All disposable TextEdit windows are arranged, with target and arranged counts equal.",
-          actual: result,
-        };
-      });
-
-      await record("S1.window.minimize-unrelated", "Keep one named test window and minimize unrelated TextEdit windows", async () => {
-        const result = await system.minimizeUnrelatedWindows({
-          appNames: ["TextEdit"],
-          keepAppNames: [],
-          keepTitleKeywords: [`${testPrefix} Keep`],
-          preserveFrontmost: false,
+      if (createdTextEditWindows) {
+        await record("S1.window.list", "List visible TextEdit test windows", async () => {
+          const windows = (await system.listWindows(["TextEdit"])).filter((item) => item.appName === "TextEdit");
+          const testWindows = windows.filter((item) => item.title.includes(testPrefix));
+          return {
+            passed: testWindows.length >= 10,
+            expected: "At least 10 disposable TextEdit windows are visible and listed.",
+            actual: { listedTextEditWindows: windows.length, listedTestWindows: testWindows.length, sampleTitles: testWindows.slice(0, 5).map((item) => item.title) },
+          };
         });
-        return {
-          passed: result.windowsPreserved >= 1 && result.windowsMinimized >= 1,
-          expected: "The keep window is preserved and at least one unrelated TextEdit test window is minimized.",
-          actual: result,
-        };
-      });
+
+        await record("S1.window.move-resize", "Move and resize the front TextEdit window", async () => {
+          await system.focusApp("TextEdit");
+          await system.moveResizeWindow("TextEdit", 80, 80, 800, 600);
+          const windows = (await system.listWindows(["TextEdit"])).filter((item) => item.appName === "TextEdit");
+          const matched = windows.some((item) =>
+            Math.abs(item.x - 80) <= tolerancePx &&
+            Math.abs(item.y - 80) <= tolerancePx &&
+            Math.abs(item.width - 800) <= tolerancePx &&
+            Math.abs(item.height - 600) <= tolerancePx
+          );
+          return {
+            passed: matched,
+            expected: `A TextEdit window is moved near 80,80 and resized near 800x600 within ${tolerancePx}px.`,
+            actual: { matched, windows: windows.map(compactWindow).slice(0, 10) },
+          };
+        });
+
+        await record("S1.window.auto-arrange-10", "Arrange 10 disposable TextEdit windows into a grid", async () => {
+          const result = await system.autoArrangeWindows(["TextEdit"]);
+          return {
+            passed: result.verified && result.targetWindows >= 10 && result.windowsArranged === result.targetWindows,
+            expected: "All disposable TextEdit windows are arranged, with target and arranged counts equal.",
+            actual: result,
+          };
+        });
+
+        await record("S1.window.minimize-unrelated", "Keep one named test window and minimize unrelated TextEdit windows", async () => {
+          const result = await system.minimizeUnrelatedWindows({
+            appNames: ["TextEdit"],
+            keepAppNames: [],
+            keepTitleKeywords: [`${testPrefix} Keep`],
+            preserveFrontmost: false,
+          });
+          return {
+            passed: result.windowsPreserved >= 1 && result.windowsMinimized >= 1,
+            expected: "The keep window is preserved and at least one unrelated TextEdit test window is minimized.",
+            actual: result,
+          };
+        });
+      }
 
       await record("S1.desktop.show", "Trigger Show Desktop without closing apps", async () => {
         const result = await system.showDesktop();
@@ -283,6 +317,21 @@ tell application "System Events"
   else
     return 0
   end if
+end tell
+`);
+  return Number(output) || 0;
+};
+
+const visibleAxWindowCount = async () => {
+  const output = await appleScript(`
+tell application "System Events"
+  set windowCount to 0
+  repeat with proc in (application processes whose visible is true)
+    try
+      set windowCount to windowCount + (count of windows of proc)
+    end try
+  end repeat
+  return windowCount
 end tell
 `);
   return Number(output) || 0;

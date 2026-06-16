@@ -1,8 +1,8 @@
 {
   "milestone": "S2",
   "title": "Files and Documents",
-  "generatedAt": "2026-06-15T16:27:05.994Z",
-  "sandboxRoot": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807",
+  "generatedAt": "2026-06-15T17:34:48.417Z",
+  "sandboxRoot": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988",
   "summary": {
     "total": 13,
     "passed": 13,
@@ -13,50 +13,50 @@
       "id": "S2.file.list",
       "title": "List visible and hidden Desktop sandbox files",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.808Z",
-      "completedAt": "2026-06-15T16:27:05.810Z",
+      "startedAt": "2026-06-15T17:34:47.989Z",
+      "completedAt": "2026-06-15T17:34:47.992Z",
       "payload": {
         "visibleCount": 7,
         "hiddenCount": 8,
         "sample": [
           {
             "name": "A",
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/A",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/A",
             "type": "folder",
             "size": 96,
-            "modifiedAt": "2026-06-15T16:27:05.808Z",
+            "modifiedAt": "2026-06-15T17:34:47.989Z",
             "metadataAvailable": true
           },
           {
             "name": "AuthKey_FAKE123456.p8",
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/AuthKey_FAKE123456.p8",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/AuthKey_FAKE123456.p8",
             "type": "file",
             "size": 90,
-            "modifiedAt": "2026-06-15T16:27:05.808Z",
+            "modifiedAt": "2026-06-15T17:34:47.989Z",
             "metadataAvailable": true
           },
           {
             "name": "B",
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/B",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/B",
             "type": "folder",
             "size": 96,
-            "modifiedAt": "2026-06-15T16:27:05.808Z",
+            "modifiedAt": "2026-06-15T17:34:47.989Z",
             "metadataAvailable": true
           },
           {
             "name": "Her S2 valid fixture.pdf",
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/Her S2 valid fixture.pdf",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/Her S2 valid fixture.pdf",
             "type": "file",
             "size": 622,
-            "modifiedAt": "2026-06-15T16:27:05.808Z",
+            "modifiedAt": "2026-06-15T17:34:47.989Z",
             "metadataAvailable": true
           },
           {
             "name": "notes.md",
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/notes.md",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/notes.md",
             "type": "file",
             "size": 56,
-            "modifiedAt": "2026-06-15T16:27:05.808Z",
+            "modifiedAt": "2026-06-15T17:34:47.989Z",
             "metadataAvailable": true
           }
         ]
@@ -66,13 +66,13 @@
       "id": "S2.file.search.duplicates",
       "title": "Search duplicate contract names",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.810Z",
-      "completedAt": "2026-06-15T16:27:05.813Z",
+      "startedAt": "2026-06-15T17:34:47.992Z",
+      "completedAt": "2026-06-15T17:34:47.994Z",
       "payload": {
         "matchCount": 2,
         "duplicatePaths": [
-          "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/A/EB5 合同 duplicate.txt",
-          "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/B/EB5 合同 duplicate.txt"
+          "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/A/EB5 合同 duplicate.txt",
+          "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/B/EB5 合同 duplicate.txt"
         ]
       }
     },
@@ -80,10 +80,10 @@
       "id": "S2.file.read.markdown",
       "title": "Read Markdown note with source path",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.813Z",
-      "completedAt": "2026-06-15T16:27:05.814Z",
+      "startedAt": "2026-06-15T17:34:47.994Z",
+      "completedAt": "2026-06-15T17:34:47.994Z",
       "payload": {
-        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/notes.md",
+        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/notes.md",
         "chars": 56,
         "truncated": false,
         "preview": "# Her S2 Note\n\nThis markdown file is safe to summarize.\n"
@@ -93,10 +93,10 @@
       "id": "S2.file.open.pdf",
       "title": "Open PDF fixture through Finder",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.814Z",
-      "completedAt": "2026-06-15T16:27:05.833Z",
+      "startedAt": "2026-06-15T17:34:47.994Z",
+      "completedAt": "2026-06-15T17:34:48.011Z",
       "payload": {
-        "opened": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/Her S2 valid fixture.pdf",
+        "opened": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/Her S2 valid fixture.pdf",
         "appName": "Finder",
         "action": "reveal",
         "pdfFixtureValidated": true
@@ -106,11 +106,11 @@
       "id": "S2.file.create_folder",
       "title": "Create disposable folder",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.833Z",
-      "completedAt": "2026-06-15T16:27:05.833Z",
+      "startedAt": "2026-06-15T17:34:48.011Z",
+      "completedAt": "2026-06-15T17:34:48.011Z",
       "payload": {
-        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/Her Simple Command Test",
-        "parent": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807",
+        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/Her Simple Command Test",
+        "parent": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988",
         "name": "Her Simple Command Test"
       }
     },
@@ -118,22 +118,22 @@
       "id": "S2.file.rename",
       "title": "Rename a.txt to b.txt",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.833Z",
-      "completedAt": "2026-06-15T16:27:05.834Z",
+      "startedAt": "2026-06-15T17:34:48.011Z",
+      "completedAt": "2026-06-15T17:34:48.011Z",
       "payload": {
-        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/a.txt",
-        "to": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/b.txt"
+        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/a.txt",
+        "to": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/b.txt"
       }
     },
     {
       "id": "S2.file.copy",
       "title": "Copy file and keep both source and destination",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.834Z",
-      "completedAt": "2026-06-15T16:27:05.834Z",
+      "startedAt": "2026-06-15T17:34:48.011Z",
+      "completedAt": "2026-06-15T17:34:48.011Z",
       "payload": {
-        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/copy-source.txt",
-        "to": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/copy-target.txt",
+        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/copy-source.txt",
+        "to": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/copy-target.txt",
         "type": "file"
       }
     },
@@ -141,23 +141,23 @@
       "id": "S2.file.move",
       "title": "Move file and remove source path",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.834Z",
-      "completedAt": "2026-06-15T16:27:05.834Z",
+      "startedAt": "2026-06-15T17:34:48.011Z",
+      "completedAt": "2026-06-15T17:34:48.011Z",
       "payload": {
-        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/move-source.txt",
-        "to": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/moved/move-target.txt"
+        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/move-source.txt",
+        "to": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/moved/move-target.txt"
       }
     },
     {
       "id": "S2.file.trash.confirmed",
       "title": "Require confirmation then trash disposable file",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.834Z",
-      "completedAt": "2026-06-15T16:27:05.835Z",
+      "startedAt": "2026-06-15T17:34:48.011Z",
+      "completedAt": "2026-06-15T17:34:48.012Z",
       "payload": {
         "decision": "require_confirmation",
         "risk": "local_write",
-        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/trash-me.txt",
+        "from": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/trash-me.txt",
         "note": "Moved to Trash; not permanently deleted."
       }
     },
@@ -165,8 +165,8 @@
       "id": "S2.file.secret_redaction",
       "title": "Deny p8 read and redact fake text secrets",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.835Z",
-      "completedAt": "2026-06-15T16:27:05.835Z",
+      "startedAt": "2026-06-15T17:34:48.012Z",
+      "completedAt": "2026-06-15T17:34:48.013Z",
       "payload": {
         "p8Denied": true,
         "redacted": true,
@@ -177,10 +177,10 @@
       "id": "S2.document.extract",
       "title": "Extract safe Markdown document",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.835Z",
-      "completedAt": "2026-06-15T16:27:05.835Z",
+      "startedAt": "2026-06-15T17:34:48.013Z",
+      "completedAt": "2026-06-15T17:34:48.013Z",
       "payload": {
-        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/notes.md",
+        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/notes.md",
         "chars": 56,
         "truncated": false,
         "preview": "# Her S2 Note\n\nThis markdown file is safe to summarize.\n"
@@ -190,30 +190,30 @@
       "id": "S2.document.folder_digest",
       "title": "Digest folder without exposing fake secrets",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.835Z",
-      "completedAt": "2026-06-15T16:27:05.993Z",
+      "startedAt": "2026-06-15T17:34:48.013Z",
+      "completedAt": "2026-06-15T17:34:48.415Z",
       "payload": {
-        "root": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807",
+        "root": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988",
         "count": 5,
         "documents": [
           {
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/A/EB5 合同 duplicate.txt",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/A/EB5 合同 duplicate.txt",
             "redacted": false
           },
           {
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/B/EB5 合同 duplicate.txt",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/B/EB5 合同 duplicate.txt",
             "redacted": false
           },
           {
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/Her S2 valid fixture.pdf",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/Her S2 valid fixture.pdf",
             "redacted": false
           },
           {
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/b.txt",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/b.txt",
             "redacted": false
           },
           {
-            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/copy-source.txt",
+            "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/copy-source.txt",
             "redacted": false
           }
         ]
@@ -223,10 +223,10 @@
       "id": "S2.document.prepare_edit",
       "title": "Prepare edit diff without writing file",
       "status": "passed",
-      "startedAt": "2026-06-15T16:27:05.993Z",
-      "completedAt": "2026-06-15T16:27:05.993Z",
+      "startedAt": "2026-06-15T17:34:48.415Z",
+      "completedAt": "2026-06-15T17:34:48.416Z",
       "payload": {
-        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781540825807/notes.md",
+        "path": "/Users/qianyifeng/Desktop/Her S2 Files Sandbox 1781544887988/notes.md",
         "currentChars": 56,
         "newChars": 69,
         "diffPreview": "+ 追加一行中文编辑预览。\n+ "

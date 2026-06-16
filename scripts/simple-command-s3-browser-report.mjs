@@ -60,10 +60,13 @@ const runScenario = async (id, title, fn) => {
   const startedAt = new Date().toISOString();
   try {
     const payload = await fn();
+    const status = payload?.status && ["passed", "failed", "skipped", "blocked"].includes(payload.status)
+      ? payload.status
+      : "passed";
     results.push({
       id,
       title,
-      status: "passed",
+      status,
       startedAt,
       completedAt: new Date().toISOString(),
       payload: payload ?? {},
@@ -236,7 +239,18 @@ try {
     await browser.openIsolatedUrl(fixtureUrl);
     await waitForCdpPage(debugPort, fixtureUrl);
     await retry(() => browser.readPage(300), 8, 500);
-    const result = await browser.moveResizeIsolatedWindow(120, 120, 900, 700);
+    let result;
+    try {
+      result = await browser.moveResizeIsolatedWindow(120, 120, 900, 700);
+    } catch (error) {
+      return {
+        status: "blocked",
+        url: fixtureUrl,
+        title: "Her S3 Browser Fixture",
+        actionSummary: "Could not verify isolated Chrome window movement because macOS exposed no controllable AX windows.",
+        blocker: error instanceof Error ? error.message : String(error),
+      };
+    }
     assert(result.moved === true, "Move/resize should report success.");
     return {
       ...result,
@@ -266,6 +280,7 @@ const summary = {
   total: results.length,
   passed: results.filter((item) => item.status === "passed").length,
   failed: results.filter((item) => item.status === "failed").length,
+  blocked: results.filter((item) => item.status === "blocked").length,
 };
 
 fs.mkdirSync(reportDir, { recursive: true });
@@ -306,6 +321,7 @@ Report: \`docs/test-runs/simple-command-browser/S3-browser-page-report.json\`
 - Total scenarios: ${summary.total}
 - Passed: ${summary.passed}
 - Failed: ${summary.failed}
+- Blocked: ${summary.blocked}
 - Realtime-2 connected: false
 - Real execution: isolated Chrome open/read/fill/click/video-state/move-resize against local fixture pages plus deterministic search URL opening.
 - Safety checks: external submit was stopped at \`browser_click\` confirmation; arbitrary web origins remain blocked from local tool API access.
@@ -314,7 +330,7 @@ Report: \`docs/test-runs/simple-command-browser/S3-browser-page-report.json\`
 fs.appendFileSync(logPath, logEntry);
 
 console.log(JSON.stringify({ reportPath, summary }, null, 2));
-if (summary.failed > 0) process.exitCode = 1;
+if (summary.failed > 0 || summary.blocked > 0) process.exitCode = 1;
 
 function sendHtml(res, html) {
   res.writeHead(200, {

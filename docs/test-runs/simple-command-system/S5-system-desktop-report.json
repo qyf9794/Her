@@ -1,7 +1,7 @@
 {
   "milestone": "S5",
   "title": "System, Clipboard, Notification, Speech, and Screenshot",
-  "generatedAt": "2026-06-15T16:46:18.159Z",
+  "generatedAt": "2026-06-15T17:36:41.948Z",
   "realtime2Connected": false,
   "artifactDir": "docs/test-runs/simple-command-system/artifacts",
   "summary": {
@@ -14,8 +14,8 @@
       "id": "S5.system.volume-read",
       "title": "Read current system volume",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:10.674Z",
-      "completedAt": "2026-06-15T16:46:10.774Z",
+      "startedAt": "2026-06-15T17:36:35.107Z",
+      "completedAt": "2026-06-15T17:36:35.201Z",
       "payload": {
         "volume": 0,
         "muted": false,
@@ -26,8 +26,8 @@
       "id": "S5.system.volume-set-readback",
       "title": "Set volume to 30 and read it back",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:10.774Z",
-      "completedAt": "2026-06-15T16:46:11.341Z",
+      "startedAt": "2026-06-15T17:36:35.201Z",
+      "completedAt": "2026-06-15T17:36:35.710Z",
       "payload": {
         "setResult": {
           "status": "platform_limited",
@@ -47,8 +47,8 @@
       "id": "S5.system.mute-unmute",
       "title": "Mute and unmute volume",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:11.341Z",
-      "completedAt": "2026-06-15T16:46:12.011Z",
+      "startedAt": "2026-06-15T17:36:35.710Z",
+      "completedAt": "2026-06-15T17:36:36.304Z",
       "payload": {
         "muteResult": {
           "status": "platform_limited",
@@ -79,8 +79,8 @@
       "id": "S5.system.brightness-set",
       "title": "Set brightness to 50 or report platform limitation",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:12.011Z",
-      "completedAt": "2026-06-15T16:46:12.012Z",
+      "startedAt": "2026-06-15T17:36:36.304Z",
+      "completedAt": "2026-06-15T17:36:36.306Z",
       "payload": {
         "status": "platform_limited",
         "reason": "Brightness control requires the local `brightness` CLI. Install it separately or use System Settings > Displays.",
@@ -91,8 +91,8 @@
       "id": "S5.system.dark-mode-toggle-restore",
       "title": "Toggle dark mode and restore original value",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:12.012Z",
-      "completedAt": "2026-06-15T16:46:13.151Z",
+      "startedAt": "2026-06-15T17:36:36.306Z",
+      "completedAt": "2026-06-15T17:36:37.404Z",
       "payload": {
         "initial": true,
         "toggled": false,
@@ -104,8 +104,8 @@
       "id": "S5.system.open-sound-settings",
       "title": "Open Sound settings pane",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:13.151Z",
-      "completedAt": "2026-06-15T16:46:13.230Z",
+      "startedAt": "2026-06-15T17:36:37.404Z",
+      "completedAt": "2026-06-15T17:36:37.475Z",
       "payload": {
         "opened": "sound",
         "actionSummary": "Opened the allowlisted Sound settings pane."
@@ -115,8 +115,8 @@
       "id": "S5.clipboard.write-read",
       "title": "Write and read fixture clipboard text",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:13.230Z",
-      "completedAt": "2026-06-15T16:46:13.251Z",
+      "startedAt": "2026-06-15T17:36:37.475Z",
+      "completedAt": "2026-06-15T17:36:37.499Z",
       "payload": {
         "text": "Her clipboard smoke text",
         "actionSummary": "Wrote and read back non-sensitive clipboard fixture text."
@@ -126,8 +126,8 @@
       "id": "S5.system.speak",
       "title": "Speak fixture confirmation phrase",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:13.251Z",
-      "completedAt": "2026-06-15T16:46:16.872Z",
+      "startedAt": "2026-06-15T17:36:37.499Z",
+      "completedAt": "2026-06-15T17:36:41.009Z",
       "payload": {
         "spoken": true,
         "phrase": "Her simple command test complete",
@@ -138,8 +138,8 @@
       "id": "S5.system.notification",
       "title": "Show Her Test notification",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:16.872Z",
-      "completedAt": "2026-06-15T16:46:16.980Z",
+      "startedAt": "2026-06-15T17:36:41.009Z",
+      "completedAt": "2026-06-15T17:36:41.121Z",
       "payload": {
         "shown": true,
         "dialog": false,
@@ -152,13 +152,13 @@
       "id": "S5.screenshot.capture-artifact",
       "title": "Capture screenshot and move artifact into test folder",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:16.980Z",
-      "completedAt": "2026-06-15T16:46:17.483Z",
+      "startedAt": "2026-06-15T17:36:41.122Z",
+      "completedAt": "2026-06-15T17:36:41.321Z",
       "payload": {
         "captured": true,
         "mode": "desktop",
-        "artifactPath": "docs/test-runs/simple-command-system/artifacts/screenshot-20260616-004616.png",
-        "bytes": 15562369,
+        "artifactPath": "docs/test-runs/simple-command-system/artifacts/screenshot-20260616-013641.png",
+        "bytes": 268126,
         "actionSummary": "Captured a desktop screenshot and moved it into the S5 artifact folder."
       }
     },
@@ -166,8 +166,8 @@
       "id": "S5.keyboard.escape",
       "title": "Send Escape keyboard shortcut",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:17.483Z",
-      "completedAt": "2026-06-15T16:46:17.580Z",
+      "startedAt": "2026-06-15T17:36:41.321Z",
+      "completedAt": "2026-06-15T17:36:41.411Z",
       "payload": {
         "action": "escape",
         "sent": true,
@@ -178,8 +178,8 @@
       "id": "S5.safety.lock-screen-confirmation",
       "title": "Verify lock screen does not execute unattended",
       "status": "passed",
-      "startedAt": "2026-06-15T16:46:17.580Z",
-      "completedAt": "2026-06-15T16:46:17.580Z",
+      "startedAt": "2026-06-15T17:36:41.411Z",
+      "completedAt": "2026-06-15T17:36:41.412Z",
       "payload": {
         "policyDecision": "require_confirmation",
         "risk": "system_change",

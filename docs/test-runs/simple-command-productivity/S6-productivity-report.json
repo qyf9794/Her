@@ -1,7 +1,7 @@
 {
   "milestone": "S6",
   "title": "Mail, Calendar, Reminders, Notes, and Copy Drafts",
-  "generatedAt": "2026-06-15T16:52:16.639Z",
+  "generatedAt": "2026-06-15T17:37:17.495Z",
   "realtime2Connected": false,
   "dataRestored": true,
   "summary": {
@@ -14,13 +14,13 @@
       "id": "S6.email.local-draft-create",
       "title": "Create local reviewable email draft",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.547Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.399Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
-        "id": "72eb6f29-6c38-4f8c-a9ed-68e9fc7e6687",
+        "id": "5a6eb3a5-5a1a-4ff8-9ce0-fc7c514f501e",
         "to": "her-test@example.invalid",
         "subject": "[Her Test] Local draft smoke",
-        "createdAt": "2026-06-15T16:51:46.548Z",
+        "createdAt": "2026-06-15T17:36:47.400Z",
         "bodyChars": 68,
         "bodyPreview": "This is a harmless local email draft fixture. It must never be sent.",
         "actionSummary": "Created a local HER email draft review artifact."
@@ -30,18 +30,18 @@
       "id": "S6.email.search",
       "title": "Search local email drafts for harmless fixture query",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
         "count": 1,
         "match": {
-          "id": "72eb6f29-6c38-4f8c-a9ed-68e9fc7e6687",
-          "createdAt": "2026-06-15T16:51:46.548Z",
+          "id": "5a6eb3a5-5a1a-4ff8-9ce0-fc7c514f501e",
+          "createdAt": "2026-06-15T17:36:47.400Z",
           "to": "her-test@example.invalid",
           "subject": "[Her Test] Local draft smoke",
           "source": "local-draft-adapter",
           "title": "[Her Test] Local draft smoke",
-          "date": "2026-06-15T16:51:46.548Z",
+          "date": "2026-06-15T17:36:47.400Z",
           "preview": "This is a harmless local email draft fixture. It must never be sent."
         },
         "actionSummary": "Returned local email search result cards with source, title, date, and count."
@@ -51,13 +51,13 @@
       "id": "S6.email.read",
       "title": "Read local email draft by id",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
-        "id": "72eb6f29-6c38-4f8c-a9ed-68e9fc7e6687",
+        "id": "5a6eb3a5-5a1a-4ff8-9ce0-fc7c514f501e",
         "to": "her-test@example.invalid",
         "subject": "[Her Test] Local draft smoke",
-        "createdAt": "2026-06-15T16:51:46.548Z",
+        "createdAt": "2026-06-15T17:36:47.400Z",
         "bodyChars": 68,
         "bodyPreview": "This is a harmless local email draft fixture. It must never be sent.",
         "truncated": false,
@@ -70,12 +70,12 @@
       "id": "S6.email.send-confirmation",
       "title": "Require confirmation before sending an email draft",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
         "policyDecision": "require_confirmation",
         "risk": "external_send",
-        "target": "draftId: 72eb6f29-6c38-4f8c-a9ed-68e9fc7e6687",
+        "target": "draftId: 5a6eb3a5-5a1a-4ff8-9ce0-fc7c514f501e",
         "actionSummary": "Email send was stopped at confirmation and not executed."
       }
     },
@@ -83,8 +83,8 @@
       "id": "S6.mac-mail-draft-confirmation",
       "title": "Require confirmation before creating visible Mail draft",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
         "policyDecision": "require_confirmation",
         "risk": "external_send",
@@ -95,15 +95,15 @@
       "id": "S6.calendar.local-create-search",
       "title": "Create and search local calendar event",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
         "event": {
-          "id": "b0211f5c-ff02-4ada-89b3-36127c083192",
-          "createdAt": "2026-06-15T16:51:46.548Z",
+          "id": "eb02e6d8-ad36-4391-a4c5-2e6dc58bbe1e",
+          "createdAt": "2026-06-15T17:36:47.400Z",
           "title": "[Her Test] Meeting fixture",
-          "start": "2026-06-22T16:00:00.000Z",
-          "end": "2026-06-22T17:00:00.000Z",
+          "start": "2026-06-22T17:00:00.000Z",
+          "end": "2026-06-22T18:00:00.000Z",
           "attendees": [
             "her-test@example.invalid"
           ],
@@ -113,18 +113,18 @@
         },
         "count": 1,
         "match": {
-          "id": "b0211f5c-ff02-4ada-89b3-36127c083192",
-          "createdAt": "2026-06-15T16:51:46.548Z",
+          "id": "eb02e6d8-ad36-4391-a4c5-2e6dc58bbe1e",
+          "createdAt": "2026-06-15T17:36:47.400Z",
           "title": "[Her Test] Meeting fixture",
-          "start": "2026-06-22T16:00:00.000Z",
-          "end": "2026-06-22T17:00:00.000Z",
+          "start": "2026-06-22T17:00:00.000Z",
+          "end": "2026-06-22T18:00:00.000Z",
           "attendees": [
             "her-test@example.invalid"
           ],
           "location": "Her Test Room",
           "notes": "Local calendar adapter smoke.",
           "source": "local-calendar-adapter",
-          "date": "2026-06-22T16:00:00.000Z",
+          "date": "2026-06-22T17:00:00.000Z",
           "notesTruncated": false
         },
         "actionSummary": "Created and searched a local calendar event with a test prefix."
@@ -134,8 +134,8 @@
       "id": "S6.mac-calendar-confirmation",
       "title": "Require confirmation before creating macOS calendar event",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:51:46.548Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:36:47.400Z",
       "payload": {
         "policyDecision": "require_confirmation",
         "risk": "external_send",
@@ -146,8 +146,8 @@
       "id": "S6.mac-reminder.create-cleanup",
       "title": "Create and clean up macOS reminder",
       "status": "passed",
-      "startedAt": "2026-06-15T16:51:46.548Z",
-      "completedAt": "2026-06-15T16:52:01.576Z",
+      "startedAt": "2026-06-15T17:36:47.400Z",
+      "completedAt": "2026-06-15T17:37:02.432Z",
       "payload": {
         "status": "platform_limited",
         "reason": "osascript timed out after 15000ms.",
@@ -158,8 +158,8 @@
       "id": "S6.mac-note.create-cleanup",
       "title": "Create and clean up macOS note",
       "status": "passed",
-      "startedAt": "2026-06-15T16:52:01.576Z",
-      "completedAt": "2026-06-15T16:52:16.631Z",
+      "startedAt": "2026-06-15T17:37:02.432Z",
+      "completedAt": "2026-06-15T17:37:17.491Z",
       "payload": {
         "status": "platform_limited",
         "reason": "osascript timed out after 15000ms.",
@@ -170,25 +170,25 @@
       "id": "S6.copy.save-search",
       "title": "Save and search copy draft for fictional product",
       "status": "passed",
-      "startedAt": "2026-06-15T16:52:16.632Z",
-      "completedAt": "2026-06-15T16:52:16.636Z",
+      "startedAt": "2026-06-15T17:37:17.491Z",
+      "completedAt": "2026-06-15T17:37:17.493Z",
       "payload": {
         "draft": {
-          "id": "abfd1ae0-f1cc-42a1-b21f-540b97af00c3",
+          "id": "49802575-779e-4515-80a6-cf61e7f2ed8a",
           "title": "[Her Test] Lunar Desk Lamp",
           "project": "fictional-product",
-          "createdAt": "2026-06-15T16:52:16.634Z",
+          "createdAt": "2026-06-15T17:37:17.492Z",
           "bodyChars": 74,
           "preview": "A compact launch blurb for a fictional desk lamp with soft focus lighting."
         },
         "count": 1,
         "match": {
-          "id": "abfd1ae0-f1cc-42a1-b21f-540b97af00c3",
-          "createdAt": "2026-06-15T16:52:16.634Z",
+          "id": "49802575-779e-4515-80a6-cf61e7f2ed8a",
+          "createdAt": "2026-06-15T17:37:17.492Z",
           "title": "[Her Test] Lunar Desk Lamp",
           "project": "fictional-product",
           "source": "local-copy-draft-adapter",
-          "date": "2026-06-15T16:52:16.634Z",
+          "date": "2026-06-15T17:37:17.492Z",
           "preview": "A compact launch blurb for a fictional desk lamp with soft focus lighting."
         },
         "actionSummary": "Saved and searched a local copy draft review artifact."
@@ -198,12 +198,12 @@
       "id": "S6.copy.publish-confirmation",
       "title": "Require confirmation before publishing copy",
       "status": "passed",
-      "startedAt": "2026-06-15T16:52:16.636Z",
-      "completedAt": "2026-06-15T16:52:16.637Z",
+      "startedAt": "2026-06-15T17:37:17.493Z",
+      "completedAt": "2026-06-15T17:37:17.493Z",
       "payload": {
         "policyDecision": "require_confirmation",
         "risk": "external_send",
-        "target": "draftId: abfd1ae0-f1cc-42a1-b21f-540b97af00c3",
+        "target": "draftId: 49802575-779e-4515-80a6-cf61e7f2ed8a",
         "actionSummary": "Copy publish was stopped at confirmation and not executed."
       }
     }
